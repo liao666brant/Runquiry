@@ -1,4 +1,8 @@
 [toolchain]
-channel = "stable"
+# A1 验证锁定：从 1.90.0 起第一个能编译固定依赖组合的稳定版本。
+# 1.90.0/1.91.0 低于 oo7@0.6.0 的 rust-version=1.92；1.92.0 缺
+# gpui_util 使用的 slice_as_array；1.93.0/1.94.0 缺 gpui 使用的
+# cold_path；1.95.0 起可完整编译（见 .omo/plans 模块 01 A1 证据）。
+channel = "1.95.0"
 components = ["rustfmt", "clippy", "rust-src"]
 profile = "default"

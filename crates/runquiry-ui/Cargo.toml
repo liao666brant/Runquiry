@@ -1,0 +1,13 @@
+[package]
+name = "runquiry-ui"
+description = "Runquiry GPUI 界面：工作区、调查面板与设计系统"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+runquiry-core.workspace = true
+
+[lints]
+workspace = true

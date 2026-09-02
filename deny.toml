@@ -1,11 +1,71 @@
+# cargo-deny 配置。完整检查命令：cargo deny check
+# 所有验证均须在 Cargo.lock（--locked）下进行。
+
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
+version = 2
 yanked = "deny"
+# unmaintained 置为 none：当前锁定的 GPUI 依赖链（固定 Git 提交）带入了
+# instant、paste、rustybuzz 等上游 unmaintained 传递依赖，本任务不得顺带
+# 升级依赖；该信号改由公开发布前对最终 Cargo.lock 的人工复核覆盖
+# （见总计划“许可证决策”）。
+unmaintained = "none"
 
 [licenses]
-unlicensed = "deny"
-allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
+version = 2
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+    # GPUI 依赖树中的常见宽松许可证，逐项对照上游 manifest 确认。
+    "0BSD",
+    "CC0-1.0",
+    "MPL-2.0",
+    "bzip2-1.0.6",
+]
+
+# 仅允许固定版本、固定 Git 来源的 GPL 包与 Runquiry 自身（整体 GPL 分发），
+# 不做全局 GPL 放开（见总计划“许可证决策”）。
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "zlog"
+version = "0.1.0"
+
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "ztracing"
+version = "0.1.0"
+
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "ztracing_macro"
+version = "0.1.0"
+
+# 同一 zed 固定提交（f66ed399）下的 workspace-hack 亦为 GPL。
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "workspace-hack"
+version = "0.1.0"
+
+# Runquiry 四个 crate 自身按总计划采用 GPL-3.0-or-later 分发。
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "runquiry-app"
+
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "runquiry-core"
+
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "runquiry-platform"
+
+[[licenses.exceptions]]
+allow = ["GPL-3.0-or-later"]
+name = "runquiry-ui"
 
 [bans]
 multiple-versions = "warn"
@@ -14,3 +74,14 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+allow-git = [
+    # Runquiry 固定的 GPUI 技术栈来源。
+    "https://github.com/zed-industries/zed",
+    "https://github.com/longbridge/gpui-component",
+    # gpui-component 在固定提交处的间接 Git 依赖。
+    "https://github.com/zed-industries/reqwest.git",
+    "https://github.com/zed-industries/font-kit",
+    "https://github.com/zed-industries/scap",
+    "https://github.com/zed-industries/wasm_thread",
+    "https://github.com/zed-industries/xim-rs.git",
+]

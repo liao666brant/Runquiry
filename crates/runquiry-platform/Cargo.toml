@@ -1,0 +1,13 @@
+[package]
+name = "runquiry-platform"
+description = "Runquiry 平台采集器、容器运行时与进程控制"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+runquiry-core.workspace = true
+
+[lints]
+workspace = true

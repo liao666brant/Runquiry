@@ -1,0 +1,18 @@
+# cargo-about 配置：从 Cargo.lock 生成第三方许可证清单。
+# 生成命令：cargo about generate about.hbs > docs/third-party-licenses.md
+# 该文件在打包阶段（D2）随安装包分发，公开发布前需按总计划做人工复核。
+
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CDLA-Permissive-2.0",
+    # GPUI 依赖链中固定 Git 来源的 zlog / ztracing / ztracing_macro 为
+    # GPL-3.0-or-later，Runquiry 因此整体采用 GPL-3.0-or-later 分发。
+    # deny.toml 中的例外仅针对这三个包，此处不做全局放开。
+    "GPL-3.0-or-later",
+]

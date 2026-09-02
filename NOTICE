@@ -1,0 +1,22 @@
+Runquiry
+Copyright 2026 The Runquiry authors
+
+This product includes software derived from the witr project
+(https://github.com/pranshuparmar/witr), version 0.3.3, which is
+licensed under the Apache License, Version 2.0. A copy of the
+Apache License 2.0 is available at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+The behavior contract for Runquiry is documented against witr's
+source in docs/witr-parity.md. The witr reference sources retained
+in witr/ remain the property of their authors and keep their
+original Apache-2.0 licensing and notices.
+
+This product additionally depends on GPUI and gpui-component, whose
+dependency tree includes GPL-3.0-or-later components (zlog,
+ztracing, ztracing_macro). Accordingly, Runquiry is distributed
+under the GNU General Public License v3.0 or later. A copy of the
+license is provided in LICENSE. Third-party license texts for all
+dependencies are generated from the dependency manifest; see
+about.toml and docs/third-party-licenses.md.

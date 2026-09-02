@@ -1,1 +1,3 @@
 /target
+# A1 工具链阶梯验证使用的独立构建目录（CARGO_TARGET_DIR=target-verify）
+/docs/target-verify
