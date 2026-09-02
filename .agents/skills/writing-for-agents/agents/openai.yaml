@@ -1,0 +1,3 @@
+interface:
+  display_name: "Agent 文档写作"
+  short_description: "为 Agent 编写清晰、可触发且低上下文负担的指令文档"
