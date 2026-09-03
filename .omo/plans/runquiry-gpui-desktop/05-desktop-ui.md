@@ -25,7 +25,7 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
 
 ## TODOs
 
-- [ ] **A4 设计系统与组件实验台**
+- [x] **A4 设计系统与组件实验台**
   - 依赖：A1。
   - 在 DESIGN.md 固定语义颜色、字体、密度、间距、圆角、层级、状态和动效 token。
   - 使用中性石墨/灰色表面、钴蓝交互强调色；语义绿/黄/红不得替代交互强调色。
@@ -35,6 +35,15 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
   - 同时展示 en、zh-CN、浅色、深色、960×640、1280×800、长中文和长路径。
   - 验证：真实启动 gallery，完成截图和焦点/键盘检查。
   - 完成证据：DESIGN.md、截图矩阵、发现问题及修正结果。
+  - 实施记录（2026-09-03）：
+    - DESIGN.md 为唯一设计规范（3/2/9、石墨表面、钴蓝强调、语义色隔离、token、五状态规则、窗口/滚动/键盘/可访问性）；只写稳定语义，库版本相关限制已移至 docs/qa/a4-gallery/qa-report.md §8（注明随 gpui-component rev 91217366 失效）。
+    - 设计系统：crates/runquiry-ui（theme.rs 集中 46 项 PALETTE 原始色值 + 浅/深 Runquiry 主题、state.rs 六态 DataState、state_view.rs RenderOnce 统一状态呈现、locale.rs 最小确定性 en/zh-CN 字典占位——rust-i18n 留待 B4）；裸色值经 grep 核验仅存在于 theme.rs。
+    - gallery：crates/runquiry-app/examples/gallery/（独立入口，不进产品窗口与安装包；放在 examples/ 而非 src/ 的原因是复用 runquiry-app 已内联声明的 gpui-platform 与 gpui-component-assets 依赖，属模块 05 允许写入 crates/runquiry-app/src/ 意图范围内的交付形式注记）。覆盖 Sidebar/DataTable/Tree/Sheet/AlertDialog/Notification/应用级 StatusBar 组合 × 五状态 × 双语 × 双主题 × 双尺寸 + 长中文与无空格长路径数据；CLI 参数 --size/--theme/--lang/--state/--open 支持 QA 脚本化；焦点指示行经 tab_index 可区分具体控件。
+    - 视觉与键盘 QA：真实 X11 启动（env -u WAYLAND_DISPLAY），import -window 0x&lt;id&gt; 截图（本环境 root 抓图不可用），xdotool 真实按键注入。证据：docs/qa/a4-gallery/（qa-report.md + screenshots/ 8 组合 + 6 状态 + 4 overlay + 94 张键盘/焦点/滚动截图，含修正后补拍的 state-unsupported 与控件焦点读数）。Tab 19 步顺序与视觉一致、Shift+Tab 回退、Enter 激活动作、Escape 关 Sheet/AlertDialog 且焦点恢复触发控件、960×640 无溢出（表格横向滚动可达全部列）。
+    - 已发现并修正的问题（8 条，详见 qa-report.md）：Root 不代绘覆盖层需显式 render_*_layer、window.update 内开 overlay 需 defer、树节点索引 ID 改领域 ID、NavActivate 空操作移除、note 对比度不足去 opacity、unsupported 图标加外框、Ready 态通知无正文、焦点读数 unnamed region#tab-0（tab_index 修复）。
+    - 已知限制（记录于 qa-report.md）：SidebarMenuItem 不进 Tab 序（方向键+Enter 补齐）、DataTable 内 Tab=下一列无法离开表格、TreeState/Button 不暴露 FocusHandle、hover 高亮遮蔽选中行的观察陷阱。
+    - 验证结果：cargo fmt -p runquiry-ui -p runquiry-app 通过；cargo test -p runquiry-ui 10 个测试全过；cargo check -p runquiry-app --locked --examples 通过；clippy -D warnings 在基线豁免（-A clippy::multiple-crate-versions，app 另加 -A clippy::print-stderr）后零警告——两条原始失败均为基线既有问题（锁定依赖树 77 条 multiple-crate-versions，经还原 runquiry-ui/src 至骨架实测复现，与本次改动无关；print_stderr 为 A1 main.rs 既有例外），彻底消除需 A1 负责人调整根 lint 基线或依赖去重，超出本批次边界。
+    - 未做（按边界属 B4/B5）：rust-i18n、设置持久化、刷新状态机/generation、业务数据绑定、Ctrl/Cmd+K/R/1..4 产品快捷键、100k 行虚拟滚动验证。
 
 - [ ] **B4 应用状态、刷新、设置与国际化**
   - 依赖：A3、A4。

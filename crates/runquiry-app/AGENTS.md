@@ -16,6 +16,8 @@
 
 无对外 API。窗口行为：初始 1280×800（最小 960×640），居中显示 "Runquiry" 文本的壳层视图 `ShellView`（占位，产品工作区由 A4 实现）。
 
+另有独立开发实验台：`src` 同级的 `examples/gallery/`（`cargo run -p runquiry-app --example gallery --locked`），A4 组件 gallery，不参与产品打包。
+
 ## 关键依赖与配置
 
 - runquiry-core / runquiry-platform / runquiry-ui（workspace 继承）。
@@ -37,6 +39,7 @@
 
 - `crates/runquiry-app/Cargo.toml` — manifest（含 git 依赖内联声明的原因注释）
 - `crates/runquiry-app/src/main.rs` — 应用入口与最小窗口
+- `crates/runquiry-app/examples/gallery/` — A4 组件实验台（独立入口）
 - `Cargo.toml` — 根 workspace 配置与 git 依赖锁定机制说明
 - `Cargo.lock` — GPUI/gpui-component 提交锁定（勿手工编辑）
 - `deny.toml` — cargo-deny 配置（许可证例外与允许的 git 来源）
@@ -44,3 +47,4 @@
 ## 变更记录
 
 - 2026-09-02：初次索引。A1 最小窗口状态（gpui-component 初始化 + Root 第一级视图已验证）。
+- 2026-09-03：新增 A4 gallery 示例（examples/gallery，独立入口不参与打包）。

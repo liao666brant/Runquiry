@@ -54,7 +54,7 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 
 - gpui-component 固定 rev `91217366`，Zed GPUI 经 Cargo.lock 锁定 `f66ed399`；锁内 23 个 zed 包单一 source。
 - **禁止无差别 `cargo update`**（GPUI 会漂移到 zed main 新提交）；所有验证、CI、打包必须 `--locked`。
-- git 依赖在 runquiry-app 内联声明（cargo-deny 0.20 无法解析 git 源的 workspace 继承依赖），版本须与根 `Cargo.toml` 注释一致。
+- git 依赖在 runquiry-app 与 runquiry-ui 内联声明（cargo-deny 0.20 无法解析 git 源的 workspace 继承依赖），两处 version/rev 须保持一致并与根 `Cargo.toml` 注释同步。
 - 新增依赖由模块 01（A1）负责人集中修改并重新验证单一 GPUI source。
 
 ## 测试策略
@@ -79,6 +79,7 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 ## 变更记录
 
 - 2026-09-02 @9d4a616：A1 工程基线（四层 workspace、依赖锁定、最小窗口）、A2 witr 行为契约落地；初次建立 AI 上下文索引。
+- 2026-09-03（未提交工作区）：Batch 1——A3 核心领域类型与七平台端口落地（serde 经守门人批准，零新增包）；A4 设计系统（DESIGN.md + runquiry-ui 主题/状态/双语占位）与独立 gallery 实验台（runquiry-app/examples/gallery）；gpui/gpui-component git 依赖同步内联至 runquiry-ui。
 
 ## 索引状态
 - 上次索引：2026-09-02T10:25:19Z（@9d4a616）

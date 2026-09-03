@@ -23,7 +23,7 @@
 
 ## TODOs
 
-- [ ] **A3 核心领域接口**
+- [x] **A3 核心领域接口**
   - 依赖：A1、A2。
   - 先以编译失败测试锁定上级方案定义的 Pid、Port、ContainerKey、QueryTarget、ProcessIdentity、Inspection、CapabilityStatus、InspectError 和 ProcessAction。
   - 定义 ProcessInventory、ProcessDetailsProvider、NetworkInventory、ContainerInventory、FileInventory、ProcessController、CommandRunner。
@@ -34,6 +34,16 @@
     - cargo test -p runquiry-core --locked
     - cargo clippy -p runquiry-core --all-targets -- -D warnings
   - 完成证据：公共 API 清单、依赖树中不存在 GPUI/OS crate、测试与 Clippy 结果。
+  - 实施记录（2026-09-03）：
+    - TDD：先写 tests/domain_types.rs 与 tests/ports.rs 观察编译失败（E0432），再实现转绿。
+    - 公共类型：Pid（拒绝 0）、Port（1-65535）、ContainerKey（dedup_key 为 runtime|id）、QueryTarget（五变体）、ProcessIdentity、ProcessSummary、ProcessDetails、ProcessAction、Renice（-20..=19，TryFrom 校验）、Inspection&lt;T&gt;（data: Option&lt;T&gt; + issues + captured_at，支持部分成功）、DiagnosticIssue/DiagnosticCode、CapabilityStatus（四态）、InspectError（七变体）、SocketEntry（含 remote_addr: Option&lt;String&gt;、Protocol 含 Unix）、OpenPortEntry、ContainerSummary、FileLockEntry/LockType/LockMode、CommandSpec/CommandOutput；常量 PROBE_TIMEOUT=500ms、LIST_TIMEOUT=3s、DETAIL_TIMEOUT=5s、STDOUT/STDERR_LIMIT=8MiB。
+    - 稳定错误码：invalid_target / not_found / ambiguous / permission_denied / unsupported / external_tool / process_changed（InspectError）；permission_denied / external_tool_failed / timeout / output_limit_exceeded / unsupported / platform_unavailable / parse_failed / unknown（DiagnosticCode）。自由文本仅入 message（展示用），不承担控制流。
+    - 身份语义：ProcessIdentity 以 same_process()（pid + start_time 且 start_time 为 Some）为唯一身份判定入口；executable 不参与判定；两侧 start_time 均 None 视为不可验证（拒绝破坏性操作）。未派生 PartialEq 以杜绝复用防护旁路。ProcessController 契约要求执行前用 same_process 校验重读身份。
+    - 七个 trait 全部同步，各 inventory 带 capability() -> CapabilityStatus；文件均在 250 行内（最大 model/process.rs 184 行）。
+    - 依赖批准记录（依赖守门人，2026-09-03）：runquiry-core 新增 serde 1.0.229（derive）与 serde_json 1.0.151（dev）——两者均已在 Cargo.lock 中作为 GPUI 传递依赖存在，零新增包；Cargo.lock 变更仅为 runquiry-core/runquiry-ui 条目的依赖列表更新，Zed GPUI（23 包，f66ed399）与 gpui-component（4 包，91217366）source 未漂移，cargo deny check 全绿。
+    - 验证结果：cargo fmt --all --check 通过；cargo test 12 个测试全过；cargo clippy --all-targets -- -D warnings 零警告（无豁免）；cargo tree -p runquiry-core --locked 无 gpui/OS API/tokio/async-std/smol/futures。
+    - 接口冻结范围裁定：parity §1 中的容器上下文（ContainerID/ContainerRuntime/ContainerHealthcheck）、启动来源 Source、健康状态枚举、ExeDeleted、Capabilities、MemoryInfo/IOStats、FileContext，以及 FileInventory 的全量打开文件列举，推迟到 B1/B2 随分析管线一并实现（避免 A3 投机性建字段）；B1/B2 扩展时按 additive 演进。
+    - 对平台实现者的前置/后置条件与错误语义见 crates/runquiry-core/src/port/ 各 trait 契约文档（单条目失败只追加 issue 不丢数据、无主端口 pid: None + issue、运行时缺失用 Unavailable、执行前重读身份否则 ProcessChanged、超时/程序缺失归 ExternalTool、输出截断置 *_truncated）。
 
 - [ ] **B1 目标解析与分析管线**
   - 依赖：A3、A5。
