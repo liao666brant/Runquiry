@@ -10,6 +10,7 @@
 
 pub mod model;
 pub mod port;
+pub mod refresh;
 
 pub use model::capability::CapabilityStatus;
 pub use model::diagnostic::{DiagnosticCode, DiagnosticIssue};
@@ -28,3 +29,4 @@ pub use port::container::{ContainerInventory, ContainerSummary};
 pub use port::file::{FileInventory, FileLockEntry, LockMode, LockType};
 pub use port::network::{NetworkInventory, OpenPortEntry, Protocol, SocketEntry};
 pub use port::process::{ProcessController, ProcessDetailsProvider, ProcessInventory};
+pub use refresh::{Generation, RefreshGate};

@@ -15,6 +15,9 @@ runquiry-core.workspace = true
 # gpui-component-assets 仅为装配层所需，本 crate 不引入。
 gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed" }
 gpui-component = { version = "0.5.2", git = "https://github.com/longbridge/gpui-component", rev = "91217366a5765600a127bf108ce00b7143a93381" }
+# B4 依赖申请（经集成负责人批准）：国际化走 gpui-component 的 rust-i18n 扩展机制；
+# 4.2.1 已在 Cargo.lock（gpui-component 传递依赖），无新增包。
+rust-i18n = "4.2.1"
 
 [lints]
 workspace = true

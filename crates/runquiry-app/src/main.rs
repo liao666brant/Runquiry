@@ -1,56 +1,102 @@
-//! Runquiry 桌面应用入口。
+//! Runquiry 桌面应用入口与装配层。
 //!
-//! A1 阶段仅包含验证技术栈所需的最小窗口：初始化 gpui-component，
-//! 并保证 [`gpui_component::Root`] 是窗口的第一级视图。
-//! 产品工作区由后续任务实现。
+//! 职责：把设计系统与产品壳层（runquiry-ui）装配进真实窗口——初始化
+//! gpui-component（Root 为窗口第一级视图）、应用启动设置、绑定快捷键，
+//! 并把壳层的设置变化事件持久化到 allowlist 白名单内的设置文件
+//! （见 [`settings`]）。数据采集端口尚未接入（B2/B3），壳层以诚实的
+//! 等待态呈现，不注入演示数据。
+
+mod settings;
 
 use gpui::{
-    AppContext as _, Bounds, Context, IntoElement, ParentElement as _, Render, Styled as _, Window,
-    WindowBounds, WindowKind, WindowOptions, div, px, size,
+    App, AppContext as _, Bounds, Entity, Focusable as _, Global, KeyBinding, Window, WindowBounds,
+    WindowKind, WindowOptions, px, size,
 };
-use gpui_component::{ActiveTheme as _, Root};
+use gpui_component::{Root, ThemeMode};
 use gpui_component_assets::Assets;
 
-/// 最小应用壳层视图，仅用于验证 GPUI 与 gpui-component 技术栈。
-struct ShellView;
+use runquiry_ui::shell::{ShellEvent, ShellStartup, actions::RefreshWorkspace};
+use runquiry_ui::{AppShell, set_language};
+use settings::{Settings, WindowSize, default_settings_path, load_settings, save_settings};
 
-impl Render for ShellView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
-            .child("Runquiry")
-    }
+/// 快捷键：刷新当前工作区（DESIGN.md §8.2 产品键盘路径）。
+const KEY_CONTEXT: &str = "RunquiryShell";
+/// 窗口标题。
+const WINDOW_TITLE: &str = "Runquiry";
+
+/// 进程内全局设置状态：装配层持有的当前设置与文件路径。
+#[derive(Debug)]
+struct SettingsStore {
+    path: std::path::PathBuf,
+    settings: Settings,
 }
 
-fn main() {
-    let app = gpui_platform::application().with_assets(Assets);
+impl Global for SettingsStore {}
 
-    app.run(|cx| {
+fn main() {
+    let settings_path = default_settings_path();
+    let settings = load_settings(&settings_path);
+
+    let app = gpui_platform::application().with_assets(Assets);
+    app.run(move |cx| {
+        // rust-i18n：先并入 gpui-component 的内置文案，再初始化组件
+        // （进程内只允许调用一次，见 runquiry-ui::locale）。
+        runquiry_ui::locale::extend_component_translations();
         gpui_component::init(cx);
+        runquiry_ui::theme::install(cx);
+        cx.bind_keys([KeyBinding::new(
+            "ctrl-r",
+            RefreshWorkspace,
+            Some(KEY_CONTEXT),
+        )]);
         cx.activate(true);
 
-        let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+        cx.set_global(SettingsStore {
+            path: settings_path,
+            settings: settings.clone(),
+        });
+
+        // 启动设置：主题、语言（文案全局 locale 必须在首帧渲染前就位）。
+        let theme = settings.theme_mode().unwrap_or(ThemeMode::Light);
+        runquiry_ui::theme::apply(theme, None, cx);
+        set_language(settings.language());
+
+        // 窗口尺寸：设置的尺寸夹取到最小窗口内；无设置用默认值。
+        let window_size = settings.window.unwrap_or(WindowSize::DEFAULT).clamped();
+        let bounds = Bounds::centered(
+            None,
+            size(px_dim(window_size.width), px_dim(window_size.height)),
+            cx,
+        );
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
-            window_min_size: Some(size(px(960.), px(640.))),
+            window_min_size: Some(size(
+                px_dim(WindowSize::MIN.width),
+                px_dim(WindowSize::MIN.height),
+            )),
             kind: WindowKind::Normal,
             ..Default::default()
         };
 
         // Root 必须是窗口第一级视图（gpui-component Root 契约）。
-        match cx.open_window(options, |window, cx| {
-            let shell = cx.new(|_| ShellView);
+        let startup = ShellStartup {
+            theme,
+            language: settings.language(),
+            workspace: settings.last_workspace(),
+        };
+        let mut shell_entity = None;
+        let opened = cx.open_window(options, |window, cx| {
+            window.set_window_title(WINDOW_TITLE);
+            let shell = cx.new(|cx| AppShell::new(startup, cx));
+            shell_entity = Some(shell.clone());
             cx.new(|cx| Root::new(shell, window, cx))
-        }) {
+        });
+
+        match opened {
             Ok(window) => {
-                let _ = window.update(cx, |_, window, _| {
+                let _ = window.update(cx, |_, window, cx| {
                     window.activate_window();
-                    window.set_window_title("Runquiry");
+                    wire_settings(shell_entity, window, cx);
                 });
             }
             Err(err) => {
@@ -59,4 +105,77 @@ fn main() {
             }
         }
     });
+}
+
+/// 装配层与壳层的全部接线：订阅设置变化事件落盘、初始焦点、窗口关闭退出。
+fn wire_settings(shell: Option<Entity<AppShell>>, window: &mut Window, cx: &mut App) {
+    let Some(shell) = shell else {
+        return;
+    };
+
+    // 设置变化事件：主题/语言/工作区立即落盘。落盘前从壳层读取渲染帧跟踪的
+    // 窗口尺寸一并写入（X11 后端的 should_close 回调不触发，尺寸在运行期随
+    // 任意设置变更持久化）。
+    cx.subscribe(&shell, |shell, event: &ShellEvent, cx| {
+        match *event {
+            ShellEvent::ThemeChanged(mode) => {
+                cx.global_mut::<SettingsStore>().settings.theme = Some(theme_key(mode).to_string());
+            }
+            ShellEvent::LanguageChanged(lang) => {
+                cx.global_mut::<SettingsStore>().settings.language =
+                    Some(String::from(lang.code()));
+            }
+            ShellEvent::WorkspaceChanged(workspace) => {
+                cx.global_mut::<SettingsStore>().settings.last_workspace =
+                    Some(String::from(workspace.key()));
+            }
+        }
+        let window_size = shell.read(cx).window_size();
+        cx.global_mut::<SettingsStore>().settings.window = Some(WindowSize {
+            width: window_size.0,
+            height: window_size.1,
+        });
+        persist_settings(cx);
+    })
+    .detach();
+
+    // 初始焦点落在工具栏（DESIGN.md §8.2：启动时初始焦点在视觉顺序首个区域）。
+    shell.update(cx, |shell, cx| {
+        let focus = shell.focus_handle(cx);
+        window.focus(&focus, cx);
+    });
+
+    // 窗口关闭：把内存中的最新设置（含 render 跟踪的窗口尺寸）落盘并退出。
+    // gpui 不会因窗口全部关闭自动退出，单窗口应用在此显式 quit。
+    // 尺寸来自壳层渲染帧的跟踪值（X11 后端的 should_close 回调不触发）。
+    cx.on_window_closed(move |cx, _window_id| {
+        persist_settings(cx);
+        cx.quit();
+    })
+    .detach();
+}
+
+/// 把内存中的设置原子写入设置文件；失败不中断运行（仅提示）。
+fn persist_settings(cx: &mut App) {
+    let (path, settings) = {
+        let store = cx.global_mut::<SettingsStore>();
+        (store.path.clone(), store.settings.clone())
+    };
+    if let Err(err) = save_settings(&path, &settings) {
+        eprintln!("设置写入失败: {err}");
+    }
+}
+
+/// u32 尺寸 → 逻辑像素：窗口尺寸远小于 f32 尾数精度边界，cast 无实际损失。
+#[allow(clippy::cast_precision_loss)]
+const fn px_dim(value: u32) -> gpui::Pixels {
+    px(value as f32)
+}
+
+/// 主题的设置文件取值。
+const fn theme_key(mode: ThemeMode) -> &'static str {
+    match mode {
+        ThemeMode::Light => "light",
+        ThemeMode::Dark => "dark",
+    }
 }

@@ -5437,6 +5437,8 @@ dependencies = [
  "runquiry-core",
  "runquiry-platform",
  "runquiry-ui",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5461,6 +5463,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "runquiry-core",
+ "rust-i18n",
 ]
 
 [[package]]

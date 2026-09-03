@@ -1,0 +1,216 @@
+# Runquiry 产品界面文案。
+# rust-i18n v2 格式（与 gpui-component 的 ui.yml 一致）：键直接列出，每个键下按
+# locale 给值；en 为兜底（`rust_i18n::i18n!("locales", fallback = "en")`）。
+# 键集合必须覆盖全部文案（locale.rs 单元测试强制 en 与 zh-CN 键一致）。
+_version: 2
+app.name:
+  en: Runquiry
+  zh-CN: Runquiry
+sidebar.workspaces:
+  en: Workspaces
+  zh-CN: 工作区
+workspace.processes:
+  en: Processes
+  zh-CN: 进程
+workspace.ports:
+  en: Ports
+  zh-CN: 端口
+workspace.containers:
+  en: Containers
+  zh-CN: 容器
+workspace.file_locks:
+  en: File Locks
+  zh-CN: 文件锁
+toolbar.refresh:
+  en: Refresh
+  zh-CN: 刷新
+toolbar.theme.light:
+  en: Light
+  zh-CN: 浅色
+toolbar.theme.dark:
+  en: Dark
+  zh-CN: 深色
+toolbar.language.en:
+  en: English
+  zh-CN: English
+toolbar.language.zh_cn:
+  en: 中文
+  zh-CN: 中文
+main.not_wired.title:
+  en: Collector not connected
+  zh-CN: 采集器尚未接入
+main.not_wired.description:
+  en: The platform collector for this workspace is not integrated yet. It will start collecting automatically once connected.
+  zh-CN: 此工作区的平台采集实现尚未接入 Runquiry，接入后会自动开始采集。
+detail.title:
+  en: Details
+  zh-CN: 详情
+detail.placeholder.title:
+  en: No selection
+  zh-CN: 未选择对象
+detail.placeholder.description:
+  en: Select a row to inspect its details.
+  zh-CN: 选择一行后查看详情。
+status.workspace:
+  en: Workspace
+  zh-CN: 工作区
+status.interval:
+  en: Refresh interval
+  zh-CN: 刷新间隔
+# —— 以下为 A4 组件实验台（gallery）文案；产品界面文案在上方命名空间。 ——
+gallery.title:
+  en: Component gallery
+  zh-CN: 组件实验台
+gallery.theme_group:
+  en: Theme
+  zh-CN: 主题
+gallery.theme_light:
+  en: Light
+  zh-CN: 浅色
+gallery.theme_dark:
+  en: Dark
+  zh-CN: 深色
+gallery.lang_group:
+  en: Language
+  zh-CN: 语言
+gallery.lang_en:
+  en: English
+  zh-CN: English
+gallery.lang_zh_cn:
+  en: 中文
+  zh-CN: 中文
+gallery.state_group:
+  en: Data state
+  zh-CN: 数据状态
+gallery.state_ready:
+  en: Ready
+  zh-CN: 正常
+gallery.state_loading:
+  en: Loading
+  zh-CN: 加载中
+gallery.state_empty:
+  en: Empty
+  zh-CN: 空
+gallery.state_error:
+  en: Error
+  zh-CN: 错误
+gallery.state_unsupported:
+  en: Unsupported
+  zh-CN: 不支持
+gallery.state_permission_denied:
+  en: Permission denied
+  zh-CN: 权限不足
+gallery.overlay_group:
+  en: Overlays
+  zh-CN: 覆盖层
+gallery.open_sheet:
+  en: "Sheet…"
+  zh-CN: "侧板…"
+gallery.open_alert:
+  en: "Alert dialog…"
+  zh-CN: "确认对话框…"
+gallery.open_notification:
+  en: Notification
+  zh-CN: 通知
+gallery.nav_group:
+  en: Workspaces
+  zh-CN: 工作区
+gallery.nav_overview:
+  en: Overview
+  zh-CN: 概览
+gallery.nav_processes:
+  en: Processes
+  zh-CN: 进程
+gallery.nav_ports:
+  en: Ports
+  zh-CN: 端口
+gallery.nav_containers:
+  en: Containers
+  zh-CN: 容器
+gallery.nav_file_locks:
+  en: File Locks
+  zh-CN: 文件锁
+gallery.table_title:
+  en: Processes
+  zh-CN: 进程
+gallery.tree_title:
+  en: Sources
+  zh-CN: 来源
+gallery.sheet_title:
+  en: Process detail
+  zh-CN: 进程详情
+gallery.sheet_no_selection:
+  en: No row selected. Select a row in the table to see its details.
+  zh-CN: 尚未选择行。请先在数据表中选择一行查看详情。
+gallery.close:
+  en: Close
+  zh-CN: 关闭
+gallery.column_name:
+  en: Name
+  zh-CN: 名称
+gallery.column_path:
+  en: Executable path
+  zh-CN: 可执行路径
+gallery.column_pid:
+  en: PID
+  zh-CN: PID
+gallery.column_port:
+  en: Port
+  zh-CN: 端口
+gallery.loading_title:
+  en: Collecting process data
+  zh-CN: 正在采集进程数据
+gallery.loading_description:
+  en: The first sample is being read. Values appear once it completes.
+  zh-CN: 第一次采样读取中，采样完成后显示数值。
+gallery.empty_title:
+  en: No processes match
+  zh-CN: 没有匹配的进程
+gallery.empty_description:
+  en: Nothing matches the current query. Adjust the filters and try again.
+  zh-CN: 当前筛选没有结果，请调整条件后重试。
+gallery.error_title:
+  en: Couldn't read the process table
+  zh-CN: 无法读取进程列表
+gallery.error_description:
+  en: The inventory source returned an error. Retry to collect again.
+  zh-CN: 采集源返回错误，可重试以重新采集。
+gallery.unsupported_title:
+  en: Not available on this platform
+  zh-CN: 当前平台不支持
+gallery.unsupported_description:
+  en: This workspace has no collector for the current platform.
+  zh-CN: 此工作区在当前平台没有可用采集器。
+gallery.permission_denied_title:
+  en: Permission denied
+  zh-CN: 权限不足
+gallery.permission_denied_description:
+  en: Run Runquiry with access to the process inventory to continue.
+  zh-CN: 需要进程清单读取权限才能继续。
+gallery.alert_title:
+  en: Terminate “containerd-shim”?
+  zh-CN: 终止 “containerd-shim”？
+gallery.alert_description:
+  en: The process will stop immediately. Child processes keep running.
+  zh-CN: 该进程会立即停止，子进程不受影响。
+gallery.alert_confirm:
+  en: Terminate
+  zh-CN: 终止
+gallery.focus_prefix:
+  en: Focus
+  zh-CN: 焦点
+gallery.focus_none:
+  en: none
+  zh-CN: 无
+gallery.focus_unnamed:
+  en: unnamed region
+  zh-CN: 未命名区域
+gallery.state_prefix:
+  en: Data state
+  zh-CN: 数据状态
+gallery.interaction_note:
+  en: Actions are unavailable while data is loading or unsupported.
+  zh-CN: 数据加载中或平台不支持时，操作不可用。
+gallery.notice_ready_body:
+  en: "Synthetic sample loaded: 8 processes across 4 sources."
+  zh-CN: 已加载合成示例：8 个进程、4 个来源。
