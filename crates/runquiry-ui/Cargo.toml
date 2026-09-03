@@ -8,6 +8,13 @@ publish.workspace = true
 
 [dependencies]
 runquiry-core.workspace = true
+# A4 依赖申请（经依赖守门人批准）：设计系统需要 GPUI/gpui-component。
+# gpui 与 gpui-component 两项与 runquiry-app 的内联声明保持一致（同 version/rev；
+# cargo-deny 0.20 无法解析 git 源的 workspace 继承依赖），版本/rev 变更必须与
+# 根 Cargo.toml 注释同步。runquiry-app 另持有的 gpui_platform /
+# gpui-component-assets 仅为装配层所需，本 crate 不引入。
+gpui = { version = "0.2.2", git = "https://github.com/zed-industries/zed" }
+gpui-component = { version = "0.5.2", git = "https://github.com/longbridge/gpui-component", rev = "91217366a5765600a127bf108ce00b7143a93381" }
 
 [lints]
 workspace = true
