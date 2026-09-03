@@ -1,0 +1,24 @@
+{
+  "platform": "windows",
+  "scenario": "pid_reuse",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "pid": 6260,
+      "start_time": { "secs_since_epoch": 1700000000, "nanos_since_epoch": 0 },
+      "executable": "C:\\opt\\runquiry-fixtures\\bin\\fxt-daemon.exe"
+    },
+    {
+      "pid": 6260,
+      "start_time": { "secs_since_epoch": 1700003600, "nanos_since_epoch": 0 },
+      "executable": "C:\\opt\\runquiry-fixtures\\bin\\fxt-sysmon.exe"
+    },
+    {
+      "pid": 6260,
+      "start_time": null,
+      "executable": null
+    }
+  ],
+  "issues": []
+}

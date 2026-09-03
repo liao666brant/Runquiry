@@ -1,0 +1,31 @@
+{
+  "platform": "linux",
+  "scenario": "normal",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "identity": {
+        "pid": 4242,
+        "start_time": { "secs_since_epoch": 1700000000, "nanos_since_epoch": 250000000 },
+        "executable": "/opt/runquiry-fixtures/bin/fxt-daemon"
+      },
+      "parent_pid": 1,
+      "command": "fxt-daemon",
+      "command_line": "fxt-daemon --config /opt/runquiry-fixtures/etc/fxt-daemon.conf",
+      "user": "fixture-user"
+    },
+    {
+      "identity": {
+        "pid": 4243,
+        "start_time": { "secs_since_epoch": 1700000005, "nanos_since_epoch": 0 },
+        "executable": "/opt/runquiry-fixtures/bin/fxt-worker"
+      },
+      "parent_pid": 4242,
+      "command": "fxt-worker",
+      "command_line": null,
+      "user": null
+    }
+  ],
+  "issues": []
+}

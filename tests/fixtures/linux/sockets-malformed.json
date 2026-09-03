@@ -1,0 +1,27 @@
+{
+  "platform": "linux",
+  "scenario": "malformed",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "inode": 910001,
+      "port": 8443,
+      "address": "0.0.0.0",
+      "remote_addr": null,
+      "state": "LISTEN",
+      "protocol": "Tcp",
+      "owner_pid": 4242
+    },
+    {
+      "inode": 910004,
+      "port": 0,
+      "address": "0.0.0.0",
+      "remote_addr": null,
+      "state": "LISTEN",
+      "protocol": "Tcp",
+      "owner_pid": 4242
+    }
+  ],
+  "issues": []
+}

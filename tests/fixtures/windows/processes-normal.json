@@ -1,0 +1,20 @@
+{
+  "platform": "windows",
+  "scenario": "normal",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "identity": {
+        "pid": 6260,
+        "start_time": { "secs_since_epoch": 1700000000, "nanos_since_epoch": 0 },
+        "executable": "C:\\opt\\runquiry-fixtures\\bin\\fxt-daemon.exe"
+      },
+      "parent_pid": 908,
+      "command": "fxt-daemon",
+      "command_line": "fxt-daemon.exe --service fxt-runquiry",
+      "user": "FIXTURE-HOST\\fixture-user"
+    }
+  ],
+  "issues": []
+}

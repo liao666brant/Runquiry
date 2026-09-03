@@ -1,0 +1,22 @@
+{
+  "platform": "linux",
+  "scenario": "partial",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "identity": {
+        "pid": 4242,
+        "start_time": { "secs_since_epoch": 1700000000, "nanos_since_epoch": 250000000 },
+        "executable": "/opt/runquiry-fixtures/bin/fxt-daemon"
+      },
+      "parent_pid": 1,
+      "command": "fxt-daemon",
+      "command_line": "fxt-daemon --config /opt/runquiry-fixtures/etc/fxt-daemon.conf",
+      "user": "fixture-user"
+    }
+  ],
+  "issues": [
+    { "code": "PermissionDenied", "message": "部分进程条目读取受限（合成场景）" }
+  ]
+}

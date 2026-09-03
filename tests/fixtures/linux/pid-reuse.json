@@ -1,0 +1,24 @@
+{
+  "platform": "linux",
+  "scenario": "pid_reuse",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "pid": 4242,
+      "start_time": { "secs_since_epoch": 1700000000, "nanos_since_epoch": 250000000 },
+      "executable": "/opt/runquiry-fixtures/bin/fxt-daemon"
+    },
+    {
+      "pid": 4242,
+      "start_time": { "secs_since_epoch": 1700003600, "nanos_since_epoch": 0 },
+      "executable": "/opt/runquiry-fixtures/bin/fxt-daemon"
+    },
+    {
+      "pid": 4242,
+      "start_time": null,
+      "executable": "/opt/runquiry-fixtures/bin/fxt-daemon"
+    }
+  ],
+  "issues": []
+}

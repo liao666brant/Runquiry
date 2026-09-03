@@ -1,0 +1,23 @@
+{
+  "platform": "linux",
+  "scenario": "normal",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "pid": 5150,
+      "process": "fxt-daemon",
+      "path": "/opt/runquiry-fixtures/var/fxt-daemon.lock",
+      "lock_type": "Flock",
+      "mode": "Write"
+    },
+    {
+      "pid": 5151,
+      "process": "fxt-worker",
+      "path": "/opt/runquiry-fixtures/var/fxt-worker.data",
+      "lock_type": "Posix",
+      "mode": "Read"
+    }
+  ],
+  "issues": []
+}

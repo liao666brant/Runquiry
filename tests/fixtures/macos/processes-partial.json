@@ -1,0 +1,22 @@
+{
+  "platform": "macos",
+  "scenario": "partial",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "identity": {
+        "pid": 5150,
+        "start_time": { "secs_since_epoch": 1700000000, "nanos_since_epoch": 0 },
+        "executable": "/Users/fixture-user/Library/RunquiryFixtures/bin/fxt-daemon"
+      },
+      "parent_pid": 1,
+      "command": "fxt-daemon",
+      "command_line": null,
+      "user": "fixture-user"
+    }
+  ],
+  "issues": [
+    { "code": "PermissionDenied", "message": "部分进程条目读取受限（合成场景）" }
+  ]
+}

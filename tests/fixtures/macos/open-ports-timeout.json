@@ -1,0 +1,18 @@
+{
+  "platform": "macos",
+  "scenario": "timeout",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "pid": 5150,
+      "port": 8443,
+      "address": "127.0.0.1",
+      "protocol": "Tcp",
+      "state": "LISTEN"
+    }
+  ],
+  "issues": [
+    { "code": "Timeout", "message": "lsof 采集超时，仅返回已取得的端口（合成场景）" }
+  ]
+}

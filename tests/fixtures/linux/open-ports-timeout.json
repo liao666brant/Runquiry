@@ -1,0 +1,10 @@
+{
+  "platform": "linux",
+  "scenario": "timeout",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": null,
+  "issues": [
+    { "code": "Timeout", "message": "开放端口采集超过 3s 上限（合成场景）" }
+  ]
+}

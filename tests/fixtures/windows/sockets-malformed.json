@@ -1,0 +1,27 @@
+{
+  "platform": "windows",
+  "scenario": "malformed",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [
+    {
+      "inode": null,
+      "port": 5353,
+      "address": "0.0.0.0",
+      "remote_addr": null,
+      "state": "LISTEN",
+      "protocol": "Udp",
+      "owner_pid": null
+    },
+    {
+      "inode": null,
+      "port": 8443,
+      "address": "\\\\.\\pipe\\fxt-runquiry",
+      "remote_addr": null,
+      "state": "LISTEN",
+      "protocol": "Unix",
+      "owner_pid": 6260
+    }
+  ],
+  "issues": []
+}

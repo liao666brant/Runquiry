@@ -1,0 +1,21 @@
+{
+  "platform": "linux",
+  "scenario": "tool_missing",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "capability": { "Partial": "仅探测到 docker（合成场景）" },
+  "data": [
+    {
+      "key": { "runtime": "docker", "id": "fxt0001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      "name": "fxt-web",
+      "image": "registry.example.internal/fxt-web:1.0",
+      "status": "Up 2 hours",
+      "health": null,
+      "host_pid": 4242,
+      "started_at": { "secs_since_epoch": 1700000000, "nanos_since_epoch": 0 }
+    }
+  ],
+  "issues": [
+    { "code": "ExternalToolFailed", "message": "运行时 podman CLI 缺失，其容器未计入（合成场景）" }
+  ]
+}

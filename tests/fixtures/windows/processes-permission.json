@@ -1,0 +1,10 @@
+{
+  "platform": "windows",
+  "scenario": "permission",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": null,
+  "issues": [
+    { "code": "PermissionDenied", "message": "进程基线采集整体被拒绝（合成场景）" }
+  ]
+}

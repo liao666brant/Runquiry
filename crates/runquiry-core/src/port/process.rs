@@ -31,11 +31,18 @@ pub trait ProcessDetailsProvider {
 
 /// 进程控制端口：执行两步确认后的进程操作。
 ///
-/// 前置条件：`identity` 必须是执行前重读得到的身份；实现必须在执行动作前用
-/// [`ProcessIdentity::same_process`] 校验重读身份与操作前快照一致，否则返回
-/// [`InspectError::ProcessChanged`]（PID 复用防护）。重读得到的 `start_time`
-/// 为 `None` 时身份不可验证，`same_process` 返回 `false`，实现必须拒绝执行，
-/// 不得在身份不可证实的条件下发出信号或改优先级。
+/// 身份参数语义：`execute` 的 `identity` 是**确认流程持有的 expected 快照**——
+/// 即用户在确认对话框中看到并批准的那个身份，来自最近一次基线/详情快照；
+/// 它不是实现重读的结果。不引入第二个调用方身份参数：expected 与 current 的
+/// 比较由实现内部完成，调用方只传入确认流程的快照。
+///
+/// 前置条件（PID 复用防护，parity：`pidIdentityChanged` 比较 PID + `StartedAt`）：
+/// * 实现必须在执行动作前按 `identity.pid()` 重读 current identity，再用
+///   [`ProcessIdentity::same_process`] 比较 expected 与 current；
+/// * 比较不一致（含重读得到的 `start_time` 为 `None`，即 current 身份不可验证、
+///   `same_process` 恒为 `false`）时返回 [`InspectError::ProcessChanged`]，且
+///   **不得产生任何副作用**：不发出信号、不改优先级、不计数成功动作；
+///   `ProcessChanged` 携带重读得到的 current 身份供 UI 呈现。
 ///
 /// 后置条件：权限不足返回 [`InspectError::PermissionDenied`]，应用不自动提权；
 /// Windows 平台通过 [`CapabilityStatus::Unsupported`](crate::model::capability::CapabilityStatus::Unsupported)
@@ -44,7 +51,7 @@ pub trait ProcessController {
     /// 该能力的平台可用状态。
     fn capability(&self) -> CapabilityStatus;
 
-    /// 对指定身份执行动作。
+    /// 以确认流程持有的 expected 身份执行动作（实现内部重读比对，见 trait 文档）。
     fn execute(
         &self,
         identity: &ProcessIdentity,

@@ -1,0 +1,8 @@
+{
+  "platform": "linux",
+  "scenario": "empty",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "data": [],
+  "issues": []
+}

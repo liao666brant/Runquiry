@@ -1,0 +1,9 @@
+{
+  "platform": "windows",
+  "scenario": "capability_unsupported",
+  "captured_at_epoch_ms": 1700000000000,
+  "generation": 7,
+  "capability": { "Unsupported": "Windows 无文件锁采集（合成场景）" },
+  "data": null,
+  "issues": []
+}
