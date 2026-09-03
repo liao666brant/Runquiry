@@ -32,7 +32,7 @@ use gpui_component::{
 };
 
 use gpui_component_assets::Assets;
-use runquiry_ui::{DataState, Dict, Lang, StateView};
+use runquiry_ui::{DataState, Lang, StateView, state_copy, state_name, tr};
 
 use crate::cli::{Args, MIN_SIZE, parse_args, print_cli_error};
 use crate::overlays::{Overlay, open_alert_overlay, open_sheet_overlay, push_notice};
@@ -94,14 +94,14 @@ impl Nav {
         }
     }
 
-    /// 导航文案。
-    const fn label(self, dict: &Dict) -> &'static str {
+    /// 导航文案（按当前全局 locale 取翻译）。
+    fn label(self) -> String {
         match self {
-            Self::Overview => dict.nav_overview,
-            Self::Processes => dict.nav_processes,
-            Self::Ports => dict.nav_ports,
-            Self::Containers => dict.nav_containers,
-            Self::FileLocks => dict.nav_file_locks,
+            Self::Overview => tr("gallery.nav_overview"),
+            Self::Processes => tr("gallery.nav_processes"),
+            Self::Ports => tr("gallery.nav_ports"),
+            Self::Containers => tr("gallery.nav_containers"),
+            Self::FileLocks => tr("gallery.nav_file_locks"),
         }
     }
 
@@ -195,7 +195,7 @@ impl Gallery {
     /// 创建 gallery 视图。
     fn new(args: &Args, window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
         let table = cx.new(|cx| {
-            TableState::new(GalleryTable::new(args.lang, args.state), window, cx)
+            TableState::new(GalleryTable::new(args.state), window, cx)
                 .row_selectable(true)
                 .sortable(true)
                 .col_resizable(true)
@@ -221,9 +221,12 @@ impl Gallery {
         }
     }
 
-    /// 当前语言与状态，供启动覆盖层读取。
-    const fn overlay_context(&self) -> (Lang, DataState) {
-        (self.lang, self.state)
+    /// 表格当前选中行对应的合成数据（无选中行为 `None`）。
+    fn selected_row(&self, cx: &App) -> Option<data::Row> {
+        self.table
+            .read(cx)
+            .selected_row()
+            .and_then(|ix| data::ROWS.get(ix).copied())
     }
 
     /// 切换主题：主题切换不改变工作区状态。
@@ -236,16 +239,17 @@ impl Gallery {
         cx.notify();
     }
 
-    /// 切换语言：字典与表头同步刷新，不丢失状态与选择。
+    /// 切换语言：切换全局 locale 并重建列标题，不丢失状态与选择。
     fn set_lang(&mut self, lang: Lang, cx: &mut Context<'_, Self>) {
         if self.lang == lang {
             return;
         }
         self.lang = lang;
+        // locale 是全局状态，不触发 GPUI 重绘：切换后必须显式 notify。
+        runquiry_ui::set_language(lang);
         let state = self.state;
         self.table.update(cx, |table, cx| {
-            table.delegate_mut().lang = lang;
-            let columns = GalleryTable::new(lang, state).columns;
+            let columns = GalleryTable::new(state).columns;
             table.delegate_mut().columns = columns;
             table.refresh(cx);
         });
@@ -281,9 +285,8 @@ impl Gallery {
     /// 顺序号为它们命名（见 [`CONTROLS`]），焦点行因此能区分具体控件；仍未
     /// 命名的焦点（树等库内区域）以 `unnamed region#tab-N` 兜底。
     fn describe_focus(&self, window: &Window, cx: &App) -> String {
-        let dict = Dict::of(self.lang);
         let Some(focused) = window.focused(cx) else {
-            return dict.focus_none.to_string();
+            return tr("gallery.focus_none");
         };
         if focused == self.sidebar_focus {
             FOCUS_SIDEBAR.to_string()
@@ -296,11 +299,11 @@ impl Gallery {
         } else if let Some(control) = CONTROLS.iter().find(|c| c.tab == focused.tab_index) {
             control.id.to_string()
         } else {
-            format!("{}#tab-{}", dict.focus_unnamed, focused.tab_index)
+            format!("{}#tab-{}", tr("gallery.focus_unnamed"), focused.tab_index)
         }
     }
 
-    fn render_toolbar(&self, dict: &Dict, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn render_toolbar(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         h_flex()
             .id(FOCUS_TOOLBAR)
             .track_focus(&self.toolbar_focus)
@@ -312,66 +315,80 @@ impl Gallery {
             .border_b_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().title_bar)
-            .child(self.theme_group(dict, cx))
-            .child(self.lang_group(dict, cx))
-            .child(self.state_group(dict, cx))
-            .child(Self::overlay_group(dict, cx))
+            .child(self.theme_group(cx))
+            .child(self.lang_group(cx))
+            .child(self.state_group(cx))
+            .child(Self::overlay_group(cx))
     }
 
     /// 主题切换组。
-    fn theme_group(&self, dict: &Dict, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn theme_group(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let mode = self.mode;
-        let light = control_button(THEME_LIGHT, dict.theme_light, mode == ThemeMode::Light)
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.set_mode(ThemeMode::Light, window, cx);
-            }));
-        let dark = control_button(THEME_DARK, dict.theme_dark, mode == ThemeMode::Dark).on_click(
-            cx.listener(|this, _, window, cx| {
-                this.set_mode(ThemeMode::Dark, window, cx);
-            }),
-        );
+        let light = control_button(
+            THEME_LIGHT,
+            tr("gallery.theme_light"),
+            mode == ThemeMode::Light,
+        )
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.set_mode(ThemeMode::Light, window, cx);
+        }));
+        let dark = control_button(
+            THEME_DARK,
+            tr("gallery.theme_dark"),
+            mode == ThemeMode::Dark,
+        )
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.set_mode(ThemeMode::Dark, window, cx);
+        }));
 
-        group(dict.theme_group, vec![light.into(), dark.into()], cx)
+        group(
+            tr("gallery.theme_group"),
+            vec![light.into(), dark.into()],
+            cx,
+        )
     }
 
     /// 语言切换组：切换不丢失当前状态与选择。
-    fn lang_group(&self, dict: &Dict, cx: &Context<'_, Self>) -> impl IntoElement {
-        let en = control_button(LANG_EN, dict.lang_en, self.lang == Lang::En).on_click(
+    fn lang_group(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let en = control_button(LANG_EN, tr("gallery.lang_en"), self.lang == Lang::En).on_click(
             cx.listener(|this, _, _, cx| {
                 this.set_lang(Lang::En, cx);
             }),
         );
-        let zh = control_button(LANG_ZH_CN, dict.lang_zh_cn, self.lang == Lang::ZhCn).on_click(
-            cx.listener(|this, _, _, cx| {
-                this.set_lang(Lang::ZhCn, cx);
-            }),
-        );
+        let zh = control_button(
+            LANG_ZH_CN,
+            tr("gallery.lang_zh_cn"),
+            self.lang == Lang::ZhCn,
+        )
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.set_lang(Lang::ZhCn, cx);
+        }));
 
-        group(dict.lang_group, vec![en.into(), zh.into()], cx)
+        group(tr("gallery.lang_group"), vec![en.into(), zh.into()], cx)
     }
 
     /// 五种状态 + 正常态的切换组。
-    fn state_group(&self, dict: &Dict, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn state_group(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let state = self.state;
         let items: Vec<AnyElement> = [
-            (DataState::Ready, STATE_READY, dict.state_ready),
-            (DataState::Loading, STATE_LOADING, dict.state_loading),
-            (DataState::Empty, STATE_EMPTY, dict.state_empty),
-            (DataState::Error, STATE_ERROR, dict.state_error),
+            (DataState::Ready, STATE_READY, "gallery.state_ready"),
+            (DataState::Loading, STATE_LOADING, "gallery.state_loading"),
+            (DataState::Empty, STATE_EMPTY, "gallery.state_empty"),
+            (DataState::Error, STATE_ERROR, "gallery.state_error"),
             (
                 DataState::Unsupported,
                 STATE_UNSUPPORTED,
-                dict.state_unsupported,
+                "gallery.state_unsupported",
             ),
             (
                 DataState::PermissionDenied,
                 STATE_PERMISSION_DENIED,
-                dict.state_permission_denied,
+                "gallery.state_permission_denied",
             ),
         ]
         .into_iter()
-        .map(|(target, control, label)| {
-            control_button(control, label, state == target).on_click(cx.listener(
+        .map(|(target, control, key)| {
+            control_button(control, tr(key), state == target).on_click(cx.listener(
                 move |this, _, _, cx| {
                     this.set_state(target, cx);
                 },
@@ -380,35 +397,35 @@ impl Gallery {
         .map(Into::into)
         .collect();
 
-        group(dict.state_group, items, cx)
+        group(tr("gallery.state_group"), items, cx)
     }
 
     /// 覆盖层触发按钮组。
-    fn overlay_group(dict: &Dict, cx: &Context<'_, Self>) -> impl IntoElement {
-        let sheet = control_button(OPEN_SHEET, dict.open_sheet, false).on_click(cx.listener(
-            |this, _, window, cx| {
-                open_sheet_overlay(this.overlay_context(), window, cx);
-            },
-        ));
-        let alert = control_button(OPEN_ALERT, dict.open_alert, false).on_click(cx.listener(
-            |this, _, window, cx| {
-                open_alert_overlay(this.overlay_context(), window, cx);
-            },
-        ));
-        let notice = control_button(OPEN_NOTIFICATION, dict.open_notification, false).on_click(
+    fn overlay_group(cx: &Context<'_, Self>) -> impl IntoElement {
+        let sheet = control_button(OPEN_SHEET, tr("gallery.open_sheet"), false).on_click(
             cx.listener(|this, _, window, cx| {
-                push_notice(this.overlay_context(), window, cx);
+                // Sheet 详情与表格当前选中行绑定：打开时读取选择。
+                open_sheet_overlay(this.state, this.selected_row(cx), window, cx);
             }),
         );
+        let alert = control_button(OPEN_ALERT, tr("gallery.open_alert"), false).on_click(
+            cx.listener(|this, _, window, cx| {
+                open_alert_overlay(this.state, window, cx);
+            }),
+        );
+        let notice = control_button(OPEN_NOTIFICATION, tr("gallery.open_notification"), false)
+            .on_click(cx.listener(|this, _, window, cx| {
+                push_notice(this.state, window, cx);
+            }));
 
         group(
-            dict.overlay_group,
+            tr("gallery.overlay_group"),
             vec![notice.into(), alert.into(), sheet.into()],
             cx,
         )
     }
 
-    fn render_sidebar(&self, dict: &Dict, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn render_sidebar(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let nav = self.nav;
 
         div()
@@ -422,26 +439,26 @@ impl Gallery {
             .child(
                 Sidebar::new("gallery-sidebar")
                     .w_56()
-                    .header(SidebarHeader::new().child(dict.gallery_title))
+                    .header(SidebarHeader::new().child(tr("gallery.title")))
                     .child(
-                        SidebarGroup::new(dict.nav_group).child(SidebarMenu::new().children(
-                            NAV.map(|item| {
-                                SidebarMenuItem::new(item.label(dict))
+                        SidebarGroup::new(tr("gallery.nav_group")).child(
+                            SidebarMenu::new().children(NAV.map(|item| {
+                                SidebarMenuItem::new(item.label())
                                     .icon(item.icon())
                                     .active(nav == item)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.nav = item;
                                         cx.notify();
                                     }))
-                            }),
-                        )),
+                            })),
+                        ),
                     ),
             )
     }
 
-    fn render_content(&self, dict: &Dict, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn render_content(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let state = self.state;
-        let (title, description) = self.lang.state_copy(state);
+        let (title, description) = state_copy(state);
 
         v_flex()
             .id(FOCUS_CONTENT)
@@ -458,7 +475,7 @@ impl Gallery {
                     .flex_1()
                     .min_h_0()
                     .gap_2()
-                    .child(section_title(dict.table_title, cx))
+                    .child(section_title(tr("gallery.table_title"), cx))
                     .child(
                         div()
                             .flex_1()
@@ -470,7 +487,7 @@ impl Gallery {
                 v_flex()
                     .h_56()
                     .gap_2()
-                    .child(section_title(dict.tree_title, cx))
+                    .child(section_title(tr("gallery.tree_title"), cx))
                     .child(
                         div()
                             .h_full()
@@ -483,32 +500,27 @@ impl Gallery {
                             } else {
                                 StateView::new(state, title)
                                     .description(description)
-                                    .note(dict.interaction_note)
+                                    .note(tr("gallery.interaction_note"))
                                     .into_any_element()
                             }),
                     ),
             )
     }
 
-    fn render_status_bar(
-        &self,
-        dict: &Dict,
-        focus: &str,
-        _cx: &mut Context<'_, Self>,
-    ) -> impl IntoElement {
+    fn render_status_bar(&self, focus: &str, _cx: &mut Context<'_, Self>) -> impl IntoElement {
         StatusBar::new()
-            .left(format!("{}: {}", dict.focus_prefix, focus))
+            .left(format!("{}: {}", tr("gallery.focus_prefix"), focus))
             .child(format!(
                 "{}: {}",
-                dict.state_prefix,
-                dict.state_name(self.state)
+                tr("gallery.state_prefix"),
+                state_name(self.state)
             ))
             .right(format!(
                 "{} · {}",
                 if self.mode.is_dark() {
-                    dict.theme_dark
+                    tr("gallery.theme_dark")
                 } else {
-                    dict.theme_light
+                    tr("gallery.theme_light")
                 },
                 self.lang.code()
             ))
@@ -518,7 +530,6 @@ impl Gallery {
 
 impl Render for Gallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let dict = Dict::of(self.lang);
         let focus = self.describe_focus(window, cx);
 
         // 覆盖层（Sheet/Dialog/Notification）由内容视图负责渲染：当前
@@ -533,15 +544,15 @@ impl Render for Gallery {
             .relative()
             .text_color(cx.theme().foreground)
             .bg(cx.theme().background)
-            .child(self.render_toolbar(&dict, cx))
+            .child(self.render_toolbar(cx))
             .child(
                 h_flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.render_sidebar(&dict, cx))
-                    .child(self.render_content(&dict, cx)),
+                    .child(self.render_sidebar(cx))
+                    .child(self.render_content(cx)),
             )
-            .child(self.render_status_bar(&dict, &focus, cx))
+            .child(self.render_status_bar(&focus, cx))
             .children(sheet_layer)
             .children(dialog_layer)
             .children(notification_layer)
@@ -549,7 +560,7 @@ impl Render for Gallery {
 }
 
 /// 一组带说明标签的紧凑控件；条目经 `Vec<AnyElement>` 传递，避免大体积控件数组上栈。
-fn group(label: &'static str, items: Vec<AnyElement>, cx: &App) -> impl IntoElement {
+fn group(label: String, items: Vec<AnyElement>, cx: &App) -> impl IntoElement {
     h_flex()
         .flex_wrap()
         .min_w_0()
@@ -565,7 +576,7 @@ fn group(label: &'static str, items: Vec<AnyElement>, cx: &App) -> impl IntoElem
 }
 
 /// 控件按钮：ID 与 tab 顺序号来自 [`Control`]，选中态由 `.selected()` 表达。
-fn control_button(control: Control, label: &'static str, selected: bool) -> Button {
+fn control_button(control: Control, label: String, selected: bool) -> Button {
     Button::new(control.id)
         .small()
         .ghost()
@@ -575,7 +586,7 @@ fn control_button(control: Control, label: &'static str, selected: bool) -> Butt
 }
 
 /// 数据区小节标题。
-fn section_title(label: &'static str, cx: &App) -> impl IntoElement {
+fn section_title(label: String, cx: &App) -> impl IntoElement {
     div()
         .text_sm()
         .text_color(cx.theme().muted_foreground)
@@ -627,6 +638,8 @@ fn main() {
         gpui_component::init(cx);
         runquiry_ui::theme::install(cx);
         runquiry_ui::theme::apply(args.mode, None, cx);
+        // 文案翻译按 --lang 初始化全局 locale（gallery 的语言按钮也走这条路径）。
+        runquiry_ui::set_language(args.lang);
         cx.bind_keys([
             KeyBinding::new("down", NavNext, Some(SIDEBAR_CONTEXT)),
             KeyBinding::new("up", NavPrev, Some(SIDEBAR_CONTEXT)),
@@ -661,15 +674,19 @@ fn main() {
                     // Root 已就位，启动参数要求的覆盖层此时才能打开；覆盖层内部会
                     // 再次更新 Root，因此推迟到本次 update 结束后执行，避免重入。
                     if let Some(overlay) = args.open {
+                        // Sheet 详情同样绑定表格当前选中行（启动时尚无选择，覆盖层会明示）。
+                        let row = gallery_entity
+                            .as_ref()
+                            .and_then(|gallery| gallery.read(cx).selected_row(cx));
                         window.defer(cx, move |window, cx| match overlay {
                             Overlay::Sheet => {
-                                open_sheet_overlay((args.lang, args.state), window, cx);
+                                open_sheet_overlay(args.state, row, window, cx);
                             }
                             Overlay::Alert => {
-                                open_alert_overlay((args.lang, args.state), window, cx);
+                                open_alert_overlay(args.state, window, cx);
                             }
                             Overlay::Notification => {
-                                push_notice((args.lang, args.state), window, cx);
+                                push_notice(args.state, window, cx);
                             }
                         });
                     }

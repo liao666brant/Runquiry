@@ -8,43 +8,41 @@
 #![allow(clippy::redundant_pub_crate)]
 
 use gpui::{
-    App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, Window,
-    div, px,
+    App, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme as _,
     table::{Column, TableDelegate, TableState},
+    tooltip::Tooltip,
 };
 
 use crate::data;
-use runquiry_ui::{DataState, Dict, Lang, StateView};
+use runquiry_ui::{DataState, StateView, state_copy, tr};
 
 /// 数据表的合成数据源。
 pub(crate) struct GalleryTable {
-    pub(crate) lang: Lang,
     pub(crate) state: DataState,
     pub(crate) columns: Vec<Column>,
 }
 
 impl GalleryTable {
-    /// 以语言与状态构建列定义与数据源。
-    pub(crate) fn new(lang: Lang, state: DataState) -> Self {
-        let dict = Dict::of(lang);
+    /// 以状态构建列定义与数据源（列标题按当前全局 locale 取翻译）。
+    pub(crate) fn new(state: DataState) -> Self {
         Self {
-            lang,
             state,
             columns: vec![
                 // 列宽是几何值而非间距 token：数据列需要与内容无关、可拖拽调整
                 // 的稳定宽度（rem 缩放由组件内部处理）。
-                Column::new("name", dict.column_name)
+                Column::new("name", tr("gallery.column_name"))
                     .width(px(240.))
                     .resizable(true),
-                Column::new("path", dict.column_path)
+                Column::new("path", tr("gallery.column_path"))
                     .width(px(430.))
                     .min_width(px(200.))
                     .resizable(true),
-                Column::new("pid", dict.column_pid).width(px(80.)),
-                Column::new("port", dict.column_port).width(px(80.)),
+                Column::new("pid", tr("gallery.column_pid")).width(px(80.)),
+                Column::new("port", tr("gallery.column_port")).width(px(80.)),
             ],
         }
     }
@@ -96,11 +94,10 @@ impl TableDelegate for GalleryTable {
         _: &mut Window,
         _: &mut Context<'_, TableState<Self>>,
     ) -> impl IntoElement {
-        let dict = Dict::of(self.lang);
-        let (title, description) = self.lang.state_copy(self.state);
+        let (title, description) = state_copy(self.state);
         StateView::new(self.state, title)
             .description(description)
-            .note(dict.interaction_note)
+            .note(tr("gallery.interaction_note"))
             .into_any_element()
     }
 
@@ -117,15 +114,23 @@ impl TableDelegate for GalleryTable {
 
         match col_ix {
             0 => div()
+                .id(SharedString::from(format!("{}-name", row.id)))
                 .text_color(cx.theme().foreground)
+                // 长中文条目同样省略截断：截断是展示策略，不改动数据；
+                // 完整值经 tooltip 恢复（与 path 列一致）。
+                .overflow_hidden()
+                .text_ellipsis()
+                .tooltip(|window, cx| Tooltip::new(row.name).build(window, cx))
                 .child(row.name)
                 .into_any_element(),
             1 => div()
+                .id(SharedString::from(format!("{}-path", row.id)))
                 .font_family(cx.theme().mono_font_family.clone())
                 .text_color(cx.theme().muted_foreground)
                 // 无空格长路径在列内省略：截断是展示策略，不改动数据。
                 .overflow_hidden()
                 .text_ellipsis()
+                .tooltip(|window, cx| Tooltip::new(row.path).build(window, cx))
                 .child(row.path)
                 .into_any_element(),
             2 => div().child(row.pid.to_string()).into_any_element(),

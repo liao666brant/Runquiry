@@ -190,3 +190,50 @@ tab_index，导致焦点行无法区分「焦点在哪个按钮」，本轮键�
 - 8 组合、5 状态、3 覆盖层、键盘路径（Tab 顺序 / Shift+Tab / Enter / 方向键 / Escape / 焦点恢复）、
   960x640 溢出检查全部实测通过，证据齐备。
 - 无阻塞缺陷；2 个中低优先级 UX/可观察性建议 + 2 个低优先级记录项（见第 7 节），均不影响 A4 验收。
+## 10. Phase 0 整改复验（2026-09-03，Batch 2）
+
+针对 §7/§5 遗留与 Batch 2 Phase 0 门禁要求的整改与真实复验。证据在
+`screenshots/phase0/`（新目录，均由真实启动 + `import -window 0x<id>` 抓取）。
+
+### 10.1 长中文 Name 列省略与完整值恢复（Phase 0 要求 1）
+
+| 检查点 | 结果 | 证据 |
+|---|---|---|
+| Name 列 overflow hidden + text ellipsis | 通过：三条长中文条目在列宽内省略截断，不与相邻列重叠 | `phase0/name-ellipsis-zh.png` |
+| Name/Path 单元格 tooltip 完整值 | 通过：hover 第一行名称，tooltip 显示完整「数据库连接池维护守护进程（长名称示例）」 | `phase0/name-tooltip-full-value.png` |
+| Sheet 与当前选中行绑定 | **部分验证**：无选中行时 Sheet 诚实显示「尚未选择行…」（不再固定展示第一行，见 `phase0/sheet-no-selection.png`）；行选中本身可正常工作（`phase0/row-selected-hover.png`，第二行钴蓝选中 + 焦点行 `data-table`）；但「选中行 → 打开 Sheet 显示该行完整值」的组合链路在本次 QA 后段因 WSLg 输入注入失效（见 10.3）未能录得，留待下次复验 |
+
+### 10.2 rust-i18n 迁移后的文案复验（Batch 2 B4 关联）
+
+- gallery 与产品壳层的字典已由手写 `Dict` 迁移到 rust-i18n（`locales/app.yml`，v2
+  格式与 gpui-component 一致），无第二套运行时字典；两种语言键完整性由
+  `locale.rs` 单元测试强制（en/zh-CN 键集合一致 + `t!` 命中而非回显键名）。
+- 迁移后中文界面截图（`phase0/name-ellipsis-zh.png`）与迁移前 A4 截图文案一致，
+  未发现缺键或回显键名的界面元素。
+
+### 10.3 QA 环境备注（WSLg 输入注入间歇性失效）
+
+本次复验后段，`xdotool` 键盘注入与工具栏按钮点击间歇性失效（同一构建上此前
+成功过：主题/语言/工作区切换、行点击均有成功记录；X 层 `getwindowfocus` 返回
+错误，焦点不在 X 侧）。产品窗口的交互验证（主题/语言/工作区切换、设置落盘、
+重启恢复、Ctrl+R）在失效发生前已完成；失效后未重试成功的检查项已在上表标注，
+不属于产品缺陷，复验时建议先人工点击窗口激活再注入输入。
+
+### 10.4 产品壳层（runquiry-app，B4）真实启动证据
+
+| 检查点 | 结果 | 证据 |
+|---|---|---|
+| 壳层布局（Sidebar/Toolbar/主数据区/详情区/StatusBar） | 通过：1280×800 下 65/35 布局，四个工作区入口齐全 | `phase0/product-shell-light-en.png` |
+| 主题切换 | 通过：Dark 按钮激活后整窗深色，设置文件立即写入 `{"theme":"dark"}` | 会话内截图，见 qa 过程 |
+| 语言切换 | 通过：整窗中文（刷新/浅色/深色/工作区/采集器尚未接入…），主题保持深色，设置写入 `"language":"zh-CN"` | `phase0/product-shell-dark-zh-ports.png` |
+| 工作区切换 | 通过：点击端口工作区，侧栏与状态栏同步，设置写入 `"last_workspace":"ports"` | 同上 |
+| 设置文件脱敏 | 通过：文件仅含 allowlist 字段（theme/language/last_workspace/window），无任何调查输入 | 会话过程 `cat` 记录 |
+| 重启恢复 | 通过：重启后直接进入深色 + 中文 + 端口工作区 | `phase0/product-restart-restore.png` |
+| 诚实空态 | 通过：主数据区「采集器尚未接入」+ Spinner（Loading 语义），详情区「未选择对象」，无演示数据 | `phase0/product-shell-*.png` |
+
+### 10.5 已知限制（本次新增，随当前锁定 GPUI/GPUI-Component 版本成立）
+
+| 条目 | 行为 | 对 Runquiry 的应对 |
+|---|---|---|
+| X11 窗口关闭链路不完整 | `on_window_should_close` 回调与 `App::on_window_closed` 在 WM_DELETE_WINDOW 后均不触发；窗口销毁但进程残留（gpui 非 macOS 本应 LastWindowClosed 自动 quit，实测未走完 `window.removed` 分支） | 设置落盘以「事件即写」为主（theme/language/last_workspace 实测可用）；窗口尺寸由壳层渲染帧跟踪、随任意设置变更持久化；QA 收尾用 `pkill` 清理进程。升级 gpui 后必须复验 |
+| WSLg 输入注入间歇失效 | 见 10.3 | 环境观察事项，非产品缺陷 |

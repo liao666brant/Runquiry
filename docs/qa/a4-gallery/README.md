@@ -156,3 +156,13 @@ libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
    导致截图与启动参数不符（QA 报告第 5 节问题 5 曾因此把 zh-CN 界面误记在 `--lang en`
    用例下）。脚本应在 `pkill` 后等待 `xdotool search --name "Runquiry Gallery"` 返回空再
    启动，并在截图前校验窗口 ID/标题与新实例对应。
+## 7. Batch 2 Phase 0 整改（2026-09-03）
+
+- **Name 列省略与完整值恢复**：`table.rs` 的名称列补齐 `overflow_hidden() +
+  text_ellipsis()`（与路径列一致）；名称/路径单元格 hover tooltip 显示完整值；
+  Sheet 详情与表格当前选中行绑定（无选中行时诚实提示，不再固定展示第一行）。
+  证据：`screenshots/phase0/`，说明见 qa-report.md §10。
+- **文案迁移 rust-i18n**：原「手写 Dict 字典占位（B4 迁移前）」已兑现——字典在
+  `crates/runquiry-ui/locales/app.yml`（rust-i18n v2 格式），gallery 经
+  `runquiry_ui::tr()` 取文案，运行时不再存在第二套字典。
+- 已知环境限制（X11 关闭链路、WSLg 输入注入）见 qa-report.md §10.3/§10.5。
