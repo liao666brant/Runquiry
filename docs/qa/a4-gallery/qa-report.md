@@ -201,7 +201,7 @@ tab_index，导致焦点行无法区分「焦点在哪个按钮」，本轮键�
 |---|---|---|
 | Name 列 overflow hidden + text ellipsis | 通过：三条长中文条目在列宽内省略截断，不与相邻列重叠 | `phase0/name-ellipsis-zh.png` |
 | Name/Path 单元格 tooltip 完整值 | 通过：hover 第一行名称，tooltip 显示完整「数据库连接池维护守护进程（长名称示例）」 | `phase0/name-tooltip-full-value.png` |
-| Sheet 与当前选中行绑定 | **部分验证**：无选中行时 Sheet 诚实显示「尚未选择行…」（不再固定展示第一行，见 `phase0/sheet-no-selection.png`）；行选中本身可正常工作（`phase0/row-selected-hover.png`，第二行钴蓝选中 + 焦点行 `data-table`）；但「选中行 → 打开 Sheet 显示该行完整值」的组合链路在本次 QA 后段因 WSLg 输入注入失效（见 10.3）未能录得，留待下次复验 |
+| Sheet 与当前选中行绑定 | 通过：本轮补证选择第二行 `containerd-shim-runc-v2` 后打开 Sheet；Sheet 显示同一名称、PID 2210、端口 8080 与完整路径，见 `batch2-fix/gallery-row2-sheet.png` |
 
 ### 10.2 rust-i18n 迁移后的文案复验（Batch 2 B4 关联）
 
@@ -229,11 +229,45 @@ tab_index，导致焦点行无法区分「焦点在哪个按钮」，本轮键�
 | 工作区切换 | 通过：点击端口工作区，侧栏与状态栏同步，设置写入 `"last_workspace":"ports"` | 同上 |
 | 设置文件脱敏 | 通过：文件仅含 allowlist 字段（theme/language/last_workspace/window），无任何调查输入 | 会话过程 `cat` 记录 |
 | 重启恢复 | 通过：重启后直接进入深色 + 中文 + 端口工作区 | `phase0/product-restart-restore.png` |
-| 诚实空态 | 通过：主数据区「采集器尚未接入」+ Spinner（Loading 语义），详情区「未选择对象」，无演示数据 | `phase0/product-shell-*.png` |
+| 诚实空态 | 初次 B4 QA 使用「采集器尚未接入」Loading 占位；评审后已改为 Unsupported 能力边界态，当前证据见 §11 | `phase0/product-shell-*.png`（历史）、`batch2-fix/product-*.png`（当前） |
 
 ### 10.5 已知限制（本次新增，随当前锁定 GPUI/GPUI-Component 版本成立）
 
 | 条目 | 行为 | 对 Runquiry 的应对 |
 |---|---|---|
-| X11 窗口关闭链路不完整 | `on_window_should_close` 回调与 `App::on_window_closed` 在 WM_DELETE_WINDOW 后均不触发；窗口销毁但进程残留（gpui 非 macOS 本应 LastWindowClosed 自动 quit，实测未走完 `window.removed` 分支） | 设置落盘以「事件即写」为主（theme/language/last_workspace 实测可用）；窗口尺寸由壳层渲染帧跟踪、随任意设置变更持久化；QA 收尾用 `pkill` 清理进程。升级 gpui 后必须复验 |
+| X11 窗口关闭链路不完整 | `on_window_should_close` 回调与 `App::on_window_closed` 在 `xdotool windowclose` 后仍不触发；窗口销毁但进程残留（gpui 非 macOS 本应 LastWindowClosed 自动 quit，实测未走完 `window.removed` 分支） | 窗口尺寸改由 `observe_window_bounds` 在每次真实 bounds 变化时立即落盘，不再依赖关闭回调；1100×700 重启恢复已通过。QA 收尾停止本次进程；升级 gpui 后必须复验关闭退出 |
 | WSLg 输入注入间歇失效 | 见 10.3 | 环境观察事项，非产品缺陷 |
+
+## 11. Batch 2 评审修复复验（2026-09-03）
+
+本节绑定当前未提交修复工作区。截图均由最新 `target/debug/runquiry` 或
+`target/debug/examples/gallery` 在 X11 实际启动后，以 `import -window` 抓取；证据位于
+`screenshots/batch2-fix/`。
+
+### 11.1 产品布局与状态语义
+
+| 尺寸 / 外观 | 工作区 | 结果与证据 |
+|---|---|---|
+| 1280×800 / Light / en | Processes、Ports、Containers、File Locks | 通过：四个工作区均为 65/35 主区与内联详情；见 `batch2-fix/product-1280-light-en-*.png` |
+| 960×640 / Dark / zh-CN | 进程、端口、容器、文件锁 | 通过：四个工作区均隐藏内联详情与分隔线，主数据区占满剩余宽度；见 `batch2-fix/product-960-dark-zh-*.png` |
+| 两种尺寸 | 四工作区 | 通过：主区使用 neutral dash +「采集器不可用 / Collector unavailable」Unsupported 能力边界态，无 Loading spinner、伪数据或错误色 |
+
+当前 B4 尚无数据行和选择，因此 960–1099px 没有可触发的详情 Sheet；B5 接入选择后按
+DESIGN.md §7 通过 Sheet 展示详情。本轮没有为占位壳层添加误导性的临时入口。
+
+### 11.2 设置与窗口尺寸
+
+- 在隔离 `XDG_CONFIG_HOME` 下把窗口从 1280×800 调整到 1100×700，bounds 事件后设置文件
+  立即写入 `{"window":{"width":1100,"height":700}}`；停止并重启后，X11 几何实测为
+  1100×700。
+- 预置旧固定 `settings.json.tmp` 指向独立 victim 后启动应用：victim 仍为
+  `do-not-touch`，旧符号链接未被跟随，最终 `settings.json` 为普通文件且 Unix 权限 0600。
+- XDG/HOME/APPDATA 无绝对安全路径时禁用持久化，不回退共享临时目录或当前工作目录；
+  单元测试覆盖 Linux/macOS/Windows 路径选择。
+- 锁定 GPUI 的 X11 关闭后进程残留仍可复现，属于 §10.5 的上游生命周期限制；窗口尺寸
+  已不再依赖该关闭链路。
+
+### 11.3 Gallery 组合链路
+
+通过：选择第二行 `containerd-shim-runc-v2` 后打开 Sheet，所选行与 Sheet 的名称、PID
+2210、端口 8080 和完整路径一致；证据为 `batch2-fix/gallery-row2-sheet.png`。

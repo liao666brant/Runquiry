@@ -10,7 +10,7 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 
 ## 入口与启动
 
-无独立入口。库 crate，`src/lib.rs` 重导出 `model` 与 `port` 模块。
+无独立入口。库 crate，`src/lib.rs` 重导出 `model`、`port` 与 `refresh` 模块。
 
 ## 对外接口
 
@@ -24,7 +24,7 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 
 ## 测试与质量
 
-- `cargo test -p runquiry-core --locked`：36 个测试（lib 单测 6 + tests/domain_types.rs 11 + tests/ports.rs 1 + tests/fixtures_load.rs 14 + tests/process_controller_contract.rs 4）；tests/support/ 提供 fixture 装载器、SocketEntry 输入边界校验与假平台后端（数据在 workspace 根 tests/fixtures/，清单见其 README）。
+- `cargo test -p runquiry-core --locked`：37 个测试（lib 单测 7 + tests/domain_types.rs 11 + tests/ports.rs 1 + tests/fixtures_load.rs 14 + tests/process_controller_contract.rs 4）；tests/support/ 提供 fixture 装载器、SocketEntry 输入边界校验与假平台后端（数据在 workspace 根 tests/fixtures/，清单见其 README）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束（unwrap/expect/panic 均 deny）。
 
 ## 常见问题
@@ -37,6 +37,7 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 - `crates/runquiry-core/src/lib.rs` — 库入口与模块重导出
 - `crates/runquiry-core/src/model/` — 领域类型（ids/target/process/capability/diagnostic/inspection/error）
 - `crates/runquiry-core/src/port/` — 平台端口 trait（process/network/container/file/command）
+- `crates/runquiry-core/src/refresh.rs` — generation 绑定的刷新门控与 3–30 秒自适应策略
 - `crates/runquiry-core/tests/` — 领域类型与端口集成测试
 - `docs/witr-parity.md` — 领域行为契约来源
 - `.omo/plans/runquiry-gpui-desktop/02-core-analysis.md` — A3/B1 任务定义
@@ -47,3 +48,4 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 - 2026-09-03：A3 落地公共领域类型、七端口与测试；新增 serde 依赖（守门人批准，零新增包）。
 - 2026-09-03：Batch 2——新增 src/refresh.rs（A5/B4 纯刷新策略与代际）；ProcessController 契约注释修正（execute 身份参数为 expected snapshot，实现须重读 current identity 并 same_process 比较，start_time None 必须拒绝）；tests/ 扩充 fixture 装载与契约测试（tests/fixtures/ 数据在 workspace 根）。
 - 2026-09-03：Batch 2 评审整改——新增 `linux/file-locks-normal.json`（/proc/locks 风格 Flock+Posix）与 `linux_file_locks_fixture_loads_lock_entries`（fixtures_load 14 个）；契约测试 `from_secs(3_600)` → `from_hours(1)`（clippy 1.95 lint）。
+- 2026-09-03：Batch 2 评审修复——刷新门控保存 active generation；过期完成/中止信号不再释放新刷新或污染耗时样本，core 测试增至 37 个。

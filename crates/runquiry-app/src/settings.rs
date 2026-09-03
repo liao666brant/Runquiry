@@ -19,12 +19,23 @@
 #![allow(clippy::redundant_pub_crate)]
 
 use std::collections::BTreeMap;
-use std::io::Write as _;
+use std::ffi::{OsStr, OsString};
+use std::fs::{File, OpenOptions};
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[cfg(unix)]
+use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
 
 use serde::{Deserialize, Serialize};
 
 use runquiry_ui::Lang;
+
+/// 同进程内临时文件序号；配合 PID 与排他创建避免保存间互相覆盖。
+static SETTINGS_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+/// 遇到同 PID 的崩溃残留时继续尝试后续唯一名。
+const TEMP_CREATE_ATTEMPTS: usize = 128;
 
 /// 列布局：工作区键 →（列 ID → 列宽，逻辑像素）。
 ///
@@ -113,30 +124,112 @@ impl Settings {
 /// 从磁盘加载设置；文件不存在或内容损坏时返回默认值（不 panic、不报错打扰）。
 ///
 /// 损坏回退是刻意选择：设置文件不是用户数据，宁可重置也不阻塞启动。
-pub(crate) fn load_settings(path: &Path) -> Settings {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+pub(crate) fn load_settings(path: Option<&Path>) -> Settings {
+    let Some(path) = path.filter(|path| path.is_absolute()) else {
+        return Settings::default();
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Settings::default();
+    };
+    serde_json::from_str(&text).unwrap_or_default()
 }
 
 /// 原子写入设置：先写临时文件再重命名，避免中途失败留下半截文件。
 ///
 /// 目录不存在时先创建。失败时返回错误由调用方决定提示方式，设置写入失败
 /// 不影响应用运行。
-pub(crate) fn save_settings(path: &Path, settings: &Settings) -> Result<(), String> {
+pub(crate) fn save_settings(path: Option<&Path>, settings: &Settings) -> Result<(), String> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    if !path.is_absolute() {
+        return Err(String::from("设置文件路径必须是绝对路径"));
+    }
     let text = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| String::from("设置文件路径缺少父目录"))?;
+    create_settings_directory(parent).map_err(|e| e.to_string())?;
+
     // 临时文件与目标同目录，保证 rename 在同一文件系统上是原子的。
-    let temp = path.with_extension("json.tmp");
+    // 排他创建不跟随预置符号链接；Unix 新文件权限固定为 0600。
+    let (temp, mut file) = create_temp_file(path).map_err(|e| e.to_string())?;
+    if let Err(error) = file
+        .write_all(text.as_bytes())
+        .and_then(|()| file.sync_all())
     {
-        let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
-        file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
+        drop(file);
+        return Err(error_with_temp_cleanup(&temp, &error));
     }
-    std::fs::rename(&temp, path).map_err(|e| e.to_string())
+    drop(file);
+    std::fs::rename(&temp, path).map_err(|error| error_with_temp_cleanup(&temp, &error))
+}
+
+/// 创建缺失的设置目录；Unix 新目录限制为当前用户可访问。
+fn create_settings_directory(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true).mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(path)
+    }
+}
+
+/// 在目标文件旁排他创建唯一临时文件。
+fn create_temp_file(target: &Path) -> io::Result<(PathBuf, File)> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "设置文件路径缺少父目录"))?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "设置文件路径缺少文件名"))?;
+
+    for _ in 0..TEMP_CREATE_ATTEMPTS {
+        let sequence = SETTINGS_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let mut temp_name = OsString::from(".");
+        temp_name.push(file_name);
+        temp_name.push(format!(".runquiry-{}-{sequence}.tmp", std::process::id()));
+        let temp = parent.join(temp_name);
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        match options.open(&temp) {
+            Ok(file) => return Ok((temp, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "无法分配唯一设置临时文件",
+    ))
+}
+
+/// 合并主错误与临时文件清理错误；只清理本次排他创建的路径。
+fn error_with_temp_cleanup(temp: &Path, error: &io::Error) -> String {
+    match std::fs::remove_file(temp) {
+        Ok(()) => error.to_string(),
+        Err(cleanup_error) => format!("{error}; 清理设置临时文件失败: {cleanup_error}"),
+    }
+}
+
+/// 从环境基路径组装设置路径；相对或缺失的基路径一律拒绝。
+fn settings_path_from_base(base: Option<&OsStr>, suffix: &[&str]) -> Option<PathBuf> {
+    let mut path = absolute_base(base)?;
+    for component in suffix {
+        path.push(component);
+    }
+    Some(path.join("runquiry").join("settings.json"))
+}
+
+/// 把环境输入解析成绝对基路径。
+fn absolute_base(value: Option<&OsStr>) -> Option<PathBuf> {
+    value.map(PathBuf::from).filter(|path| path.is_absolute())
 }
 
 /// 默认设置文件路径（按平台标准位置组装；测试不要调用本函数）。
@@ -145,33 +238,24 @@ pub(crate) fn save_settings(path: &Path, settings: &Settings) -> Result<(), Stri
 /// - macOS：`$HOME/Library/Application Support/runquiry/settings.json`
 /// - Windows：`%APPDATA%\runquiry\settings.json`
 ///
-/// 环境变量缺失时回退系统临时目录：调用方（[`save_settings`]）承诺只写
-/// 绝对路径，不把设置文件落进随进程 cwd 漂移的相对位置。
-pub(crate) fn default_settings_path() -> PathBuf {
-    if cfg!(target_os = "windows") {
-        let base = env_base("APPDATA");
-        return base.join("runquiry").join("settings.json");
+/// 环境变量缺失、为空或为相对路径时返回 `None`，由调用方安全禁用持久化。
+pub(crate) fn default_settings_path() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var_os("APPDATA");
+        settings_path_from_base(appdata.as_deref(), &[])
     }
-    if cfg!(target_os = "macos") {
-        let base = env_base("HOME").join("Library").join("Application Support");
-        return base.join("runquiry").join("settings.json");
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME");
+        settings_path_from_base(home.as_deref(), &["Library", "Application Support"])
     }
-    // Linux/其他：XDG 规范。
-    let base = std::env::var("XDG_CONFIG_HOME").ok().filter(|base| {
-        // XDG 规范要求绝对路径；相对路径的 XDG_CONFIG_HOME 不采用。
-        Path::new(base).is_absolute()
-    });
-    let base = base.map_or_else(|| env_base("HOME").join(".config"), PathBuf::from);
-    base.join("runquiry").join("settings.json")
-}
-
-/// 读取基路径环境变量；缺失或为空时回退系统临时目录（保证结果为绝对路径）。
-fn env_base(key: &str) -> PathBuf {
-    let value = std::env::var(key).unwrap_or_default();
-    if value.is_empty() {
-        std::env::temp_dir()
-    } else {
-        PathBuf::from(value)
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME");
+        let home = std::env::var_os("HOME");
+        settings_path_from_base(xdg_config_home.as_deref(), &[])
+            .or_else(|| settings_path_from_base(home.as_deref(), &[".config"]))
     }
 }
 
@@ -179,26 +263,44 @@ fn env_base(key: &str) -> PathBuf {
 mod tests {
     use super::*;
     use runquiry_ui::WorkspaceId;
+    use std::io;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     /// 唯一可写的临时目录（测试不触碰真实用户目录）。
-    fn temp_dir(name: &str) -> PathBuf {
-        let base = std::env::temp_dir().join("runquiry-settings-test");
-        std::fs::create_dir_all(&base).ok();
-        base.join(name)
+    fn temp_dir(name: &str) -> Result<PathBuf, String> {
+        for _ in 0..128 {
+            let sequence = TEST_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "runquiry-settings-test-{}-{sequence}-{name}",
+                std::process::id()
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(path),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+        Err(String::from("无法分配唯一测试目录"))
+    }
+
+    fn io_result<T>(result: io::Result<T>) -> Result<T, String> {
+        result.map_err(|error| error.to_string())
     }
 
     /// 空设置 == 默认值；round-trip 后语义不变。
     #[test]
-    fn defaults_and_round_trip() {
+    fn defaults_and_round_trip() -> Result<(), String> {
         assert_eq!(Settings::default().theme_mode(), None);
         assert_eq!(Settings::default().language(), Lang::En);
         assert_eq!(Settings::default().last_workspace(), WorkspaceId::Processes);
         assert_eq!(Settings::default().window, None);
 
-        let path = temp_dir("round-trip.json");
-        std::fs::remove_file(&path).ok();
+        let directory = temp_dir("round-trip")?;
+        let path = directory.join("settings.json");
         assert_eq!(
-            load_settings(&path),
+            load_settings(Some(&path)),
             Settings::default(),
             "文件不存在用默认值"
         );
@@ -213,48 +315,54 @@ mod tests {
             last_workspace: Some(String::from("ports")),
             column_layouts: BTreeMap::new(),
         };
-        save_settings(&path, &settings).ok();
-        assert_eq!(load_settings(&path), settings, "恢复必须逐字段一致");
-        std::fs::remove_file(&path).ok();
+        save_settings(Some(&path), &settings)?;
+        assert_eq!(load_settings(Some(&path)), settings, "恢复必须逐字段一致");
+        io_result(std::fs::remove_dir_all(directory))
     }
 
     /// 损坏文件安全回退默认值，不 panic。
     #[test]
-    fn corrupt_file_falls_back_to_defaults() {
-        let path = temp_dir("corrupt.json");
-        std::fs::write(&path, "{ not valid json !!!").ok();
-        assert_eq!(load_settings(&path), Settings::default());
-        std::fs::remove_file(&path).ok();
+    fn corrupt_file_falls_back_to_defaults() -> Result<(), String> {
+        let directory = temp_dir("corrupt")?;
+        let path = directory.join("settings.json");
+        io_result(std::fs::write(&path, "{ not valid json !!!"))?;
+        assert_eq!(load_settings(Some(&path)), Settings::default());
 
         // 合法 JSON 但 schema 不符（数组）同样回退，不得 panic。
-        std::fs::write(&path, "[1, 2, 3]").ok();
-        assert_eq!(load_settings(&path), Settings::default());
-        std::fs::remove_file(&path).ok();
+        io_result(std::fs::write(&path, "[1, 2, 3]"))?;
+        assert_eq!(load_settings(Some(&path)), Settings::default());
+        io_result(std::fs::remove_dir_all(directory))
     }
 
     /// allowlist schema：未知字段被拒绝（回退默认），窗口尺寸被夹取到最小值。
     #[test]
-    fn schema_rejects_unknown_fields() {
-        let path = temp_dir("unknown-field.json");
-        std::fs::write(&path, r#"{"theme":"dark","last_filter":"ssh -i"}"#).ok();
+    fn schema_rejects_unknown_fields() -> Result<(), String> {
+        let directory = temp_dir("schema")?;
+        let path = directory.join("unknown-field.json");
+        io_result(std::fs::write(
+            &path,
+            r#"{"theme":"dark","last_filter":"ssh -i"}"#,
+        ))?;
         // 未知字段 last_filter 即使内容像调查输入也不允许存在：整份文件拒绝。
-        let settings = load_settings(&path);
+        let settings = load_settings(Some(&path));
         assert_eq!(settings, Settings::default());
-        std::fs::remove_file(&path).ok();
 
-        let path = temp_dir("clamp.json");
-        std::fs::write(&path, r#"{"window":{"width":320,"height":200}}"#).ok();
-        let settings = load_settings(&path);
+        let path = directory.join("clamp.json");
+        io_result(std::fs::write(
+            &path,
+            r#"{"window":{"width":320,"height":200}}"#,
+        ))?;
+        let settings = load_settings(Some(&path));
         assert_eq!(
             settings.window.map(WindowSize::clamped),
             Some(WindowSize::MIN)
         );
-        std::fs::remove_file(&path).ok();
+        io_result(std::fs::remove_dir_all(directory))
     }
 
     /// 设置文件脱敏：结构里不存在任何调查输入字段（编译期保证 + 序列化断言）。
     #[test]
-    fn settings_carry_no_inspection_data() {
+    fn settings_carry_no_inspection_data() -> Result<(), String> {
         let text = serde_json::to_string(&Settings {
             theme: Some(String::from("dark")),
             language: Some(String::from("zh-CN")),
@@ -265,21 +373,143 @@ mod tests {
             last_workspace: Some(String::from("file-locks")),
             column_layouts: BTreeMap::new(),
         })
-        .ok();
-        let text = text.unwrap_or_default();
+        .map_err(|error| error.to_string())?;
         for banned in ["pid", "target", "filter", "selection", "query", "path"] {
             assert!(
                 !text.to_lowercase().contains(banned),
                 "设置文件不得包含 {banned}"
             );
         }
+        Ok(())
     }
 
-    /// 默认路径组装：Linux 用 XDG，无法解析 HOME 时得到可写路径也不 panic。
+    /// 旧固定临时文件即使被预置为符号链接，也不得覆盖链接目标。
+    #[cfg(unix)]
+    #[test]
+    fn save_does_not_follow_legacy_temp_symlink() -> Result<(), String> {
+        use std::os::unix::fs::symlink;
+
+        let directory = temp_dir("legacy-temp-symlink")?;
+        let path = directory.join("settings.json");
+        let victim = directory.join("victim.txt");
+        let legacy_temp = path.with_extension("json.tmp");
+        io_result(std::fs::write(&victim, "do-not-touch"))?;
+        io_result(symlink(&victim, &legacy_temp))?;
+
+        let settings = Settings {
+            theme: Some(String::from("dark")),
+            ..Settings::default()
+        };
+        save_settings(Some(&path), &settings)?;
+
+        assert_eq!(io_result(std::fs::read_to_string(&victim))?, "do-not-touch");
+        assert_eq!(load_settings(Some(&path)), settings);
+        io_result(std::fs::remove_dir_all(directory))
+    }
+
+    /// 已有设置文件可以由后续保存原子替换。
+    #[test]
+    fn repeated_save_updates_existing_settings() -> Result<(), String> {
+        let directory = temp_dir("repeated-save")?;
+        let path = directory.join("settings.json");
+        let first = Settings {
+            theme: Some(String::from("light")),
+            ..Settings::default()
+        };
+        let second = Settings {
+            theme: Some(String::from("dark")),
+            ..Settings::default()
+        };
+
+        save_settings(Some(&path), &first)?;
+        save_settings(Some(&path), &second)?;
+
+        assert_eq!(load_settings(Some(&path)), second);
+        io_result(std::fs::remove_dir_all(directory))
+    }
+
+    /// 无安全配置路径时，加载使用默认值且保存明确成为无副作用操作。
+    #[test]
+    fn disabled_persistence_is_a_no_op() -> Result<(), String> {
+        let settings = Settings {
+            theme: Some(String::from("dark")),
+            ..Settings::default()
+        };
+
+        save_settings(None, &settings)?;
+
+        assert_eq!(load_settings(None), Settings::default());
+        Ok(())
+    }
+
+    /// Unix 上新设置目录与文件均仅允许当前用户访问。
+    #[cfg(unix)]
+    #[test]
+    fn saved_settings_have_private_permissions() -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let directory = temp_dir("private-permissions")?;
+        let settings_directory = directory.join("runquiry");
+        let path = settings_directory.join("settings.json");
+        save_settings(Some(&path), &Settings::default())?;
+
+        let directory_mode = io_result(std::fs::metadata(&settings_directory))?
+            .permissions()
+            .mode()
+            & 0o777;
+        let file_mode = io_result(std::fs::metadata(&path))?.permissions().mode() & 0o777;
+        assert_eq!(directory_mode, 0o700);
+        assert_eq!(file_mode, 0o600);
+        io_result(std::fs::remove_dir_all(directory))
+    }
+
+    /// Linux/XDG 输入均为相对路径时，不得生成随 cwd 漂移的配置路径。
+    #[test]
+    fn linux_relative_bases_disable_persistence() {
+        let xdg_path = settings_path_from_base(Some(std::ffi::OsStr::new("relative-xdg")), &[]);
+        let home_path =
+            settings_path_from_base(Some(std::ffi::OsStr::new("relative-home")), &[".config"]);
+
+        assert_eq!(xdg_path, None);
+        assert_eq!(home_path, None);
+    }
+
+    /// macOS 的相对 HOME 不得用于生产配置。
+    #[test]
+    fn macos_relative_home_disables_persistence() {
+        let path = settings_path_from_base(
+            Some(std::ffi::OsStr::new("relative-home")),
+            &["Library", "Application Support"],
+        );
+
+        assert_eq!(path, None);
+    }
+
+    /// Windows 的相对 APPDATA 不得用于生产配置。
+    #[test]
+    fn windows_relative_appdata_disables_persistence() {
+        let path = settings_path_from_base(Some(std::ffi::OsStr::new("relative-appdata")), &[]);
+
+        assert_eq!(path, None);
+    }
+
+    /// 所有候选环境变量缺失时，不回退共享临时目录或 cwd。
+    #[test]
+    fn missing_environment_disables_persistence() {
+        assert_eq!(settings_path_from_base(None, &[]), None);
+        assert_eq!(settings_path_from_base(None, &[".config"]), None);
+        assert_eq!(
+            settings_path_from_base(None, &["Library", "Application Support"]),
+            None
+        );
+    }
+
+    /// 默认路径存在时必须是绝对路径并以 settings.json 结尾。
     #[test]
     fn default_path_is_prefixed_and_absolute() {
-        let path = default_settings_path();
-        assert!(path.is_absolute(), "默认设置路径必须是绝对路径: {path:?}");
-        assert!(path.ends_with("settings.json"));
+        if let Some(path) = default_settings_path() {
+            assert!(path.is_absolute(), "默认设置路径必须是绝对路径: {path:?}");
+            assert!(path.ends_with("settings.json"));
+        }
     }
 }

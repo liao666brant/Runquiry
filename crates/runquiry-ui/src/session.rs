@@ -70,7 +70,8 @@ pub struct SortOrder {
 /// 一个工作区的会话状态。
 #[derive(Debug)]
 pub struct WorkspaceSession {
-    /// 数据区域当前状态；产品壳层起步于 [`DataState::Loading`]（诚实的等待态）。
+    /// 数据区域当前状态；会话默认 Loading，产品壳层在采集器不可用时映射为
+    /// [`DataState::Unsupported`]。
     pub data_state: DataState,
     /// 当前有效代际：只有携带该代际的列表/详情结果可以应用。
     pub generation: Generation,
@@ -101,18 +102,28 @@ impl WorkspaceSession {
     ///
     /// in-flight 期间返回 `None`（禁止重入）；成功时递增代际并返回新代际，
     /// 结果必须携带该代际回传。
-    pub fn try_refresh(&mut self) -> Option<Generation> {
-        self.gate.try_begin().then(|| self.generation.next())
+    pub const fn try_refresh(&mut self) -> Option<Generation> {
+        let mut candidate = self.generation;
+        let candidate = candidate.next();
+        if !self.gate.try_begin(candidate) {
+            return None;
+        }
+        self.generation = candidate;
+        Some(candidate)
     }
 
-    /// 结束一次刷新并计入耗时样本（驱动 3–30 秒自适应间隔）。
-    pub fn finish_refresh(&mut self, took: Duration) {
-        self.gate.finish(took);
+    /// 结束指定代际的刷新并计入耗时样本（驱动 3–30 秒自适应间隔）。
+    ///
+    /// 过期完成信号返回 `false`，不得释放随后开始的新刷新。
+    pub fn finish_refresh(&mut self, generation: Generation, took: Duration) -> bool {
+        self.gate.finish(generation, took)
     }
 
-    /// 丢弃一次进行中的刷新（如工作区已切换），不产生耗时样本。
-    pub const fn abort_refresh(&mut self) {
-        self.gate.abort();
+    /// 丢弃指定代际的刷新（如工作区已切换），不产生耗时样本。
+    ///
+    /// 过期中止信号返回 `false`，不得释放当前刷新。
+    pub fn abort_refresh(&mut self, generation: Generation) -> bool {
+        self.gate.abort(generation)
     }
 
     /// 刷新是否在进行中。
@@ -310,7 +321,7 @@ mod tests {
         assert_eq!(session.try_refresh(), None);
         assert_eq!(session.try_refresh(), None);
 
-        session.finish_refresh(Duration::from_millis(50));
+        assert!(session.finish_refresh(generation, Duration::from_millis(50)));
         assert!(!session.is_refreshing());
         assert!(session.try_refresh().is_some());
         // 结果只对发起时的代际有效。
@@ -321,13 +332,16 @@ mod tests {
     #[test]
     fn selection_change_discards_inflight_results() {
         let mut session = WorkspaceSession::default();
-        let generation = must_refresh(&mut session, "刷新应成功");
+        let refresh_generation = must_refresh(&mut session, "刷新应成功");
 
         let selected = session.select(Some("pid-7".into()));
         assert!(selected.is_some(), "选择变化应递增代际");
         let new_generation = selected.unwrap_or_default();
         assert!(session.is_current(new_generation));
-        assert!(!session.is_current(generation), "旧代际的列表必须被丢弃");
+        assert!(
+            !session.is_current(refresh_generation),
+            "旧代际的列表必须被丢弃"
+        );
 
         let generation = new_generation;
         let filtered = session.set_filter(Some("ssh".into()));
@@ -344,9 +358,27 @@ mod tests {
         assert!(!session.is_current(filtered), "排序前筛选后的代际已过期");
 
         // 刷新结束后自适应间隔已生效；abort 后立即可再次发起。
-        session.finish_refresh(Duration::from_millis(10));
-        session.try_refresh();
-        session.abort_refresh();
+        assert!(session.finish_refresh(refresh_generation, Duration::from_millis(10)));
+        let next = must_refresh(&mut session, "上次刷新完成后应允许再次刷新");
+        assert!(session.abort_refresh(next));
+        assert!(!session.is_refreshing());
+    }
+
+    /// 中止 g1 后开始 g2，晚到的 g1 完成信号不得释放 g2。
+    #[test]
+    fn stale_refresh_completion_does_not_release_current_generation() {
+        let mut session = WorkspaceSession::default();
+        let g1 = must_refresh(&mut session, "g1 应开始");
+        assert!(session.abort_refresh(g1));
+        let g2 = must_refresh(&mut session, "g2 应在 g1 中止后开始");
+
+        assert!(!session.abort_refresh(g1));
+        assert!(session.is_refreshing(), "g1 中止信号不得释放 g2");
+        assert!(!session.finish_refresh(g1, Duration::from_millis(50)));
+        assert!(session.is_refreshing(), "g1 完成信号不得释放 g2");
+        assert_eq!(session.try_refresh(), None, "g2 仍在途时必须拒绝重入");
+
+        assert!(session.finish_refresh(g2, Duration::from_millis(50)));
         assert!(!session.is_refreshing());
     }
 

@@ -1,10 +1,11 @@
-//! 壳层渲染：工具栏、侧栏、主数据区（65）、详情区（35）与状态栏。
+//! 壳层渲染：工具栏、侧栏、响应式主数据/详情区与状态栏。
 //!
 //! 只做呈现与交互接线；状态与会话语义见 [`super`]。文案经 `t!` 取自
 //! `locales/`，主题与语言由 gpui-component 提供。
 
 use rust_i18n::t;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     Styled as _, Window, div,
@@ -31,13 +32,16 @@ const TAB_THEME_LIGHT: isize = 2;
 const TAB_THEME_DARK: isize = 3;
 const TAB_LANG_EN: isize = 4;
 const TAB_LANG_ZH_CN: isize = 5;
+const INLINE_DETAIL_MIN_WIDTH: u32 = 1_100;
+
+/// 宽窗口内联显示详情；窄窗口为后续按选择打开 Sheet 保留主区宽度。
+const fn shows_inline_detail(width: u32) -> bool {
+    width >= INLINE_DETAIL_MIN_WIDTH
+}
 
 impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        // 窗口尺寸跟踪：resize 后由平台回调驱动重渲染，这里把最新尺寸发给
-        // 装配层（X11 后端的 should_close 回调不触发，见 ShellEvent 文档）。
-        let size = window.bounds().size;
-        self.track_window_size(u32::from(size.width), u32::from(size.height));
+        let shows_inline_detail = shows_inline_detail(u32::from(window.bounds().size.width));
 
         // 覆盖层由内容视图负责绘制（DESIGN.md §5），顺序即层级。
         let sheet_layer = Root::render_sheet_layer(window, cx);
@@ -58,8 +62,10 @@ impl Render for AppShell {
                     .flex_1()
                     .min_h_0()
                     .child(self.render_sidebar(cx))
-                    .child(self.render_main_area(cx))
-                    .child(self.render_detail_area(cx)),
+                    .child(self.render_main_area(shows_inline_detail, cx))
+                    .when(shows_inline_detail, |layout| {
+                        layout.child(self.render_detail_area(cx))
+                    }),
             )
             .child(self.render_status_bar(cx))
             .children(sheet_layer)
@@ -171,20 +177,28 @@ impl AppShell {
             )
     }
 
-    /// 主数据区：平台采集端口尚未接入，各工作区展示诚实的等待态
+    /// 主数据区：平台采集端口尚未接入，各工作区展示诚实的能力边界态
     /// （`StateView` 语义，不注入演示数据）。
-    fn render_main_area(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn render_main_area(
+        &self,
+        shows_inline_detail: bool,
+        cx: &Context<'_, Self>,
+    ) -> impl IntoElement {
         div()
             .id("main-panel")
             .track_focus(&self.main_focus)
             .flex_grow(MAIN_RATIO)
             .min_w_0()
             .min_h_0()
-            .border_r_1()
-            .border_color(cx.theme().border)
+            .when(shows_inline_detail, |panel| {
+                panel.border_r_1().border_color(cx.theme().border)
+            })
             .child(
-                StateView::new(DataState::Loading, t!("main.not_wired.title").to_string())
-                    .description(t!("main.not_wired.description").to_string()),
+                StateView::new(
+                    DataState::Unsupported,
+                    t!("main.collector_unavailable.title").to_string(),
+                )
+                .description(t!("main.collector_unavailable.description").to_string()),
             )
     }
 
@@ -231,4 +245,33 @@ fn workspace_title(workspace: WorkspaceId) -> SharedString {
         WorkspaceId::FileLocks => "workspace.file_locks",
     };
     t!(key).to_string().into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shows_inline_detail;
+
+    #[test]
+    fn hides_inline_detail_when_window_is_1099_pixels_wide() {
+        // Given: the widest window in the compact layout range.
+        let width = 1_099;
+
+        // When: the master-detail presentation is selected.
+        let shows_detail = shows_inline_detail(width);
+
+        // Then: detail does not compress the main workspace.
+        assert!(!shows_detail);
+    }
+
+    #[test]
+    fn shows_inline_detail_when_window_is_1100_pixels_wide() {
+        // Given: the first width in the wide layout range.
+        let width = 1_100;
+
+        // When: the master-detail presentation is selected.
+        let shows_detail = shows_inline_detail(width);
+
+        // Then: detail is rendered alongside the main workspace.
+        assert!(shows_detail);
+    }
 }

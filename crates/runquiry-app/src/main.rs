@@ -27,7 +27,7 @@ const WINDOW_TITLE: &str = "Runquiry";
 /// 进程内全局设置状态：装配层持有的当前设置与文件路径。
 #[derive(Debug)]
 struct SettingsStore {
-    path: std::path::PathBuf,
+    path: Option<std::path::PathBuf>,
     settings: Settings,
 }
 
@@ -35,7 +35,7 @@ impl Global for SettingsStore {}
 
 fn main() {
     let settings_path = default_settings_path();
-    let settings = load_settings(&settings_path);
+    let settings = load_settings(settings_path.as_deref());
 
     let app = gpui_platform::application().with_assets(Assets);
     app.run(move |cx| {
@@ -113,10 +113,9 @@ fn wire_settings(shell: Option<Entity<AppShell>>, window: &mut Window, cx: &mut 
         return;
     };
 
-    // 设置变化事件：主题/语言/工作区立即落盘。落盘前从壳层读取渲染帧跟踪的
-    // 窗口尺寸一并写入（X11 后端的 should_close 回调不触发，尺寸在运行期随
-    // 任意设置变更持久化）。
-    cx.subscribe(&shell, |shell, event: &ShellEvent, cx| {
+    // 设置变化事件：主题/语言/工作区立即落盘。窗口尺寸由平台 bounds 事件
+    // 单独维护，因此这里保存的一定是最近一次真实窗口尺寸。
+    cx.subscribe(&shell, |_shell, event: &ShellEvent, cx| {
         match *event {
             ShellEvent::ThemeChanged(mode) => {
                 cx.global_mut::<SettingsStore>().settings.theme = Some(theme_key(mode).to_string());
@@ -130,14 +129,24 @@ fn wire_settings(shell: Option<Entity<AppShell>>, window: &mut Window, cx: &mut 
                     Some(String::from(workspace.key()));
             }
         }
-        let window_size = shell.read(cx).window_size();
-        cx.global_mut::<SettingsStore>().settings.window = Some(WindowSize {
-            width: window_size.0,
-            height: window_size.1,
-        });
         persist_settings(cx);
     })
     .detach();
+
+    // 锁定 GPUI 的 X11 后端可能收不到 WM 关闭回调，因此平台 bounds 事件
+    // 同时更新内存并落盘，保证仅调整窗口尺寸的会话也能恢复最后尺寸。
+    shell.update(cx, |_shell, cx| {
+        cx.observe_window_bounds(window, |_shell, window, cx| {
+            let size = window.bounds().size;
+            remember_window_size(
+                &mut cx.global_mut::<SettingsStore>().settings,
+                u32::from(size.width),
+                u32::from(size.height),
+            );
+            persist_settings(cx);
+        })
+        .detach();
+    });
 
     // 初始焦点落在工具栏（DESIGN.md §8.2：启动时初始焦点在视觉顺序首个区域）。
     shell.update(cx, |shell, cx| {
@@ -145,9 +154,20 @@ fn wire_settings(shell: Option<Entity<AppShell>>, window: &mut Window, cx: &mut 
         window.focus(&focus, cx);
     });
 
-    // 窗口关闭：把内存中的最新设置（含 render 跟踪的窗口尺寸）落盘并退出。
-    // gpui 不会因窗口全部关闭自动退出，单窗口应用在此显式 quit。
-    // 尺寸来自壳层渲染帧的跟踪值（X11 后端的 should_close 回调不触发）。
+    // WM 发起关闭时窗口仍可访问：先捕获最终 bounds、持久化，再允许关闭并退出。
+    window.on_window_should_close(cx, |window, cx| {
+        let size = window.bounds().size;
+        remember_window_size(
+            &mut cx.global_mut::<SettingsStore>().settings,
+            u32::from(size.width),
+            u32::from(size.height),
+        );
+        persist_settings(cx);
+        cx.quit();
+        true
+    });
+
+    // 非 WM 路径移除窗口时仍保证单窗口应用退出。
     cx.on_window_closed(move |cx, _window_id| {
         persist_settings(cx);
         cx.quit();
@@ -161,9 +181,14 @@ fn persist_settings(cx: &mut App) {
         let store = cx.global_mut::<SettingsStore>();
         (store.path.clone(), store.settings.clone())
     };
-    if let Err(err) = save_settings(&path, &settings) {
+    if let Err(err) = save_settings(path.as_deref(), &settings) {
         eprintln!("设置写入失败: {err}");
     }
+}
+
+/// 把平台报告的逻辑像素尺寸写入 allowlist 设置。
+const fn remember_window_size(settings: &mut Settings, width: u32, height: u32) {
+    settings.window = Some(WindowSize { width, height });
 }
 
 /// u32 尺寸 → 逻辑像素：窗口尺寸远小于 f32 尾数精度边界，cast 无实际损失。
@@ -177,5 +202,25 @@ const fn theme_key(mode: ThemeMode) -> &'static str {
     match mode {
         ThemeMode::Light => "light",
         ThemeMode::Dark => "dark",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Settings, WindowSize, remember_window_size};
+
+    #[test]
+    fn window_bounds_event_updates_the_persisted_size() {
+        let mut settings = Settings::default();
+
+        remember_window_size(&mut settings, 1_100, 700);
+
+        assert_eq!(
+            settings.window,
+            Some(WindowSize {
+                width: 1_100,
+                height: 700,
+            })
+        );
     }
 }

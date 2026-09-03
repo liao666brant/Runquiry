@@ -97,10 +97,10 @@
 扫描命令与输出（2026-09-03，30 个 JSON 文件全部无命中）：
 
 ```console
-$ grep -rniE 'syspetro|/home/[a-z]' tests/fixtures/ ; echo "exit=$?"
-exit=1        # 无命中（grep 退出码 1 = 未找到）
-$ grep -rniE 'token|secret|password|api[_-]?key' tests/fixtures/ ; echo "exit=$?"
-exit=1        # 无命中
+$ rg -ni --pcre2 -g '*.json' '(/home|/Users)/(?!fixture-user/)|[A-Za-z]:\\+Users\\+' tests/fixtures/
+# 退出码 1：除约定的 fixture-user 外，未发现 Linux、macOS 或 Windows 用户目录
+$ rg -ni -g '*.json' 'token|secret|password|api[_-]?key' tests/fixtures/
+# 退出码 1：未发现凭据字段；两条扫描均仅检查 JSON，不会命中本 README
 $ find tests/fixtures -name '*.json' | wc -l
 30
 ```
@@ -111,9 +111,9 @@ $ find tests/fixtures -name '*.json' | wc -l
 
 ## 6. 验证记录
 
-- `cargo test -p runquiry-core --locked`：36 通过（原 12：domain_types 11 + ports 1；
-  另有 B4 的 core 侧在 `src/refresh.rs` 增加的 6 个 lib 单元测试；本次新增
+- `cargo test -p runquiry-core --locked`：37 通过（原 12：domain_types 11 + ports 1；
+  另有 B4 的 core 侧在 `src/refresh.rs` 增加的 7 个 lib 单元测试；本次新增
   `fixtures_load` 14 + `process_controller_contract` 4）。
 - `cargo test -p runquiry-platform --locked`：10 通过（全部为本次新增）。
-- `cargo clippy` / `cargo fmt --check`：本次改动文件格式化后零 diff；
-  clippy 结果依赖 `src/refresh.rs`（并行任务）修复后复跑全量。
+- `cargo clippy` / `cargo fmt --check`：相关 crate 严格检查通过（UI/app 仅豁免锁定
+  依赖树既有的 `multiple_crate_versions`，app 另豁免既有的 `print_stderr`）。

@@ -37,13 +37,13 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
   - 完成证据：DESIGN.md、截图矩阵、发现问题及修正结果。
   - 实施记录（2026-09-03）：
     - DESIGN.md 为唯一设计规范（3/2/9、石墨表面、钴蓝强调、语义色隔离、token、五状态规则、窗口/滚动/键盘/可访问性）；只写稳定语义，库版本相关限制已移至 docs/qa/a4-gallery/qa-report.md §8（注明随 gpui-component rev 91217366 失效）。
-    - 设计系统：crates/runquiry-ui（theme.rs 集中 46 项 PALETTE 原始色值 + 浅/深 Runquiry 主题、state.rs 六态 DataState、state_view.rs RenderOnce 统一状态呈现、locale.rs 最小确定性 en/zh-CN 字典占位——rust-i18n 留待 B4）；裸色值经 grep 核验仅存在于 theme.rs。
+    - 设计系统：crates/runquiry-ui（theme.rs 集中 46 项 PALETTE 原始色值 + 浅/深 Runquiry 主题、state.rs 六态 DataState、state_view.rs RenderOnce 统一状态呈现、locale.rs 最小确定性 en/zh-CN 字典占位——截至 A4，rust-i18n 留待 B4）；裸色值经 grep 核验仅存在于 theme.rs。
     - gallery：crates/runquiry-app/examples/gallery/（独立入口，不进产品窗口与安装包；放在 examples/ 而非 src/ 的原因是复用 runquiry-app 已内联声明的 gpui-platform 与 gpui-component-assets 依赖，属模块 05 允许写入 crates/runquiry-app/src/ 意图范围内的交付形式注记）。覆盖 Sidebar/DataTable/Tree/Sheet/AlertDialog/Notification/应用级 StatusBar 组合 × 五状态 × 双语 × 双主题 × 双尺寸 + 长中文与无空格长路径数据；CLI 参数 --size/--theme/--lang/--state/--open 支持 QA 脚本化；焦点指示行经 tab_index 可区分具体控件。
     - 视觉与键盘 QA：真实 X11 启动（env -u WAYLAND_DISPLAY），import -window 0x&lt;id&gt; 截图（本环境 root 抓图不可用），xdotool 真实按键注入。证据：docs/qa/a4-gallery/（qa-report.md + screenshots/ 8 组合 + 6 状态 + 4 overlay + 94 张键盘/焦点/滚动截图，含修正后补拍的 state-unsupported 与控件焦点读数）。Tab 19 步顺序与视觉一致、Shift+Tab 回退、Enter 激活动作、Escape 关 Sheet/AlertDialog 且焦点恢复触发控件、960×640 无溢出（表格横向滚动可达全部列）。
     - 已发现并修正的问题（8 条，详见 qa-report.md）：Root 不代绘覆盖层需显式 render_*_layer、window.update 内开 overlay 需 defer、树节点索引 ID 改领域 ID、NavActivate 空操作移除、note 对比度不足去 opacity、unsupported 图标加外框、Ready 态通知无正文、焦点读数 unnamed region#tab-0（tab_index 修复）。
     - 已知限制（记录于 qa-report.md）：SidebarMenuItem 不进 Tab 序（gallery 以方向键 NavNext/NavPrev 补齐，选择即激活、无 Enter 绑定——Enter 在侧栏没有可执行语义，见 qa-report §5.4 与 gallery nav_actions 注释）、DataTable 内 Tab=下一列无法离开表格、TreeState/Button 不暴露 FocusHandle、hover 高亮遮蔽选中行的观察陷阱。Phase 0 整改（2026-09-03）：Name 列 ellipsis + tooltip 完整值 + Sheet 绑定选中行，证据见 qa-report §10。
     - 验证结果：cargo fmt -p runquiry-ui -p runquiry-app 通过；cargo test -p runquiry-ui 10 个测试全过；cargo check -p runquiry-app --locked --examples 通过；clippy -D warnings 在基线豁免（-A clippy::multiple-crate-versions，app 另加 -A clippy::print-stderr）后零警告——两条原始失败均为基线既有问题（锁定依赖树 77 条 multiple-crate-versions，经还原 runquiry-ui/src 至骨架实测复现，与本次改动无关；print_stderr 为 A1 main.rs 既有例外），彻底消除需 A1 负责人调整根 lint 基线或依赖去重，超出本批次边界。
-    - 未做（按边界属 B4/B5）：rust-i18n、设置持久化、刷新状态机/generation、业务数据绑定、Ctrl/Cmd+K/R/1..4 产品快捷键、100k 行虚拟滚动验证。
+    - 截至 A4 未做（按边界属 B4/B5；后续状态以下方对应任务记录为准）：rust-i18n、设置持久化、刷新状态机/generation、业务数据绑定、Ctrl/Cmd+K/R/1..4 产品快捷键、100k 行虚拟滚动验证。
 
 - [x] **B4 应用状态、刷新、设置与国际化**
   - 依赖：A3、A4。
@@ -58,13 +58,13 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
   - 验证：gpui::test 覆盖刷新状态机、过期结果、设置恢复、主题和语言切换。
   - 完成证据：状态图、测试结果、设置文件样例必须不含调查数据。
   - 实施记录（2026-09-03，Batch 2；gpui test-support 会引入 deny 白名单外 git 源 proptest，故纯逻辑测试全部为普通 #[test]，GPUI 交互走真实 QA）：
-    - core：`src/refresh.rs` 纯刷新策略——`Generation`（代际，is_stale 按值相等）与 `RefreshGate`（try_begin/finish/abort 重入门控 + witr `adjustRefreshInterval` 语义：3–30s、步长 3s、连续两次 >60% 退避、<30% 加速、中间区间计数归零），6 个单元测试覆盖阈值/连续计数/钳制/重入。
-    - ui：`session.rs`（AppSession/WorkspaceSession：四工作区隔离的 LoadState/generation/选择/排序/筛选，手工与自动刷新共用 try_refresh 一条通道）、`debounce.rs`（500ms 详情防抖，注入时钟）、`shell/`（AppShell 产品壳层：侧栏四工作区/工具栏/主数据区/详情区/StatusBar，65/35 配比，ShellEvent 通知装配层）、`locale.rs`（rust-i18n 迁移：`i18n!("locales", fallback="en")` + `extend!(gpui_component)` 一次 + `set_language` 后显式 notify，删除手写 Dict，gallery 经 `tr()` 取文案）。ui 18 个测试。
-    - app：`main.rs` 装配（Root 第一级视图、启动设置 ShellStartup 一次到位、Ctrl+R 绑定、订阅 ShellEvent 落盘）+ `settings.rs`（allowlist 白名单 serde schema，deny_unknown_fields；可注入路径；临时文件+rename 原子写；损坏回退默认不 panic；列布局 schema 先行、B5/B6 回填）。app 5 个测试。
-    - 设置脱敏：结构上不存在调查输入字段（无 target/PID/路径/筛选/选择/调查结果），`deny_unknown_fields` 拒绝未知字段；真实运行验证设置文件仅含 `{"theme":"dark","language":"zh-CN","last_workspace":"ports"}`。
-    - 真实 QA：壳层布局/主题/语言/工作区切换/重启恢复/Ctrl+R 全部实测通过（截图 docs/qa/a4-gallery/screenshots/phase0/）；诚实空态（采集器尚未接入）无演示数据。
+    - core：`src/refresh.rs` 纯刷新策略——`Generation`（代际，is_stale 按值相等）与 `RefreshGate`（try_begin/finish/abort 重入门控 + witr `adjustRefreshInterval` 语义：3–30s、步长 3s、连续两次 >60% 退避、<30% 加速、中间区间计数归零）；active generation 绑定保证过期完成/中止不释放新请求或污染耗时样本。7 个单元测试覆盖阈值/连续计数/钳制/重入/过期完成。
+    - ui：`session.rs`（AppSession/WorkspaceSession：四工作区隔离的 LoadState/generation/选择/排序/筛选，手工与自动刷新共用 try_refresh 一条通道）、`debounce.rs`（500ms 详情防抖，注入时钟）、`shell/`（AppShell 产品壳层：侧栏四工作区/工具栏/主数据区/详情区/StatusBar；≥1100px 为 65/35，960–1099px 隐藏内联详情并为 B5 Sheet 保留主区宽度；ShellEvent 通知装配层）、`locale.rs`（rust-i18n 迁移：`i18n!("locales", fallback="en")` + `extend!(gpui_component)` 一次 + `set_language` 后显式 notify，删除手写 Dict，gallery 经 `tr()` 取文案）。ui 21 个测试。
+    - app：`main.rs` 装配（Root 第一级视图、启动设置 ShellStartup 一次到位、Ctrl+R 绑定、订阅 ShellEvent 与真实 window bounds 落盘）+ `settings.rs`（allowlist 白名单 serde schema，deny_unknown_fields；仅接受绝对配置路径；同目录唯一临时文件 + create_new + sync + rename；Unix 新目录 0700/新文件 0600；损坏回退默认不 panic；列布局 schema 先行、B5/B6 回填）。app 14 个测试。
+    - 设置脱敏与安全：结构上不存在调查输入字段（无 target/PID/路径/筛选/选择/调查结果），`deny_unknown_fields` 拒绝未知字段；旧固定 `settings.json.tmp` 符号链接复验不会覆盖 victim，无安全绝对配置路径时禁用持久化。
+    - 真实 QA：壳层主题/语言/四工作区、1280×800 的 65/35 布局、960×640 单主区布局、窗口尺寸 1100×700 重启恢复与 Gallery 第二行 → Sheet 完整值均实测通过（截图 `docs/qa/a4-gallery/screenshots/batch2-fix/`）；无采集器时使用 Unsupported 能力边界态且无演示数据。
     - 快捷键归属（模块验收「布局与交互验收」的剩余项）：Ctrl+R 已在 B4 落地；Ctrl+1..4（工作区切换，壳层范围）与 Ctrl/Cmd+K（调查入口）待 B5 随调查面板落地；方向键/Enter/Escape 已由组件库行为覆盖（gallery QA 验证）。
-    - 已知限制（随当前锁定 gpui rev f66ed399 成立，升级后必须复验）：X11 窗口关闭链路不完整——on_window_should_close 与 App::on_window_closed 均不触发，窗口销毁后进程残留（gpui 非 macOS 本应 LastWindowClosed 自动 quit）；窗口尺寸以渲染帧跟踪、随任意设置变更持久化，QA 收尾 pkill 清理。WSLg 输入注入间歇性失效属环境观察事项。
+    - 已知限制（随当前锁定 gpui rev f66ed399 成立，升级后必须复验）：X11 的 `xdotool windowclose` 仍未触发 on_window_should_close / App::on_window_closed，窗口销毁后进程残留；窗口尺寸已改由 observe_window_bounds 在 resize 时立即持久化，不再依赖关闭链路，QA 收尾停止本次进程。WSLg 输入注入间歇性失效属环境观察事项。
 
 - [ ] **B5 Processes 与调查工作区**
   - 依赖：B1、B2、B4。

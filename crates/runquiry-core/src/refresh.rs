@@ -7,6 +7,7 @@
 //!
 //! [`RefreshGate`] 同时承担重入门控：同一工作区在 in-flight 期间再次发起
 //! （无论手工还是自动）都会被拒绝，手工刷新与自动刷新共用同一条通道。
+//! 门控保存当前请求代际，过期请求的完成或中止信号不得释放新请求。
 
 use std::time::Duration;
 
@@ -68,7 +69,7 @@ pub struct RefreshGate {
     interval: Duration,
     slow_streak: u32,
     fast_streak: u32,
-    in_flight: bool,
+    active: Option<Generation>,
 }
 
 impl Default for RefreshGate {
@@ -77,7 +78,7 @@ impl Default for RefreshGate {
             interval: INITIAL_INTERVAL,
             slow_streak: 0,
             fast_streak: 0,
-            in_flight: false,
+            active: None,
         }
     }
 }
@@ -95,34 +96,44 @@ impl RefreshGate {
 
     /// 是否有刷新在进行中。
     pub const fn is_busy(&self) -> bool {
-        self.in_flight
+        self.active.is_some()
     }
 
     /// 尝试开始一次刷新；in-flight 期间（重入）返回 `false`。
-    pub const fn try_begin(&mut self) -> bool {
-        if self.in_flight {
+    pub const fn try_begin(&mut self, generation: Generation) -> bool {
+        if self.active.is_some() {
             return false;
         }
-        self.in_flight = true;
+        self.active = Some(generation);
         true
     }
 
     /// 结束一次刷新并计入耗时样本，驱动退避/加速。
     ///
-    /// 必须与 `try_begin` 成对调用；未开始的刷新不应产生样本。
-    pub fn finish(&mut self, took: Duration) {
-        self.in_flight = false;
+    /// 只有与当前 active 代际匹配的完成信号才会生效；过期完成信号返回
+    /// `false`，且不会释放当前刷新或产生耗时样本。
+    pub fn finish(&mut self, generation: Generation, took: Duration) -> bool {
+        if self.active != Some(generation) {
+            return false;
+        }
+        self.active = None;
         let (interval, slow, fast) =
             adjusted(self.interval, took, self.slow_streak, self.fast_streak);
         self.interval = interval;
         self.slow_streak = slow;
         self.fast_streak = fast;
+        true
     }
 
     /// 丢弃一次进行中的刷新（如工作区已切换）：清除 in-flight 但不产生样本，
-    /// 避免把被中断的刷新当作节奏证据。
-    pub const fn abort(&mut self) {
-        self.in_flight = false;
+    /// 避免把被中断的刷新当作节奏证据。过期中止信号返回 `false`，不得释放
+    /// 当前刷新。
+    pub fn abort(&mut self, generation: Generation) -> bool {
+        if self.active != Some(generation) {
+            return false;
+        }
+        self.active = None;
+        true
     }
 }
 
@@ -166,6 +177,12 @@ mod tests {
             interval,
             ..RefreshGate::default()
         }
+    }
+
+    fn record(gate: &mut RefreshGate, generation: &mut Generation, took: D) {
+        let generation = generation.next();
+        assert!(gate.try_begin(generation));
+        assert!(gate.finish(generation, took));
     }
 
     /// 阈值边界：>60% 慢、<30% 快、30%–60% 保持。
@@ -212,16 +229,18 @@ mod tests {
     #[test]
     fn interval_is_clamped() {
         let mut g = gate(D::from_secs(29));
-        g.finish(D::from_secs(29)); // 慢样本 1：只计数，不调整
+        let mut generation = Generation::first();
+        record(&mut g, &mut generation, D::from_secs(29)); // 慢样本 1：只计数，不调整
         assert_eq!(g.interval(), D::from_secs(29));
-        g.finish(D::from_secs(29)); // 慢样本 2：+3s 被钳到 30s
+        record(&mut g, &mut generation, D::from_secs(29)); // 慢样本 2：+3s 被钳到 30s
         assert_eq!(g.interval(), MAX_INTERVAL);
-        g.finish(D::from_secs(29)); // 已在上限，不再上升
+        record(&mut g, &mut generation, D::from_secs(29)); // 已在上限，不再上升
         assert_eq!(g.interval(), MAX_INTERVAL);
 
         let mut g = gate(D::from_secs(4));
-        g.finish(D::ZERO);
-        g.finish(D::ZERO);
+        let mut generation = Generation::first();
+        record(&mut g, &mut generation, D::ZERO);
+        record(&mut g, &mut generation, D::ZERO);
         assert_eq!(g.interval(), MIN_INTERVAL);
     }
 
@@ -229,9 +248,10 @@ mod tests {
     #[test]
     fn backoff_walks_up_to_max() {
         let mut g = RefreshGate::new();
+        let mut generation = Generation::first();
         for expected in [3u64, 3, 6, 6, 9, 9, 12] {
             assert_eq!(g.interval(), D::from_secs(expected));
-            g.finish(D::from_secs(30)); // 永远是慢样本
+            record(&mut g, &mut generation, D::from_secs(30)); // 永远是慢样本
         }
         assert_eq!(g.interval(), D::from_secs(12));
     }
@@ -240,17 +260,39 @@ mod tests {
     #[test]
     fn gate_blocks_reentry() {
         let mut g = RefreshGate::new();
-        assert!(g.try_begin());
+        let mut generation = Generation::first();
+        let g1 = generation.next();
+        assert!(g.try_begin(g1));
         assert!(g.is_busy());
         // 重入（无论手工还是自动）被拒绝。
-        assert!(!g.try_begin());
-        g.finish(D::from_millis(100));
+        assert!(!g.try_begin(generation.next()));
+        assert!(g.finish(g1, D::from_millis(100)));
         assert!(!g.is_busy());
-        assert!(g.try_begin());
+        let g2 = generation.next();
+        assert!(g.try_begin(g2));
         // 中止也释放通道。
-        g.abort();
+        assert!(g.abort(g2));
         assert!(!g.is_busy());
-        assert!(g.try_begin());
+        assert!(g.try_begin(generation.next()));
+    }
+
+    /// 已中止刷新晚到的完成信号，不得释放随后开始的新刷新。
+    #[test]
+    fn stale_completion_does_not_release_new_refresh() {
+        let mut g = RefreshGate::new();
+        let mut generation = Generation::first();
+        let g1 = generation.next();
+        assert!(g.try_begin(g1));
+        assert!(g.abort(g1));
+        let g2 = generation.next();
+        assert!(g.try_begin(g2));
+
+        assert!(!g.abort(g1));
+        assert!(g.is_busy(), "过期中止信号不得释放当前刷新");
+        assert!(!g.finish(g1, D::from_millis(100)));
+        assert!(g.is_busy(), "过期完成信号不得释放当前刷新");
+        assert!(g.finish(g2, D::from_millis(100)));
+        assert!(!g.is_busy());
     }
 
     /// 代际：单调递增，过期判定按值相等。

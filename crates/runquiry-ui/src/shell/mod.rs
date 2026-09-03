@@ -2,8 +2,8 @@
 //!
 //! 状态归属：每工作区会话（LoadState/generation/选择/排序/筛选）在
 //! [`AppSession`]；主题与语言只是壳层字段，切换不会触碰会话。壳层对平台
-//! 的唯一假设是「尚未接入」：主数据区以诚实的等待态呈现（见 locales 的
-//! `main.not_wired`），自动刷新循环与手工刷新共用
+//! 的唯一假设是「采集器不可用」：主数据区以 Unsupported 状态呈现（见
+//! locales 的 `main.collector_unavailable`），自动刷新循环与手工刷新共用
 //! [`WorkspaceSession::try_refresh`] 一条通道，在途期间拒绝重入。
 
 mod render;
@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{Context, EventEmitter, FocusHandle, Focusable, Task};
 use gpui_component::ThemeMode;
+use runquiry_core::Generation;
 
 use crate::debounce::{DETAIL_DEBOUNCE_MS, DetailDebounce};
 use crate::locale::{Lang, set_language};
@@ -83,11 +84,8 @@ pub struct AppShell {
     pub(crate) detail_focus: FocusHandle,
     /// 详情加载 500ms 防抖（见 [`DetailDebounce`]）。
     debounce: DetailDebounce,
-    /// 当前刷新的开始时刻，用于给自适应间隔提供真实耗时样本。
-    refresh_started: Option<Instant>,
-    /// 最近一帧的窗口尺寸（逻辑像素；0 表示尚未渲染），由渲染帧跟踪；
-    /// 装配层经 [`AppShell::window_size`] 读取并随设置变更持久化。
-    window_size: (u32, u32),
+    /// 当前刷新的代际与开始时刻，用于拒绝过期完成信号并提供真实耗时样本。
+    refresh_started: Option<(Generation, Instant)>,
     /// 自动刷新循环：必须保存在字段里维持生命周期（丢弃即取消）。
     _auto_refresh_task: Task<()>,
     /// 详情防抖到期任务：新选择会取消旧任务（替换字段）。
@@ -122,21 +120,8 @@ impl AppShell {
             detail_focus: cx.focus_handle().tab_index(17),
             debounce: DetailDebounce::new(),
             refresh_started: None,
-            window_size: (0, 0),
             _auto_refresh_task: auto_refresh_task,
             _detail_task: None,
-        }
-    }
-
-    /// 最近一帧的窗口尺寸（逻辑像素）；装配层随设置变更一并持久化。
-    pub const fn window_size(&self) -> (u32, u32) {
-        self.window_size
-    }
-
-    /// 渲染帧开始时同步窗口尺寸（渲染由平台 resize 回调与刷新循环驱动）。
-    pub(crate) fn track_window_size(&mut self, width: u32, height: u32) {
-        if self.window_size != (width, height) {
-            self.window_size = (width, height);
         }
     }
 
@@ -189,7 +174,9 @@ impl AppShell {
         if self.session.active() == workspace {
             return;
         }
-        self.session.active_session_mut().abort_refresh();
+        if let Some((generation, _)) = self.refresh_started.take() {
+            self.session.active_session_mut().abort_refresh(generation);
+        }
         self.debounce.cancel();
         self.session.switch_workspace(workspace);
         cx.emit(ShellEvent::WorkspaceChanged(workspace));
@@ -218,19 +205,24 @@ impl AppShell {
     /// 发起一次当前工作区的刷新：自动与手工共用这条通道，在途时静默拒绝。
     pub fn refresh_active(&mut self, cx: &mut Context<'_, Self>) {
         let session = self.session.active_session_mut();
-        if session.try_refresh().is_none() {
+        let Some(generation) = session.try_refresh() else {
             return; // 重入被拒绝：不重复发起
-        }
-        self.refresh_started = Some(Instant::now());
+        };
+        self.refresh_started = Some((generation, Instant::now()));
         // 平台采集端口尚未接入（B2/B3 交付后由装配层注入）：本轮没有可采集
         // 的数据源，以真实耗时收尾，让自适应间隔状态机保持运行，而不是伪造
         // 一份调查结果。主数据区的诚实等待态见 render。
-        let took = self
-            .refresh_started
-            .take()
-            .map_or(Duration::ZERO, |started| started.elapsed());
-        self.session.active_session_mut().finish_refresh(took);
-        cx.notify();
+        let Some((generation, started)) = self.refresh_started.take() else {
+            return;
+        };
+        let took = started.elapsed();
+        if self
+            .session
+            .active_session_mut()
+            .finish_refresh(generation, took)
+        {
+            cx.notify();
+        }
     }
 
     /// 防抖到期后加载详情：代际已过期的请求一律丢弃，旧详情不得覆盖新选择。

@@ -36,12 +36,12 @@ toolbar.language.en:
 toolbar.language.zh_cn:
   en: 中文
   zh-CN: 中文
-main.not_wired.title:
-  en: Collector not connected
-  zh-CN: 采集器尚未接入
-main.not_wired.description:
-  en: The platform collector for this workspace is not integrated yet. It will start collecting automatically once connected.
-  zh-CN: 此工作区的平台采集实现尚未接入 Runquiry，接入后会自动开始采集。
+main.collector_unavailable.title:
+  en: Collector unavailable
+  zh-CN: 采集器不可用
+main.collector_unavailable.description:
+  en: This workspace has no available collector on the current platform.
+  zh-CN: 当前平台没有可用于此工作区的采集器。
 detail.title:
   en: Details
   zh-CN: 详情
