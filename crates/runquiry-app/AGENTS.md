@@ -4,17 +4,18 @@
 
 ## 模块职责
 
-可执行 crate（二进制名 `runquiry`）：依赖装配、窗口启动、配置持久化、资源与打包元数据。当前仅包含 A1 阶段验证技术栈的最小窗口。
+可执行 crate（二进制名 `runquiry`）：依赖装配、窗口启动、配置持久化、资源与打包元数据。Batch 2 B4 起为真实产品壳层装配：runquiry-ui 的 `AppShell` 经 `Root` 装配进主窗口，设置持久化（allowlist 白名单）与快捷键在此层接线。
 
 ## 入口与启动
 
 - 入口：`src/main.rs` 的 `main()`。
-- 流程：`gpui_platform::application().with_assets(Assets)` → `gpui_component::init(cx)` → `cx.open_window` 创建窗口，第一级视图必须是 `gpui_component::Root`（gpui-component Root 契约）→ 设置标题 "Runquiry"；打开失败走 `eprintln!` + `cx.quit()`（无 unwrap/expect）。
+- 流程：`gpui_platform::application().with_assets(Assets)` → `runquiry_ui::locale::extend_component_translations()`（须在 gpui_component::init 之前，进程内一次）→ `gpui_component::init(cx)` → 加载设置（`settings::load_settings`）→ `cx.open_window` 创建窗口，第一级视图必须是 `gpui_component::Root`，内容视图为 `AppShell::new(ShellStartup, …)` → 订阅 ShellEvent 落盘（主题/语言/工作区事件即写；窗口尺寸随任意设置变更写入）→ 打开失败走 `eprintln!` + `cx.quit()`（无 unwrap/expect）。
+- 已知限制（随当前锁定 gpui rev f66ed399 成立）：X11 后端窗口关闭时 `on_window_should_close`/`on_window_closed` 均不触发，进程残留需 QA 时 pkill；升级 gpui 后必须复验。
 - 运行：`cargo run -p runquiry-app --locked`（Linux 需 A1 安装的系统依赖：pkg-config、fontconfig、xkbcommon、wayland 等）。
 
 ## 对外接口
 
-无对外 API。窗口行为：初始 1280×800（最小 960×640），居中显示 "Runquiry" 文本的壳层视图 `ShellView`（占位，产品工作区由 A4 实现）。
+无对外 API。窗口行为（B4 起为产品壳层）：初始 1280×800（最小 960×640），`Root` 第一级视图装配 runquiry-ui 的 `AppShell`（侧栏四工作区/工具栏/主数据区/详情区/StatusBar）；启动设置（主题/语言/最后工作区/窗口尺寸）从设置文件恢复，`ShellEvent` 变化即写回（allowlist 白名单，见 `settings.rs`）。
 
 另有独立开发实验台：`src` 同级的 `examples/gallery/`（`cargo run -p runquiry-app --example gallery --locked`），A4 组件 gallery，不参与产品打包。
 
@@ -28,7 +29,8 @@
 
 ## 测试与质量
 
-- 测试未发现。当前验证手段：`cargo check -p runquiry-app --locked`、`cargo deny check`、Linux 实际开窗（A1 已验证）。
+- `cargo test -p runquiry-app --locked`：5 个测试（settings.rs——默认/round-trip/损坏回退/allowlist 未知字段拒绝/脱敏断言）。
+- 其他验证：`cargo check -p runquiry-app --locked --examples`、`cargo deny check`、Linux 实际开窗（Batch 2 已做主题/语言/工作区切换与重启恢复的真实 QA）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束（`print_stderr` 为 warn，main 中的错误输出是当前唯一例外）。
 
 ## 常见问题
@@ -48,3 +50,5 @@
 
 - 2026-09-02：初次索引。A1 最小窗口状态（gpui-component 初始化 + Root 第一级视图已验证）。
 - 2026-09-03：新增 A4 gallery 示例（examples/gallery，独立入口不参与打包）。
+- 2026-09-03：Batch 2 B4——重写 src/main.rs 为产品壳层装配；新增 src/settings.rs（设置持久化 allowlist，serde/serde_json 依赖经守门人批准，lock 内既有版本零新增包）。
+- 2026-09-03：Batch 2 评审整改——设置路径环境变量（APPDATA/HOME）缺失或为空时回退系统临时目录（`settings.rs` 的 `env_base`，保证默认路径恒为绝对路径）；「对外接口」段过期 `ShellView` 描述改写为产品壳层实际行为。

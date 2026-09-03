@@ -59,7 +59,8 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 
 ## 测试策略
 
-- 测试尚未建立（骨架阶段）。计划：`cargo test -p runquiry-core --locked`、`cargo test -p runquiry-platform --locked`（A5 引入 fixture 与假平台后端后）。
+- Batch 2（A5/B4）起测试已建立：`cargo test -p runquiry-core --locked`（36）、`-p runquiry-platform`（10）、`-p runquiry-ui`（18）、`-p runquiry-app`（5），共 69 个；`cargo test -p runquiry-ui` 等禁止给 ui 加 gpui test-support dev-dependency（会引入 deny 白名单外 git 源 proptest），纯逻辑一律普通 `#[test]`。
+- 合成 fixture 与失败注入在 workspace 根 `tests/fixtures/`（清单与敏感信息扫描见其 README.md）；SocketEntry 输入边界规则（TCP/UDP 必有合法端口、Unix 必无端口）在 fixture loader 层执行，平台真实输入必须复用。
 - 行为语义以 [docs/witr-parity.md](docs/witr-parity.md) 为验收依据；fixture 要求合成值（无真实用户名、路径、Token）。
 
 ## 编码规范
@@ -80,6 +81,8 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 
 - 2026-09-02 @9d4a616：A1 工程基线（四层 workspace、依赖锁定、最小窗口）、A2 witr 行为契约落地；初次建立 AI 上下文索引。
 - 2026-09-03（未提交工作区）：Batch 1——A3 核心领域类型与七平台端口落地（serde 经守门人批准，零新增包）；A4 设计系统（DESIGN.md + runquiry-ui 主题/状态/双语占位）与独立 gallery 实验台（runquiry-app/examples/gallery）；gpui/gpui-component git 依赖同步内联至 runquiry-ui。
+- 2026-09-03（未提交工作区）：Batch 2——Phase 0 修复 gallery Name 列省略/tooltip/Sheet 绑定行并复验（qa-report §10）；A5 三平台 fixture + 失败注入 + ProcessController 契约修正（tests/fixtures/）；B4 产品壳层（runquiry-app 装配 + runquiry-ui shell/session/debounce）+ core 纯刷新策略 + 设置持久化 allowlist + rust-i18n 迁移（runquiry-ui/locales，新增 rust-i18n/serde/serde_json 依赖均为 lock 内既有版本，零新增包）。
+- 2026-09-03（未提交工作区）：Batch 2 评审整改——补 `linux/file-locks-normal.json`（/proc/locks 风格，30 个 fixture、core 36 测试）；设置路径环境变量缺失回退系统临时目录；删除 locales 死键 `gallery.retry`；修正各文档过期/错位描述（app 壳层、fixture README 归属、B4 快捷键遗留归属）；3 处 `from_secs(3_600)` → `from_hours(1)`（clippy 1.95 duration_suboptimal_units）。
 
 ## 索引状态
 - 上次索引：2026-09-02T10:25:19Z（@9d4a616）

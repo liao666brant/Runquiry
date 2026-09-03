@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）、分析管线、告警规则、刷新状态机与平台端口。A3 已落地公共领域类型与七个同步平台端口（`src/model/`、`src/port/`）；目标解析算法、来源识别、告警与分析管线属 B1（见 [模块 02 计划](../../.omo/plans/runquiry-gpui-desktop/02-core-analysis.md)）。
+Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）、分析管线、告警规则、刷新状态机与平台端口。A3 已落地公共领域类型与七个同步平台端口（`src/model/`、`src/port/`）；Batch 2 新增纯刷新策略 `src/refresh.rs`（Generation 代际 + RefreshGate 3–30s 自适应门控，无 GPUI/计时器/OS 依赖）；目标解析算法、来源识别、告警与分析管线属 B1（见 [模块 02 计划](../../.omo/plans/runquiry-gpui-desktop/02-core-analysis.md)）。
 
 约束：不依赖 GPUI 或操作系统实现；平台差异通过端口（trait）抽象，由 runquiry-platform 提供实现。
 
@@ -24,7 +24,7 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 
 ## 测试与质量
 
-- `cargo test -p runquiry-core --locked`：12 个测试（tests/domain_types.rs、tests/ports.rs，含 trait 假实现消费验证）。
+- `cargo test -p runquiry-core --locked`：36 个测试（lib 单测 6 + tests/domain_types.rs 11 + tests/ports.rs 1 + tests/fixtures_load.rs 14 + tests/process_controller_contract.rs 4）；tests/support/ 提供 fixture 装载器、SocketEntry 输入边界校验与假平台后端（数据在 workspace 根 tests/fixtures/，清单见其 README）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束（unwrap/expect/panic 均 deny）。
 
 ## 常见问题
@@ -45,3 +45,5 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 
 - 2026-09-02：初次索引。骨架状态，仅有 manifest 与 lib.rs 占位。
 - 2026-09-03：A3 落地公共领域类型、七端口与测试；新增 serde 依赖（守门人批准，零新增包）。
+- 2026-09-03：Batch 2——新增 src/refresh.rs（A5/B4 纯刷新策略与代际）；ProcessController 契约注释修正（execute 身份参数为 expected snapshot，实现须重读 current identity 并 same_process 比较，start_time None 必须拒绝）；tests/ 扩充 fixture 装载与契约测试（tests/fixtures/ 数据在 workspace 根）。
+- 2026-09-03：Batch 2 评审整改——新增 `linux/file-locks-normal.json`（/proc/locks 风格 Flock+Posix）与 `linux_file_locks_fixture_loads_lock_entries`（fixtures_load 14 个）；契约测试 `from_secs(3_600)` → `from_hours(1)`（clippy 1.95 lint）。

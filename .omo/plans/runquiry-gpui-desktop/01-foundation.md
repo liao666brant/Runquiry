@@ -59,7 +59,7 @@
   - 完成证据：行为矩阵条目数、无来源条目列表必须为空、链接检查结果。
   - 实施记录（2026-09-02）：docs/witr-parity.md 共 202 条（§1 领域模型 35、§2 目标 40、§3 解析 20、§4 管线 27、§5 来源 21、§6 告警 12、§7 容器运行时 16、§8 刷新 6、§9 进程操作 9、§10 平台差异 5、§11 其他 7、§12 四工作区 4）；无来源条目 0；文档内相对链接已逐一在磁盘核实（183 个路径），符号名经抽查与 witr 源码一致。
 
-- [ ] **A5 Fixture 与测试基础设施**
+- [x] **A5 Fixture 与测试基础设施**
   - 依赖：A2、A3。
   - 从 witr 测试和人工构造数据建立 Linux、macOS、Windows fixture。
   - 提供确定性时钟、固定 generation、假平台后端和失败注入入口。
@@ -70,6 +70,13 @@
     - cargo test -p runquiry-platform --locked
     - 扫描 fixture，确认不包含开发机用户名、主目录、Token 或真实进程数据
   - 完成证据：fixture 清单、失败模式映射、敏感信息扫描结果。
+  - 实施记录（2026-09-03，Batch 2）：
+    - fixture：workspace 根 `tests/fixtures/{linux,macos,windows}/` 共 30 个 JSON（封套格式 platform/scenario/captured_at_epoch_ms/generation/capability/data/issues），清单与失败模式映射见 `tests/fixtures/README.md`。
+    - 测试基建：`crates/runquiry-core/tests/support/`（fixture 装载器 + SocketEntry 边界校验 + 假平台后端）、`crates/runquiry-platform/tests/support/`（Scenario 枚举失败注入 + FakePlatform/命令执行假实现）、`crates/runquiry-core/tests/{fixtures_load,process_controller_contract}.rs` 与 `crates/runquiry-platform/tests/fake_backends.rs`。
+    - ProcessController 契约修正（`crates/runquiry-core/src/port/process.rs` 文档注释）：execute 的身份参数表示确认流程持有的 expected snapshot；平台实现必须在动作前按 PID 重读 current identity 再用 same_process 比较；不新增第二个调用方身份参数；start_time 为 None（身份不可验证）时同样拒绝。FakeController 实现该语义：同 PID 不同 start_time → ProcessChanged 且动作计数 0；start_time None → 拒绝且计数 0；身份一致 → 执行（测试 process_controller_contract.rs 4 个 + fake_backends.rs 10 个）。
+    - SocketEntry 输入边界（fixture DTO/loader 层，不改公共领域模型）：TCP/TCP6/UDP/UDP6 必须有合法端口（Some 且 1..=65535），Unix socket 必须无端口；后续平台真实输入必须复用该规则（已记录于 tests/fixtures/README.md）。
+    - 敏感信息扫描：合成值约定（fxt- 前缀进程、fixture-user、/opt/runquiry-fixtures/…、容器 fxt…、固定 epoch 1700000000000）；grep 扫描 tests/fixtures/ 无开发机用户名/主目录/Token 命中（命令与结果见 tests/fixtures/README.md §3）。
+    - 验证：cargo test -p runquiry-core --locked（36 个）/ cargo test -p runquiry-platform --locked（10 个）全过；clippy -D warnings 零警告。
 
 ## 模块退出条件
 

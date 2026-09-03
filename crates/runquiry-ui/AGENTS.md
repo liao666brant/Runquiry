@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、Ports、Containers、File Locks）、调查面板、设置与国际化。A4 已落地设计系统（主题/状态/双语占位，见 [DESIGN.md](../../DESIGN.md)）；应用状态、刷新、rust-i18n 与产品工作区属 B4-B6（见 [模块 05 计划](../../.omo/plans/runquiry-gpui-desktop/05-desktop-ui.md)）。
+GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、Ports、Containers、File Locks）、调查面板、设置与国际化。A4 落地设计系统（主题/状态，见 [DESIGN.md](../../DESIGN.md)）；Batch 2 B4 落地应用状态（session/shell/debounce）与 rust-i18n（locales/app.yml，删除手写 Dict，对外文案经 `tr()`）；真实数据工作区属 B5/B6（见 [模块 05 计划](../../.omo/plans/runquiry-gpui-desktop/05-desktop-ui.md)）。
 
 约束：只依赖 runquiry-core；禁止直接读取 /proc、调用平台 API 或运行外部命令——数据一律经 core 端口由 runquiry-platform 装配注入。
 
@@ -16,7 +16,10 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 - `theme`：Runquiry Light/Dark 主题（原始色值只允许出现在 `theme.rs` 的 PALETTE 表；`install`/`apply` 切换）。
 - `state` + `state_view`：DataState 六态与 RenderOnce 统一状态呈现（loading/empty/error/unsupported/permission-denied/ready）。
-- `locale`：Lang + Dict（en/zh-CN 最小确定性双语字典，B4 迁移 rust-i18n 前的占位）。
+- `locale`：Lang + rust-i18n 初始化（`i18n!("locales", fallback="en")`；`extend_component_translations()` 须在 gpui_component::init 前调用一次；`set_language` 后必须显式 notify）；对外文案 API：`tr(key)`/`state_copy(state)`/`state_name(state)`（键在 `locales/app.yml`，v2 格式，en 兜底，键完整性由单测强制）。
+- `session`：AppSession/WorkspaceId/WorkspaceSession——四工作区隔离的 LoadState/generation/选择/排序/筛选；手工与自动刷新共用 `try_refresh` 一条通道，in-flight 拒绝重入；旧代际结果经 `is_current` 判定丢弃。
+- `debounce`：DetailDebounce 500ms 详情防抖（注入毫秒时钟，纯逻辑）。
+- `shell`：AppShell 产品壳层（侧栏四工作区/工具栏/主数据区/详情区/StatusBar，65/35）；`ShellStartup` 启动设置一次到位；`ShellEvent`（主题/语言/工作区变化）交装配层持久化；窗口尺寸渲染帧跟踪（`window_size()`）。
 
 ## 关键依赖与配置
 
@@ -25,7 +28,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 ## 测试与质量
 
-- `cargo test -p runquiry-ui --locked`：10 个纯逻辑测试（主题 token 一致性、双语字典完整性、状态映射）。GPUI 视图测试参考 `.agents/skills/gpui/references/test.md`。
+- `cargo test -p runquiry-ui --locked`：18 个纯逻辑测试（主题 token 一致性、rust-i18n 双语键完整性、状态映射、会话隔离/重入/代际、防抖）。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）；GPUI 交互走真实 QA。
 - clippy 注意：锁定依赖树的 77 条 `multiple-crate-versions` 为基线既有问题，`-D warnings` 验证时豁免该项（见模块 05 计划 A4 实施记录）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束。
 
@@ -48,3 +51,5 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 - 2026-09-02：初次索引。骨架状态，仅有 manifest 与 lib.rs 占位。
 - 2026-09-03：A4 落地设计系统（主题/状态/双语占位）与 gallery 实验台；新增 gpui/gpui-component 内联 git 依赖（与 runquiry-app 同源同 rev）。
+- 2026-09-03：Batch 2 B4——新增 session/shell/debounce 模块；手写 Dict 字典迁移到 rust-i18n（locales/app.yml，新增 rust-i18n 4.2.1 依赖，lock 内既有版本零新增包）；gallery 与产品壳层共用本 crate 文案 API。
+- 2026-09-03：Batch 2 评审整改——删除 locales 无引用死键 `gallery.retry`。

@@ -23,7 +23,7 @@
 
 ## 测试与质量
 
-- 测试未发现。计划命令：`cargo test -p runquiry-platform --locked`（A5 引入假平台后端后）。
+- `cargo test -p runquiry-platform --locked`：10 个测试（tests/fake_backends.rs——基于 tests/support/ 的 Scenario 失败注入与 FakePlatform，覆盖正常/空/部分/权限/工具缺失/超时/格式损坏/PID 复用零动作）。真实采集实现属 B2/B3。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束。
 
 ## 常见问题
@@ -40,3 +40,4 @@
 ## 变更记录
 
 - 2026-09-02：初次索引。骨架状态，仅有 manifest 与 lib.rs 占位。
+- 2026-09-03：Batch 2 A5——新增 tests/support/（Scenario 失败注入、FakePlatform 假实现）与 tests/fake_backends.rs；src/ 仍为骨架（真实实现属 B2/B3）。
