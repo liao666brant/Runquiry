@@ -1,3 +1,6 @@
 /target
 # A1 工具链阶梯验证使用的独立构建目录（CARGO_TARGET_DIR=target-verify）
+/target-verify
 /docs/target-verify
+# 本地代码图谱缓存（此前仅由 .git/info/exclude 覆盖，不随仓库分发）
+/.codegraph
