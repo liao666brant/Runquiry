@@ -5453,7 +5453,12 @@ dependencies = [
 name = "runquiry-platform"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "runquiry-core",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "zbus",
 ]
 
 [[package]]

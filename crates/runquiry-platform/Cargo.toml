@@ -8,6 +8,19 @@ publish.workspace = true
 
 [dependencies]
 runquiry-core.workspace = true
+# Batch 3 依赖申请（主 Agent 依赖守门，2026-09-03）：以下依赖均已存在于 Cargo.lock
+# （GPUI 传递依赖，闭包完整），本次未新增任何包、未改任何版本；验证时必须 --locked。
+# sysinfo：进程基线（B2，parity：进程基线以 sysinfo 为基线）。
+sysinfo = "0.31.4"
+# serde/serde_json：容器运行时 JSON 机器格式解析（B3）与平台侧结构序列化。
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# zbus：systemd D-Bus 来源证据（B2，blocking API；仅 Linux 语义）。
+zbus = "5.19.0"
+# libc：仅用于超时/超限时对子进程组发 SIGKILL（kill(2)），保证测试与真实调用
+# 派生的孙进程一并终止（B3 进程清理红线）。锁内既有版本，零新增包。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.189"
 
 [lints]
 workspace = true

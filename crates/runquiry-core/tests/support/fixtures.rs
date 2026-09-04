@@ -13,7 +13,9 @@ use std::time::{Duration, SystemTime};
 
 use serde::de::DeserializeOwned;
 
-use runquiry_core::{CapabilityStatus, DiagnosticIssue, Inspection, Protocol, SocketEntry};
+use runquiry_core::{
+    CapabilityStatus, DiagnosticIssue, Inspection, SocketEntry, validate_socket_entry,
+};
 
 /// fixture 快照封套：平台、场景、确定性时刻、generation、能力状态与部分成功语义。
 #[derive(Debug, serde::Deserialize)]
@@ -97,40 +99,15 @@ pub fn load_sockets(relative: &str) -> Result<LoadedFixture<Vec<SocketEntry>>, S
 /// `SocketEntry` 输入边界校验：TCP/TCP6/UDP/UDP6 必须携带合法端口
 /// （`Some` 且 1..=65535）；Unix socket 必须没有端口（`None`）。
 ///
-/// `Port` 新类型已在反序列化层拒绝 0 与越界值，这里对「有/无端口」的
-/// 协议配对规则做显式表达，作为 fixture 装载与后续平台真实输入的统一规则。
+/// 规则已提升为 runquiry-core 公共 API [`runquiry_core::validate_socket_entry`]
+/// （`tests/fixtures/README.md` 第 4 节要求），此处逐条委托，不再维护第二份
+/// 实现；平台真实输入（B2 采集器）必须复用同一公共函数。
 ///
 /// # Errors
 /// 任一条目违反配对规则时返回说明哪个条目违规的错误。
 pub fn validate_socket_entries(entries: &[SocketEntry]) -> Result<(), String> {
     for entry in entries {
-        match entry.protocol {
-            Protocol::Unix => {
-                if entry.port.is_some() {
-                    return Err(format!(
-                        "Unix socket 条目 {} 不得携带端口（端口必须为 None）",
-                        entry.address
-                    ));
-                }
-            }
-            Protocol::Tcp | Protocol::Tcp6 | Protocol::Udp | Protocol::Udp6 => match entry.port {
-                Some(port) if (1..=65_535).contains(&port.get()) => {}
-                Some(port) => {
-                    return Err(format!(
-                        "{:?} 条目 {} 端口 {} 越界，必须在 1..=65535",
-                        entry.protocol,
-                        entry.address,
-                        port.get()
-                    ));
-                }
-                None => {
-                    return Err(format!(
-                        "{:?} 条目 {} 缺少端口（TCP/UDP 条目端口必须为 Some）",
-                        entry.protocol, entry.address
-                    ));
-                }
-            },
-        }
+        validate_socket_entry(entry)?;
     }
     Ok(())
 }

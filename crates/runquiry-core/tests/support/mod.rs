@@ -8,6 +8,7 @@
 #![allow(unreachable_pub)]
 #![allow(dead_code)]
 
+pub mod collectors;
 pub mod fakes;
 pub mod fixtures;
 

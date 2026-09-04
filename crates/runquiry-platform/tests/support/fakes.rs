@@ -17,10 +17,10 @@ use std::time::{Duration, SystemTime};
 
 use runquiry_core::{
     CapabilityStatus, CommandOutput, CommandRunner, CommandSpec, ContainerInventory, ContainerKey,
-    ContainerSummary, DiagnosticCode, DiagnosticIssue, FileInventory, FileLockEntry, InspectError,
-    Inspection, LockMode, LockType, NetworkInventory, OpenPortEntry, Pid, ProcessAction,
-    ProcessController, ProcessDetails, ProcessDetailsProvider, ProcessIdentity, ProcessInventory,
-    ProcessSummary, Protocol, SocketEntry,
+    ContainerSummary, DiagnosticCode, DiagnosticIssue, FileInventory, FileLockEntry, HealthStatus,
+    InspectError, Inspection, LockMode, LockType, NetworkInventory, OpenPortEntry, Pid,
+    ProcessAction, ProcessController, ProcessDetails, ProcessDetailsProvider, ProcessIdentity,
+    ProcessInventory, ProcessSummary, Protocol, SocketEntry,
 };
 
 use super::{CAPTURED_AT_MS, FXT_PID, Generation, Scenario};
@@ -160,6 +160,10 @@ impl ProcessInventory for FakePlatform {
                 "fxt-daemon --config /opt/runquiry-fixtures/etc/fxt.conf",
             )),
             user: Some(String::from("fixture-user")),
+            health: HealthStatus::Healthy,
+            container: None,
+            exe_deleted: false,
+            capabilities: Vec::new(),
         };
         let pid = self.baseline.pid();
         self.inspect(vec![summary(pid)])
@@ -190,6 +194,11 @@ impl ProcessDetailsProvider for FakePlatform {
             working_dir: Some(std::path::PathBuf::from("/opt/runquiry-fixtures/var")),
             environment: Vec::new(),
             children: Vec::new(),
+            memory: None,
+            io: None,
+            open_files: Vec::new(),
+            fd_count: None,
+            fd_limit: None,
         })
     }
 }

@@ -5,6 +5,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 
 use crate::model::capability::CapabilityStatus;
+use crate::model::container_context::HealthcheckStatus;
 use crate::model::error::InspectError;
 use crate::model::ids::{ContainerKey, Pid};
 use crate::model::inspection::Inspection;
@@ -46,4 +47,20 @@ pub trait ContainerInventory {
 
     /// 解析容器在主机上的进程 ID；运行时无法给出时返回 `Ok(None)`。
     fn host_pid(&self, key: &ContainerKey) -> Result<Option<Pid>, InspectError>;
+}
+
+/// 容器健康检查定义探测端口（additive；parity §4 `ContainerHealthcheckStatus`）。
+///
+/// 判定的是容器**是否配置了 HEALTHCHECK**（`present` / `absent`），不是运行
+/// 时健康状态。探测仅对 docker / podman 有意义（parity：其余运行时/平台不可
+/// 判定），实现按 [`ContainerHealthcheckStatus::Present`] / `Absent` 返回；
+/// 运行时不受支持、CLI 缺失或查询失败一律返回 `None`（对应 witr 空字符串，
+/// 此时告警不触发）。
+pub trait ContainerHealthcheckProbe {
+    /// 探测容器是否定义了 HEALTHCHECK。
+    ///
+    /// 前置条件：`container_id` 为 cgroup 判出的容器 ID，`runtime` 为
+    /// [`ContainerContext::runtime`](crate::model::container_context::ContainerContext::runtime)
+    /// 语义的运行时标识；实现自行校验（非 docker/podman 返回 `None`）。
+    fn healthcheck_status(&self, container_id: &str, runtime: &str) -> Option<HealthcheckStatus>;
 }

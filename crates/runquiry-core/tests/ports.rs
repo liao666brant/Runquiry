@@ -9,8 +9,8 @@ use std::time::Duration;
 use runquiry_core::{
     CapabilityStatus, CommandOutput, CommandRunner, CommandSpec, ContainerInventory, ContainerKey,
     ContainerSummary, DETAIL_TIMEOUT, DiagnosticCode, DiagnosticIssue, FileInventory,
-    FileLockEntry, InspectError, Inspection, LIST_TIMEOUT, LockMode, LockType, NetworkInventory,
-    OpenPortEntry, Pid, Port, ProcessAction, ProcessController, ProcessDetails,
+    FileLockEntry, HealthStatus, InspectError, Inspection, LIST_TIMEOUT, LockMode, LockType,
+    NetworkInventory, OpenPortEntry, Pid, Port, ProcessAction, ProcessController, ProcessDetails,
     ProcessDetailsProvider, ProcessIdentity, ProcessInventory, ProcessSummary, Protocol,
     SocketEntry,
 };
@@ -50,6 +50,11 @@ impl ProcessDetailsProvider for FakeProcessDetails {
             working_dir: Some(PathBuf::from("/srv/app")),
             environment: Vec::new(),
             children: Vec::new(),
+            memory: None,
+            io: None,
+            open_files: Vec::new(),
+            fd_count: None,
+            fd_limit: None,
         })
     }
 }
@@ -208,6 +213,10 @@ fn all_seven_ports_are_implementable_and_callable() -> TestResult {
             command: String::from("nginx"),
             command_line: Some(String::from("nginx -g daemon off;")),
             user: Some(String::from("www-data")),
+            health: HealthStatus::Healthy,
+            container: None,
+            exe_deleted: false,
+            capabilities: Vec::new(),
         }],
     };
     assert_eq!(processes.list().data.as_ref().map(Vec::len), Some(1));

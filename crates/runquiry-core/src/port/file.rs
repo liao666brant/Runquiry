@@ -61,3 +61,14 @@ pub trait FileInventory {
     /// 查询持有指定文件（或对该文件加锁）的进程。
     fn holders(&self, path: &Path) -> Inspection<Vec<FileLockEntry>>;
 }
+
+/// 进程级文件锁查询端口（additive；parity §1 `FileContext.LockedFiles`）。
+///
+/// [`FileInventory::holders`] 以路径为键（文件目标解析与 File Locks 工作区）；
+/// 分析管线需要的是「该进程持有哪些锁」（witr：/proc/locks 按 PID 过滤），
+/// 语义方向相反，故单列为进程键端口。平台按各平台证据实现；未实现时
+/// 管线将文件锁列表降级为空。
+pub trait ProcessFileLocks {
+    /// 查询指定进程持有的文件锁。
+    fn locks_of(&self, pid: Pid) -> Inspection<Vec<FileLockEntry>>;
+}

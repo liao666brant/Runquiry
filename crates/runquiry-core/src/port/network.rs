@@ -64,6 +64,59 @@ pub struct OpenPortEntry {
     pub state: String,
 }
 
+/// `SocketEntry` 输入边界校验：TCP/TCP6/UDP/UDP6 条目必须携带合法端口
+/// （`Some` 且 1..=65535）；Unix socket 条目必须没有端口（`None`）。
+///
+/// 这是 fixture 装载与平台真实输入共用的统一规则（parity：invalid port
+/// must be between 1 and 65535；Unix socket 无端口语义，不得为满足类型而
+/// 编造假端口）。`Port` 新类型已在反序列化与构造层拒绝 0 与越界值，本函数
+/// 对「有/无端口」的协议配对规则做显式表达。
+///
+/// # Errors
+/// 条目违反协议-端口配对规则时返回说明性错误；文案与 fixture 装载边界
+/// 历史行为逐字一致。
+pub fn validate_socket_entry(entry: &SocketEntry) -> Result<(), String> {
+    match entry.protocol {
+        Protocol::Unix => {
+            if entry.port.is_some() {
+                return Err(format!(
+                    "Unix socket 条目 {} 不得携带端口（端口必须为 None）",
+                    entry.address
+                ));
+            }
+        }
+        Protocol::Tcp | Protocol::Tcp6 | Protocol::Udp | Protocol::Udp6 => match entry.port {
+            Some(port) if (1..=65_535).contains(&port.get()) => {}
+            Some(port) => {
+                return Err(format!(
+                    "{:?} 条目 {} 端口 {} 越界，必须在 1..=65535",
+                    entry.protocol,
+                    entry.address,
+                    port.get()
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "{:?} 条目 {} 缺少端口（TCP/UDP 条目端口必须为 Some）",
+                    entry.protocol, entry.address
+                ));
+            }
+        },
+    }
+    Ok(())
+}
+
+/// 对一批 [`SocketEntry`] 逐条执行 [`validate_socket_entry`]。
+///
+/// # Errors
+/// 任一条目违规时返回该条目的错误说明。
+pub fn validate_socket_entries(entries: &[SocketEntry]) -> Result<(), String> {
+    for entry in entries {
+        validate_socket_entry(entry)?;
+    }
+    Ok(())
+}
+
 /// 网络与端口采集端口。
 ///
 /// 后置条件：属主不可知的端口必须以 `pid: None` 返回条目，同时按约定追加

@@ -60,6 +60,13 @@ pub enum InspectError {
         /// 重读得到的新身份，与操作前快照比对。
         identity: ProcessIdentity,
     },
+    /// 端口上存在 socket 但属主不可知（parity 哨兵
+    /// `ErrSocketOwnerUnknown`：无权限或属主已退出，socket 本身存在）。
+    /// 调用方可据此走容器回退（按端口查容器）或提示权限不足。
+    SocketOwnerUnknown {
+        /// 不可知属主的端口描述。
+        subject: String,
+    },
 }
 
 impl InspectError {
@@ -73,6 +80,7 @@ impl InspectError {
             Self::Unsupported { .. } => "unsupported",
             Self::ExternalTool { .. } => "external_tool",
             Self::ProcessChanged { .. } => "process_changed",
+            Self::SocketOwnerUnknown { .. } => "socket_owner_unknown",
         }
     }
 }
@@ -95,6 +103,9 @@ impl fmt::Display for InspectError {
             }
             Self::ProcessChanged { identity } => {
                 write!(f, "进程 {} 的身份已变化，请刷新后重试", identity.pid())
+            }
+            Self::SocketOwnerUnknown { subject } => {
+                write!(f, "{subject} 存在 socket，但属主不可知（可能需要更高权限）")
             }
         }
     }

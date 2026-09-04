@@ -4,9 +4,13 @@
 //! 不定义持久化数据库格式。
 
 pub mod capability;
+pub mod container_context;
 pub mod diagnostic;
 pub mod error;
+pub mod health;
 pub mod ids;
 pub mod inspection;
 pub mod process;
+pub mod resource_usage;
+pub mod source;
 pub mod target;

@@ -5,7 +5,10 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::model::container_context::ContainerContext;
+use crate::model::health::HealthStatus;
 use crate::model::ids::Pid;
+use crate::model::resource_usage::{IoStats, MemoryInfo};
 
 /// 进程身份：破坏性操作前重读比对，防止 PID 被复用导致误操作。
 ///
@@ -159,6 +162,31 @@ pub struct ProcessSummary {
     pub command_line: Option<String>,
     /// 进程属主用户名。
     pub user: Option<String>,
+    /// 健康状态标签（parity：healthy/zombie/stopped/high-cpu/high-mem，
+    /// 未采集为 unknown）；采集失败或平台不可判定时为
+    /// [`HealthStatus::Unknown`]。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `Unknown` 读取。
+    #[serde(default)]
+    pub health: HealthStatus,
+    /// 容器身份上下文（parity：`ContainerID`/`ContainerRuntime`/
+    /// `ContainerHealthcheck`）；非容器进程或 cgroup 判不出时为 `None`。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub container: Option<ContainerContext>,
+    /// 进程启动后可执行文件已被删除（parity：`ExeDeleted`；Linux 经
+    /// `/proc/PID/exe` 探测，告警规则消费）。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `false` 读取。
+    #[serde(default)]
+    pub exe_deleted: bool,
+    /// Linux capabilities 列表（如 `CAP_NET_BIND_SERVICE`）；非 Linux 平台恒空
+    /// （parity：`Capabilities`）。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按空列表读取。
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 /// 进程详情快照：资源、工作目录、环境变量与子进程。
@@ -181,4 +209,32 @@ pub struct ProcessDetails {
     pub environment: Vec<(String, String)>,
     /// 子进程 PID 列表（按 PID 升序）。
     pub children: Vec<Pid>,
+    /// 详细内存信息（parity：`MemoryInfo`，VMS/RSS/Shared/Text/Lib/Data/Dirty
+    /// 字节）；仅 verbose 采集填充，未取得为 `None`（witr 指针零值约定）。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub memory: Option<MemoryInfo>,
+    /// I/O 统计（parity：`IOStats`，读写字节数与读写操作次数）；未取得为 `None`。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub io: Option<IoStats>,
+    /// 打开文件描述符列表（parity：`FileDescs`）。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按空列表读取。
+    #[serde(default)]
+    pub open_files: Vec<PathBuf>,
+    /// 打开文件描述符数量（parity：`FDCount`）；未取得为 `None`。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub fd_count: Option<u64>,
+    /// FD 软上限（parity：`FDLimit`；Linux 读 `/proc/PID/limits` 的
+    /// "Max open files" 软限制，unlimited 记 0——witr getFileLimit 约定）；
+    /// 未取得为 `None`。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub fd_limit: Option<u64>,
 }
