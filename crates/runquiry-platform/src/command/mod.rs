@@ -3,6 +3,10 @@
 //! 只接受程序名 + 独立 argv，绝不经过 shell；stdout/stderr 并发读取、
 //! 分别限幅，超时/超限终止并回收子进程。子模块由本目录内代码自组织。
 
+#[cfg(unix)]
+mod original_user;
+mod output;
+mod process;
 mod runner;
 
 pub use runner::{CommandFailure, StdCommandRunner};

@@ -41,15 +41,15 @@
     - 对受限进程验证 PermissionDenied/Partial，而不是空集合
   - 完成证据：能力矩阵、fixture 测试、普通用户真实采集结果。
   - 实施记录（2026-09-04，评审修复后更新）：
-    - **intentional change 注记**：进程基线未按上级方案文字以 sysinfo 枚举，改为 `/proc` 目录扫描基线 + sysinfo 仅用于 uid→用户名解析。理由：Linux 上 sysinfo 进程枚举本身读 /proc，扫描基线可直接复用可注入 ProcFs 的测试路径与逐条目失败诊断；B8 纵向验收时复核该取舍（若切回 sysinfo 枚举须保持逐条目部分成功语义）。
-    - `linux/`：`LinuxPlatform` 单一结构实现六个只读端口（ProcessInventory/ProcessDetailsProvider/NetworkInventory/FileInventory/**ProcessFileLocks**/SourceEvidenceProvider），`new()`（生产 /proc）与 `with_injected(proc_root, systemd_run_dir, own_pid)`（合成树/QA）。子模块：`procfs/`（可注入根 + process_files/netparse/locktable 纯解析，CLK_TCK=100、PAGE_SIZE=4K 换算）、`process.rs`+`details.rs`（基线与详情）、`fdscan.rs`（FD→inode 归因）、`network.rs`、`locks.rs`（锁记录优先，普通 FD 以 Other+Read 表达；`locks_of(pid)` 按持有者 PID 过滤，与 `holders` 共享解析路径）、`source.rs`（SourceEvidenceProvider，平台不判定来源类型）、`capabilities.rs`（CapEff 译码）。全部 cfg 隔离于 linux 模块。
-    - 自身排除策略：构造时 /proc PID 基准快照；`list()` 排除自身 PID + 「不在基准快照且（a）PPID 链可达自身，或（b）启动时刻晚于构造时刻」的进程——时间窗兜底覆盖父进程已退出、被收养导致 PPID 链断裂的辅助进程（`with_constructed_at` 注入确定性构造时刻供测试）。用户表每轮 `list()` 采集一次、全轮复用（避免每进程重读 /etc/passwd）。
+    - 进程基线对齐：生产 `LinuxPlatform::new()` 使用 sysinfo 枚举 PID，再由可注入 ProcFs 逐 PID 补齐字段；`with_injected` 的合成树测试继续从注入根枚举，避免测试读取真实 `/proc`。原 `/proc` 生产枚举偏差已移除；sysinfo 用户表仍为每轮一次并复用。
+    - `linux/`：`LinuxPlatform` 实现七个只读边界（ProcessInventory/ProcessDetailsProvider/NetworkInventory/FileInventory/ProcessFileLocks/SourceEvidenceProvider/ContainerProcessVerifier），`new()`（生产 `/proc` + sysinfo PID）与 `with_injected(proc_root, systemd_run_dir, own_pid)`（合成树）。子模块：`procfs/`（可注入根 + process_files/netparse/locktable 纯解析，CLK_TCK=100、PAGE_SIZE=4K 换算）、`process.rs`+`summary.rs`+`details.rs`（基线、字段诊断与详情）、`fdscan.rs`、`network.rs`、`locks.rs`、`source/`、`container.rs`、`capabilities.rs`。全部 cfg 隔离于 linux 模块。
+    - 自身排除策略：生产构造时保存 sysinfo PID 基准与真实墙钟；`list()` 排除自身 PID + 「不在基准快照且（a）PPID 链可达自身，或（b）启动时刻晚于构造时刻」的进程。时间窗兜底覆盖父进程退出后被收养的辅助进程；合成测试可用 `with_constructed_at` 注入确定性时刻。
     - 健康标签（parity witr process_linux.go:193-200）：Z/T → Zombie/Stopped；healthy 时累计 CPU（utime+stime ticks ÷ CLK_TCK）> 2h → HighCpu（优先）、RSS > 1GiB → HighMem。
-    - 覆盖：cmdline/comm/stat/status、cwd/exe/environ、PPID/启动时间（btime+ticks）、FD/FD limit（unlimited=0）/statm 内存/io、cgroup→ContainerContext（复用 core 纯函数）、CapEff→capabilities、/proc/net 四表+unix（合法端口、Unix 无端口、`validate_socket_entry` 复用、port 0 跳过记诊断）、/proc/locks 三类锁、exe_deleted（仅 " (deleted)" 后缀证据）、Z/T 健康状态、systemd 探测（/run/systemd/system）+ zbus blocking D-Bus 富化（2s 有界，best-effort）。
-    - 部分成功红线：权限不足/进程消失/单文件损坏 → Inspection 部分数据 + DiagnosticIssue（permission_denied/unknown），不返回空集合冒充成功；无 sudo、无 B7 操作。
-    - 测试：`cargo test -p runquiry-platform linux --locked` 20 个（合成 /proc tempdir 树，不读真实 /proc、无 root 依赖、无 sleep；测试名统一 `linux_` 前缀匹配定向过滤器；含健康标签阈值边界、收养后代时间窗排除、locks_of 按 PID 过滤）。
-    - 真实 QA（普通用户，`cargo run -p runquiry-platform --example linux_qa --locked`）：96 进程基线（自身 434598 被排除）、自身/自建子进程详情（fd/limit/cwd/open_files，环境变量只报计数不报值）、29 条开放端口（7 归因 + 22 无主 + 1 条 permission_denied 诊断——64 个他人进程 fd 不可读，条目不丢）、文件锁查询。系统：WSL2 内核 6.18.33.2，普通用户。
-    - 已知限制：PAGE_SIZE 固定 4K（非 4K 内核 RSS 按比例偏差）；cpu_percent 恒 None（两样本差分属上层）；logind 阻止睡眠检测（ResourceContext 组成部分）未实现；D-Bus 富化失败只省略键。
+    - 覆盖：cmdline/comm/stat/status、cwd/exe/environ、PPID/启动时间（btime+ticks）、FD/FD limit（unlimited=0）/statm 内存/io、cgroup→ContainerContext 与容器 PID 归属校验、CapEff→capabilities、/proc/net 四表+unix、/proc/locks 三类锁、exe_deleted、Z/T 健康状态、systemd 探测 + zbus blocking D-Bus 富化。D-Bus 连接和方法调用设 2s timeout，外层只允许一个 in-flight worker；调用方 2s 返回后不会继续累积脱离线程。
+    - 部分成功红线：进程身份所需 stat 失败返回硬错误；cwd/exe/environ/statm/meminfo/io/fd/limits/children 等可选字段失败则保留 `ProcessDetails` 并逐项追加 permission_denied/unknown/parse_failed，`analyze` 会合并这些诊断。进程列表单条目失败同样不抹掉其他数据；无 sudo、无 B7 操作。
+    - 测试：`linux_adapters` 23 个 + Linux 专属库单测 3 个（合成 `/proc` tempdir 树，不读真实 `/proc`、无 root 依赖、无阻塞 sleep）；新增生产构造器 sysinfo/墙钟断言、字段级详情诊断、候选 PID cgroup 精确读取、systemd 超时与 single-flight 回归。超长集成测试已按 process/details/network/locks/source/container 职责拆分，单文件不超过 250 纯代码行。
+    - 真实 QA（普通用户，2026-09-04）：`linux_qa` 从真实 `/proc` 读取 14 条进程且基线诊断为 0，自身 PID 已排除；真实详情、子进程、Socket、开放端口与文件锁路径均完成，环境变量仅报数量不打印值。该次环境未发现开放端口或文件锁，详情保留数据并带 1 条字段诊断，符合部分成功语义。
+    - 已知限制：PAGE_SIZE 固定 4K（非 4K 内核 RSS 按比例偏差）；cpu_percent 恒 None（两样本差分属上层）；logind 阻止睡眠检测（ResourceContext 组成部分）未实现；D-Bus 富化是有界 best-effort，失败只省略键。
 
 - [ ] **B7 Unix 进程控制**
   - 依赖：B2、B5。

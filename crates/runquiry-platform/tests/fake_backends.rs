@@ -12,7 +12,7 @@ use std::time::{Duration, SystemTime};
 use runquiry_core::{
     CapabilityStatus, CommandRunner, CommandSpec, ContainerInventory, ContainerKey, DETAIL_TIMEOUT,
     DiagnosticCode, FileInventory, InspectError, NetworkInventory as _, Pid, ProcessAction,
-    ProcessController, ProcessDetails, ProcessDetailsProvider, ProcessIdentity, ProcessInventory,
+    ProcessController, ProcessDetailsProvider, ProcessIdentity, ProcessInventory,
 };
 use support::fakes::FakePlatform;
 use support::{CAPTURED_AT_MS, FXT_PID, FixedClock, Generation, Scenario};
@@ -50,7 +50,10 @@ fn normal_scenario_provides_data_on_all_ports() -> TestResult {
     assert!(!listed.has_issues());
 
     let identity = fxt_identity(Some(expected_captured_at()))?;
-    let details: ProcessDetails = platform.details(&identity)?;
+    let details = platform
+        .details(&identity)?
+        .data
+        .ok_or_else(|| String::from("normal 场景必须有进程详情"))?;
     assert!(details.identity.same_process(&identity));
     assert_eq!(details.memory_rss_bytes, Some(20_480));
 

@@ -86,7 +86,7 @@ impl ProcessInventory for FakeInventory {
 #[derive(Debug)]
 pub struct FakeDetails {
     pub baseline: ProcessIdentity,
-    pub outcome: Result<ProcessDetails, InspectError>,
+    pub outcome: Result<Inspection<ProcessDetails>, InspectError>,
 }
 
 impl FakeDetails {
@@ -94,7 +94,7 @@ impl FakeDetails {
     pub fn ok(baseline: &ProcessIdentity, details: ProcessDetails) -> Self {
         Self {
             baseline: baseline.clone(),
-            outcome: Ok(details),
+            outcome: Ok(Inspection::complete(details)),
         }
     }
 
@@ -105,6 +105,18 @@ impl FakeDetails {
             outcome: Err(error),
         }
     }
+
+    #[must_use]
+    pub fn partial(
+        baseline: &ProcessIdentity,
+        details: ProcessDetails,
+        issues: Vec<DiagnosticIssue>,
+    ) -> Self {
+        Self {
+            baseline: baseline.clone(),
+            outcome: Ok(Inspection::partial(details, issues)),
+        }
+    }
 }
 
 impl ProcessDetailsProvider for FakeDetails {
@@ -112,7 +124,10 @@ impl ProcessDetailsProvider for FakeDetails {
         CapabilityStatus::Supported
     }
 
-    fn details(&self, identity: &ProcessIdentity) -> Result<ProcessDetails, InspectError> {
+    fn details(
+        &self,
+        identity: &ProcessIdentity,
+    ) -> Result<Inspection<ProcessDetails>, InspectError> {
         // 契约：expected 与平台重读的 current 不一致即拒绝（PID 复用防护）。
         if !identity.same_process(&self.baseline) {
             return Err(InspectError::ProcessChanged {

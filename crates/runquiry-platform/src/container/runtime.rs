@@ -8,10 +8,12 @@ use runquiry_core::ContainerSummary;
 ///
 /// Compose 项目/服务键（`com.docker.compose.*` 标签）只随本结构返回，供目标
 /// 解析阶段的匹配使用；**不得**进入 [`ContainerSummary`]、不得持久化、不得进 UI。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ListedContainer {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ListedContainer {
     /// 容器快照（不含 Compose 临时键）。
     pub summary: ContainerSummary,
+    /// 入口命令临时匹配键；仅解析阶段使用。
+    pub command: Option<String>,
     /// Compose 项目临时匹配键（`com.docker.compose.project`）；仅解析阶段使用。
     pub compose_project: Option<String>,
     /// Compose 服务临时匹配键（`com.docker.compose.service`）；仅解析阶段使用。
@@ -90,12 +92,12 @@ impl RuntimeKind {
     ];
 
     /// [`ContainerKey::runtime`] 使用的运行时名（去重键组成部分；对齐 witr：
-    /// crictl 为 `k8s`；nerdctl 采用 cgroup 语境的 `nerdctl`，显示名才是 containerd）。
+    /// crictl 为 `k8s`；nerdctl CLI 的稳定运行时键为 `containerd`）。
     pub(super) const fn key_name(self) -> &'static str {
         match self {
             Self::Docker => "docker",
             Self::Podman => "podman",
-            Self::Nerdctl => "nerdctl",
+            Self::Nerdctl => "containerd",
             Self::Crictl => "k8s",
             Self::Incus => "incus",
             Self::Lxd => "lxd",
@@ -114,5 +116,23 @@ impl RuntimeKind {
             Self::Lxd => "lxd",
             Self::Lxc => "lxc",
         }
+    }
+
+    /// sudo 启动时是否应访问原始普通用户的 rootless 容器存储。
+    pub(super) const fn runs_as_original_user(self) -> bool {
+        matches!(self, Self::Podman | Self::Nerdctl)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RuntimeKind;
+
+    #[test]
+    fn only_rootless_docker_like_runtimes_restore_original_user() {
+        assert!(!RuntimeKind::Docker.runs_as_original_user());
+        assert!(RuntimeKind::Podman.runs_as_original_user());
+        assert!(RuntimeKind::Nerdctl.runs_as_original_user());
+        assert!(!RuntimeKind::Crictl.runs_as_original_user());
     }
 }

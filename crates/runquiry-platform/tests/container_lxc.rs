@@ -5,7 +5,7 @@
 #[path = "container_support.rs"]
 mod support;
 
-use runquiry_core::{ContainerKey, DiagnosticCode, Pid};
+use runquiry_core::{ContainerInventory, ContainerKey, DiagnosticCode, Pid};
 use runquiry_platform::container::{ContainerRuntimes, RuntimeBinaries};
 use support::{TempDir, TestResult, absent_binaries, fake_cli, subcommand_response};
 
@@ -35,14 +35,16 @@ fn container_lxc_list_parses_fancy_json() -> TestResult {
     let lxc_ls = fake_cli(&dir, "lxc-ls", &body)?;
     let lxc_info = fake_cli(&dir, "lxc-info", "")?;
     let inventory = lxc_inventory(&lxc_ls, &lxc_info);
-    let items = inventory.list_detailed().data.ok_or("应有 lxc 数据")?;
+    let items = ContainerInventory::list(&inventory)
+        .data
+        .ok_or("应有 lxc 数据")?;
     assert_eq!(items.len(), 2);
-    assert_eq!(items[0].summary.key.runtime, "lxc");
-    assert_eq!(items[0].summary.key.id, "web");
-    assert_eq!(items[0].summary.name.as_deref(), Some("web"));
-    assert_eq!(items[0].summary.status.as_deref(), Some("RUNNING"));
-    assert_eq!(items[0].summary.image, None, "经典 LXC 无镜像元数据");
-    assert_eq!(items[0].summary.host_pid, None, "PID 由 host_pid 惰性补齐");
+    assert_eq!(items[0].key.runtime, "lxc");
+    assert_eq!(items[0].key.id, "web");
+    assert_eq!(items[0].name.as_deref(), Some("web"));
+    assert_eq!(items[0].status.as_deref(), Some("RUNNING"));
+    assert_eq!(items[0].image, None, "经典 LXC 无镜像元数据");
+    assert_eq!(items[0].host_pid, None, "PID 由 host_pid 惰性补齐");
     Ok(())
 }
 
@@ -70,7 +72,7 @@ fn container_lxc_corrupt_list_json_is_parse_failed() -> TestResult {
     let lxc_ls = fake_cli(&dir, "lxc-ls", &subcommand_response("--fancy", "[{bad}]"))?;
     let lxc_info = fake_cli(&dir, "lxc-info", "")?;
     let inventory = lxc_inventory(&lxc_ls, &lxc_info);
-    let inspection = inventory.list_detailed();
+    let inspection = ContainerInventory::list(&inventory);
     assert_eq!(inspection.data, None);
     assert!(inspection.issues.iter().any(
         |issue| issue.code() == DiagnosticCode::ParseFailed && issue.message().contains("lxc")

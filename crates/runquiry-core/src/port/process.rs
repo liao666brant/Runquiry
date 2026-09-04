@@ -25,8 +25,11 @@ pub trait ProcessDetailsProvider {
     /// 该能力的平台可用状态。
     fn capability(&self) -> CapabilityStatus;
 
-    /// 读取指定身份的进程详情。
-    fn details(&self, identity: &ProcessIdentity) -> Result<ProcessDetails, InspectError>;
+    /// 读取指定身份的进程详情；可选字段失败时保留数据并追加结构化诊断。
+    fn details(
+        &self,
+        identity: &ProcessIdentity,
+    ) -> Result<Inspection<ProcessDetails>, InspectError>;
 }
 
 /// 进程控制端口：执行两步确认后的进程操作。

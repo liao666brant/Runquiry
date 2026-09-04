@@ -59,7 +59,7 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 
 ## 测试策略
 
-- Batch 2（A5/B4）起测试已建立，Batch 3 后共 214 个：`cargo test -p runquiry-core --locked`（104：lib 7 + domain 11 + fixtures 14 + ports 1 + controller 4 + target 21 + pipeline 30 + warnings 16）、`-p runquiry-platform`（75：lib 4 + command_runner 8 + container_* 33 + fake_backends 10 + linux_adapters 20；定向过滤器 command/container/linux）、`-p runquiry-ui`（21）、`-p runquiry-app`（14）；`cargo test -p runquiry-ui` 等禁止给 ui 加 gpui test-support dev-dependency（会引入 deny 白名单外 git 源 proptest），纯逻辑一律普通 `#[test]`。
+- Batch 2（A5/B4）起测试已建立，Batch 3 评审修复后共 232 个：`cargo test -p runquiry-core --locked`（107：lib 7 + container contract 3 + domain 11 + fixtures 14 + ports 1 + controller 4 + target 21 + pipeline 30 + warnings 16）、`-p runquiry-platform`（90：lib 11 + command_runner 10 + container_* 36 + fake_backends 10 + linux_adapters 23）、`-p runquiry-ui`（21）、`-p runquiry-app`（14）；`cargo test -p runquiry-ui` 等禁止给 ui 加 gpui test-support dev-dependency（会引入 deny 白名单外 git 源 proptest），纯逻辑一律普通 `#[test]`。
 - 合成 fixture 与失败注入在 workspace 根 `tests/fixtures/`（清单与敏感信息扫描见其 README.md）；SocketEntry 输入边界规则（TCP/UDP 必有合法端口、Unix 必无端口）在 fixture loader 层执行，平台真实输入必须复用。
 - 行为语义以 [docs/witr-parity.md](docs/witr-parity.md) 为验收依据；fixture 要求合成值（无真实用户名、路径、Token）。
 
@@ -83,10 +83,11 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 - 2026-09-03（未提交工作区）：Batch 1——A3 核心领域类型与七平台端口落地（serde 经守门人批准，零新增包）；A4 设计系统（DESIGN.md + runquiry-ui 主题/状态/双语占位）与独立 gallery 实验台（runquiry-app/examples/gallery）；gpui/gpui-component git 依赖同步内联至 runquiry-ui。
 - 2026-09-03（未提交工作区）：Batch 2——Phase 0 修复 gallery Name 列省略/tooltip/Sheet 绑定行并复验（qa-report §10）；A5 三平台 fixture + 失败注入 + ProcessController 契约修正（tests/fixtures/）；B4 产品壳层（runquiry-app 装配 + runquiry-ui shell/session/debounce）+ core 纯刷新策略 + 设置持久化 allowlist + rust-i18n 迁移（runquiry-ui/locales，新增 rust-i18n/serde/serde_json 依赖均为 lock 内既有版本，零新增包）。
 - 2026-09-03（未提交工作区）：Batch 2 评审修复——core 刷新完成/中止绑定 generation（过期信号不释放新请求）；UI 落实 1099/1100px 响应式断点并使用 Unsupported 能力边界态；app 以真实 bounds 事件持久化窗口尺寸，设置写入改为绝对安全路径、唯一排他临时文件与 Unix 私有权限；补齐 Gallery 第二行 → Sheet 及四工作区宽/窄窗视觉证据；测试增至 82 个。
-- 2026-09-04（未提交工作区）：Batch 3——B1 目标解析与分析管线（core：五类目标边界解析与匹配、祖先链、来源识别优先级链、§6 全部告警、analyze 管线；additive 契约经契约门冻结，serde 全兼容，测试 37→104）；B2 Linux 只读适配器（linux 模块：可注入 /proc 根、net/locks/cgroup/capabilities/FD 归因、SourceEvidenceProvider，20 测试 + linux_qa 真实采集示例）；B3 StdCommandRunner 与七容器运行时（进程组终止清理、失败隔离、runtime+id 去重，41 测试 + container_qa 真实 Docker 只读示例）；新增直接依赖 sysinfo/serde/serde_json/zbus/libc（全部锁内既有包，Cargo.lock 仅条目列表更新，GPUI source 未漂移）；超限文件按 250 行红线拆分（procfs、dockerlike 等）。代码评审修复：analyze 单快照消除逐跳重复全量扫描；祖先链截断诊断可区分；Linux 高 CPU/高内存健康标签（parity 阈值）；收养后代时间窗排除；LinuxPlatform 实现 ProcessFileLocks、ContainerRuntimes 实现 ContainerHealthcheckProbe（docker/podman）；进程基线 /proc 扫描 vs sysinfo 枚举在模块 04 记为显式 intentional change。未做：B5/B6/B7/B8、macOS/Windows、打包。
+- 2026-09-04 @984999c：Batch 3——B1 目标解析与分析管线；B2 Linux 只读适配器；B3 受限 CommandRunner 与七容器运行时；新增直接依赖 sysinfo/serde/serde_json/zbus/libc（全部锁内既有包，GPUI source 未漂移）。首轮评审已修复 analyze 单快照、祖先链诊断、健康标签、收养后代排除、ProcessFileLocks 与 ContainerHealthcheckProbe。未做：B5/B6/B7/B8、macOS/Windows、打包。
+- 2026-09-04（未提交工作区）：Batch 3 阻断项修复——命令输出超限/取消/读取失败均类型化失败并回收进程组，修复双流竞态；sudo 下 Podman/nerdctl 恢复原用户；容器 command/Compose 五字段仅留私有临时结构，nerdctl 稳定键改为 containerd，补 Docker 发布端口回退；host PID 经 Linux cgroup 二次验证；生产 PID 枚举回归 sysinfo，详情字段失败保留部分结果，构造墙钟生效，systemd D-Bus 加方法超时与 single-flight；超长 core/platform 测试拆分。测试增至 232 个，本轮改动的 core/platform 文件均低于 250 纯代码行。
 
 ## 索引状态
-- 上次索引：2026-09-04（@495831f + Batch 3 未提交工作区）
-- 基线提交：495831fbc7a5fa3d18d9019731cfa5b819f3ab0b
+- 上次索引：2026-09-04T02:59:15Z（@984999c + Batch 3 评审修复未提交工作区）
+- 基线提交：984999ccf98527286002d6ae49e980c27988421c
 - 已知缺口：无
 - 扫描进度：已完成

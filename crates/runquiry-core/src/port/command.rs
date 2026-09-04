@@ -1,6 +1,10 @@
 //! 外部命令执行端口（容器 CLI、`lsof`、`launchctl` 的唯一通道）。
 
 use std::time::Duration;
+use std::{
+    sync::Arc,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +20,33 @@ pub const DETAIL_TIMEOUT: Duration = Duration::from_secs(5);
 pub const STDOUT_LIMIT_BYTES: usize = 8 * 1024 * 1024;
 /// 单次 stderr 输出上限（8MiB）。
 pub const STDERR_LIMIT_BYTES: usize = 8 * 1024 * 1024;
+
+/// 可跨线程共享的命令取消信号。
+///
+/// 取消是单向且幂等的；已取消的令牌不可复位。
+#[derive(Debug, Clone, Default)]
+pub struct CancellationToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CancellationToken {
+    /// 创建未取消的令牌。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 向所有克隆令牌发布取消信号。
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    /// 是否已收到取消信号。
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
 
 /// 一次外部命令调用的规格：程序名 + 独立 argv。
 ///
@@ -45,7 +76,8 @@ impl CommandSpec {
 
 /// 外部命令的执行结果。
 ///
-/// `*_truncated` 为 `true` 表示对应输出流超过上限被截断；实现必须同时追加
+/// `*_truncated` 为 `true` 表示对应输出流超过上限被截断；仅供可以携带
+/// 部分输出的其他实现使用。生产命令执行器必须将超限作为失败，同时追加
 /// [`DiagnosticCode::OutputLimitExceeded`](crate::model::diagnostic::DiagnosticCode::OutputLimitExceeded)
 /// 类诊断，不得静默截断。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,8 +103,27 @@ pub struct CommandOutput {
 /// 后置条件：
 /// * 超时、无法启动、程序缺失都返回 [`InspectError::ExternalTool`]（细节写入 `detail`），
 ///   不得 panic，也不得返回半截结果当作成功；
-/// * stdout / stderr 分别受 [`STDOUT_LIMIT_BYTES`] / [`STDERR_LIMIT_BYTES`] 约束。
+/// * stdout / stderr 分别受 [`STDOUT_LIMIT_BYTES`] / [`STDERR_LIMIT_BYTES`] 约束；
+///   任一流超限必须终止并回收进程组，然后返回 [`InspectError::ExternalTool`]。
 pub trait CommandRunner {
     /// 执行一次外部命令并采集输出。
     fn run(&self, spec: &CommandSpec, timeout: Duration) -> Result<CommandOutput, InspectError>;
+
+    /// 执行可由调用方取消的命令。
+    ///
+    /// 旧实现可继续仅实现 [`Self::run`]；需要运行中取消的平台实现应覆盖此方法。
+    fn run_with_cancellation(
+        &self,
+        spec: &CommandSpec,
+        timeout: Duration,
+        cancellation: &CancellationToken,
+    ) -> Result<CommandOutput, InspectError> {
+        if cancellation.is_cancelled() {
+            return Err(InspectError::ExternalTool {
+                program: spec.program.clone(),
+                detail: String::from("命令已取消"),
+            });
+        }
+        self.run(spec, timeout)
+    }
 }

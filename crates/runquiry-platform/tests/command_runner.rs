@@ -2,7 +2,7 @@
 //! 生产 [`StdCommandRunner`] 的行为契约测试（真实子进程 + 假脚本，不 mock runner）。
 //!
 //! 覆盖：argv 逐元素原样传递（无 shell 解释痕迹）、程序缺失、非零退出、
-//! 挂起超时终止与回收、stdout/stderr/双流超限截断、僵尸清理。
+//! 挂起超时终止与回收、stdout/stderr/双流超限失败、僵尸清理。
 
 #[path = "container_support.rs"]
 mod support;
@@ -10,9 +10,7 @@ mod support;
 use std::path::Path;
 use std::time::Duration;
 
-use runquiry_core::{
-    CommandRunner, CommandSpec, InspectError, STDERR_LIMIT_BYTES, STDOUT_LIMIT_BYTES,
-};
+use runquiry_core::{CancellationToken, CommandRunner, CommandSpec, InspectError};
 use runquiry_platform::command::{CommandFailure, StdCommandRunner};
 use support::{TempDir, TestResult, hang_script_body, read_pid_file, wait_until_gone};
 
@@ -103,7 +101,7 @@ fn command_hang_is_killed_on_timeout_without_leftover_process() -> TestResult {
 }
 
 #[test]
-fn command_stdout_over_limit_is_truncated_and_process_reaped() -> TestResult {
+fn command_stdout_over_limit_returns_output_limit_and_reaps_process() -> TestResult {
     let dir = TempDir::new("stdout-limit")?;
     let pid_file = dir.path().join("pid");
     // 9 MiB stdout 后挂起：达到 8MiB 上限即终止，不留遗留进程。
@@ -113,12 +111,15 @@ fn command_stdout_over_limit_is_truncated_and_process_reaped() -> TestResult {
     );
     let script = dir.write_executable("flood", &body)?;
     let spec = CommandSpec::new(script.display().to_string(), ["unused"]);
-    let output = StdCommandRunner.run(&spec, Duration::from_secs(5))?;
-    assert!(output.stdout_truncated, "stdout 超限必须标记截断");
-    assert_eq!(output.stdout.len(), STDOUT_LIMIT_BYTES);
-    assert!(!output.stderr_truncated);
-    // 被终止的子进程退出码不可得。
-    assert_eq!(output.exit_code, None);
+    let result = StdCommandRunner.run_classified(&spec, Duration::from_secs(5));
+    assert!(matches!(
+        result,
+        Err(CommandFailure::OutputLimit {
+            stdout: true,
+            stderr: false,
+            ..
+        })
+    ));
     let pid = read_pid_file(&pid_file).ok_or("脚本未自报 PID")?;
     assert!(
         wait_until_gone(pid, Duration::from_secs(2)),
@@ -128,7 +129,7 @@ fn command_stdout_over_limit_is_truncated_and_process_reaped() -> TestResult {
 }
 
 #[test]
-fn command_stderr_over_limit_is_truncated_and_process_reaped() -> TestResult {
+fn command_stderr_over_limit_maps_to_external_tool_and_reaps_process() -> TestResult {
     let dir = TempDir::new("stderr-limit")?;
     let pid_file = dir.path().join("pid");
     let body = format!(
@@ -137,10 +138,8 @@ fn command_stderr_over_limit_is_truncated_and_process_reaped() -> TestResult {
     );
     let script = dir.write_executable("flood-err", &body)?;
     let spec = CommandSpec::new(script.display().to_string(), ["unused"]);
-    let output = StdCommandRunner.run(&spec, Duration::from_secs(5))?;
-    assert!(output.stderr_truncated, "stderr 超限必须标记截断");
-    assert_eq!(output.stderr.len(), STDERR_LIMIT_BYTES);
-    assert!(!output.stdout_truncated);
+    let result = StdCommandRunner.run(&spec, Duration::from_secs(5));
+    assert!(matches!(result, Err(InspectError::ExternalTool { .. })));
     let pid = read_pid_file(&pid_file).ok_or("脚本未自报 PID")?;
     assert!(
         wait_until_gone(pid, Duration::from_secs(2)),
@@ -150,30 +149,80 @@ fn command_stderr_over_limit_is_truncated_and_process_reaped() -> TestResult {
 }
 
 #[test]
-fn command_both_streams_over_limit_are_truncated_and_process_reaped() -> TestResult {
+fn command_competing_streams_report_first_observed_limit_and_reap_process() -> TestResult {
     let dir = TempDir::new("both-limit")?;
     let pid_file = dir.path().join("pid");
-    // 两条流并发各写 12MiB：先到 8MiB 上限的流触发 kill，另一条流因继续排空
-    // （读取线程不因截断停止）也已越过上限，双流都带截断标记。
+    // 两条流并发写入；任一流先越界即触发 kill，不假定另一流也在
+    // 进程组被终止前越界，避免把调度竞态写进契约。
     let body = format!(
         "#!/bin/sh\necho $$ > {}\nyes A | head -c 12582912 &\nyes B | head -c 12582912 1>&2 &\nwait\nexec sleep 30\n",
         pid_file.display()
     );
     let script = dir.write_executable("flood-both", &body)?;
     let spec = CommandSpec::new(script.display().to_string(), ["unused"]);
-    let output = StdCommandRunner.run(&spec, Duration::from_secs(5))?;
-    assert!(
-        output.stdout_truncated && output.stderr_truncated,
-        "双流超限必须都有截断标记"
-    );
-    assert_eq!(output.stdout.len(), STDOUT_LIMIT_BYTES);
-    assert_eq!(output.stderr.len(), STDERR_LIMIT_BYTES);
+    let result = StdCommandRunner.run_classified(&spec, Duration::from_secs(5));
+    let Err(CommandFailure::OutputLimit { stdout, stderr, .. }) = result else {
+        return Err(format!("双流竞争必须返回 OutputLimit，实际 {result:?}").into());
+    };
+    assert!(stdout || stderr, "至少一条流必须观测到超限");
     let pid = read_pid_file(&pid_file).ok_or("脚本未自报 PID")?;
     assert!(
         wait_until_gone(pid, Duration::from_secs(2)),
         "超限 kill 后子进程未被回收"
     );
     Ok(())
+}
+
+#[test]
+fn command_cancel_kills_process_group_and_returns_cancelled() -> TestResult {
+    let dir = TempDir::new("cancel")?;
+    let pid_file = dir.path().join("pid");
+    let script = dir.write_executable("cancel", &hang_script_body(&pid_file, 30))?;
+    let spec = CommandSpec::new(script.display().to_string(), ["unused"]);
+    let cancellation = CancellationToken::new();
+    let worker_token = cancellation.clone();
+    let worker = std::thread::spawn(move || {
+        StdCommandRunner.run_classified_with_cancellation(
+            &spec,
+            Duration::from_secs(5),
+            &worker_token,
+        )
+    });
+    let pid = wait_for_pid(&pid_file, Duration::from_secs(2)).ok_or("script did not report pid")?;
+
+    cancellation.cancel();
+
+    let result = worker.join().map_err(|_| "runner thread panicked")?;
+    assert!(matches!(result, Err(CommandFailure::Cancelled { .. })));
+    assert!(
+        wait_until_gone(pid, Duration::from_secs(2)),
+        "cancel must reap the command process group"
+    );
+    Ok(())
+}
+
+#[test]
+fn command_pre_cancelled_token_maps_to_external_tool_without_spawning() {
+    let spec = CommandSpec::new("runquiry-cancel-must-not-spawn", ["unused"]);
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+
+    let result = StdCommandRunner.run_with_cancellation(&spec, TIMEOUT, &cancellation);
+
+    assert!(matches!(result, Err(InspectError::ExternalTool { .. })));
+}
+
+fn wait_for_pid(path: &Path, timeout: Duration) -> Option<u32> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if let Some(pid) = read_pid_file(path) {
+            return Some(pid);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::yield_now();
+    }
 }
 
 #[test]

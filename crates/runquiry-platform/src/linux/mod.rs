@@ -16,6 +16,7 @@
 //! [`SourceEvidenceProvider`]: runquiry_core::SourceEvidenceProvider
 
 mod capabilities;
+mod container;
 mod details;
 mod fdscan;
 mod locks;
@@ -23,5 +24,6 @@ mod network;
 mod process;
 mod procfs;
 mod source;
+mod summary;
 
 pub use process::LinuxPlatform;

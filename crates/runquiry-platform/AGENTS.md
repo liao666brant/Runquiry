@@ -14,9 +14,9 @@
 
 ## 对外接口
 
-- `command::StdCommandRunner`：`CommandRunner` 生产实现 + `run_classified`（`CommandFailure::Spawn/Timeout` 供调用方映射诊断）。程序名+独立 argv、stdout/stderr 并发读取分别限 8MiB、超时/超限对进程组 SIGKILL（`process_group(0)` + `kill(-pgid)`）并 wait 回收，不留孤儿/僵尸。
-- `container::ContainerRuntimes`：`ContainerInventory` 实现 + `list_detailed()`（返回 `ListedContainer`：快照 + Compose 临时匹配键，**不进** `ContainerSummary`/UI）、`host_pid`、`enrich`（`ContainerEnrichment`）、`ContainerHealthcheckProbe`（仅 docker/podman 可判定，inspect `{{json .Config.Healthcheck}}`）；`RuntimeBinaries` 注入 CLI 名/路径（测试假 CLI）。七运行时（docker/podman/nerdctl→containerd 显示/crictl→k8s/incus/lxd/lxc）各自独立 available/list/host_pid/enrich；单运行时失败只追加 DiagnosticIssue；按 runtime+id 去重。
-- `linux::LinuxPlatform`（仅 `target_os = "linux"`）：实现 ProcessInventory、ProcessDetailsProvider、NetworkInventory、FileInventory、ProcessFileLocks、SourceEvidenceProvider 六个只读端口；`new()` 生产 `/proc`，`with_injected(proc_root, systemd_run_dir, own_pid)` 注入合成树。自身排除：构造期 PID 基准快照 + 迟到后代（PPID 链或启动时间窗）；健康标签按 parity 计算（Z/T/HighCpu >2h/HighMem >1GiB）。平台侧不做来源类型判定（core `detect_source` 职责）。
+- `command::StdCommandRunner`：`CommandRunner` 生产实现；`CommandFailure` 区分 Spawn/Timeout/OutputLimit/Cancelled。程序名 + 独立 argv；stdout/stderr 各限 8MiB，超限、取消与超时均终止进程组并 wait，读取错误不伪装成功。`CancellationToken` 支持运行中取消；sudo 下 Podman/nerdctl 经校验后恢复原用户 UID/GID 与 rootless 环境，Docker 保持当前身份。
+- `container::ContainerRuntimes`：实现 `ContainerInventory`、`resolve`、`published_on`、`verified_host_pid`、`enrich` 与 `ContainerHealthcheckProbe`。command/Compose 匹配键只存在于私有且不可序列化的 `ListedContainer`，公共列表不外泄；nerdctl 的稳定键/显示名为 containerd，crictl 为 k8s。Docker 发布端口回退使用固定 argv；运行时 PID 只是候选，Linux `ContainerProcessVerifier` 必须以 `/proc/PID/cgroup` 再验证。七运行时独立失败，按 runtime+id 去重。
+- `linux::LinuxPlatform`（仅 `target_os = "linux"`）：实现 ProcessInventory、ProcessDetailsProvider、NetworkInventory、FileInventory、ProcessFileLocks、SourceEvidenceProvider、ContainerProcessVerifier 七个只读边界。`new()` 以 sysinfo 枚举生产 PID、真实墙钟建立排除基线，`with_injected` 使用合成 ProcFs。可选详情字段失败保留数据并逐项诊断；systemd D-Bus 有 2s 方法超时与 single-flight。健康标签按 parity 计算（Z/T/HighCpu >2h/HighMem >1GiB）。
 - 未实现：ProcessController 真实实现（B7）、macOS/Windows 采集（C1/C2）。
 
 ## 关键依赖与配置
@@ -26,9 +26,9 @@
 
 ## 测试与质量
 
-- `cargo test -p runquiry-platform --locked`：75 个测试（lib 单测 4 + tests/command_runner.rs 8 + tests/container_* 33 + tests/fake_backends.rs 10 + tests/linux_adapters.rs 20）。定向过滤器：`command`（9）、`container`（37）、`linux`（20）。
+- `cargo test -p runquiry-platform --locked`：90 个测试（lib 11 + command_runner 10 + container_* 36 + fake_backends 10 + linux_adapters 23）。命令双流竞争回归另连续执行 10 次通过；`cargo clippy -p runquiry-core -p runquiry-platform --all-targets --locked -- -D warnings` 零警告。
 - linux 采集测试用合成 /proc tempdir 树（可注入根目录），不读真实 /proc、不依赖 root、不 sleep；容器测试用 tempdir 假 CLI 经生产 `StdCommandRunner` 驱动。
-- 真实 QA 示例：`cargo run -p runquiry-platform --example linux_qa --locked`（普通用户真实采集，环境变量只报计数）；`--example container_qa`（真实 Docker 只读 list/host_pid/enrich，缺失 CLI 如实报告）。
+- 真实 QA 示例：`cargo run -p runquiry-platform --example linux_qa --locked`（普通用户真实采集，环境变量只报计数）；`--example container_qa`（真实只读 list/verified_host_pid/enrich；daemon 不可用或 CLI 缺失时如实报告 Partial）。
 
 ## 常见问题
 
@@ -40,10 +40,10 @@
 
 - `crates/runquiry-platform/Cargo.toml` — crate manifest（守门人维护）
 - `crates/runquiry-platform/src/lib.rs` — 模块声明（linux cfg 隔离）
-- `crates/runquiry-platform/src/command/` — StdCommandRunner 与失败分类
-- `crates/runquiry-platform/src/container/` — 七运行时适配器（runtime/crictl/dockerlike{,/wire}/lxdlike/lxc/parse）
-- `crates/runquiry-platform/src/linux/` — Linux 只读采集（procfs{,/process_files,netparse,locktable}/process/details/fdscan/network/locks/source/capabilities）
-- `crates/runquiry-platform/tests/` — command_runner、container_*、linux_adapters、fake_backends
+- `crates/runquiry-platform/src/command/` — runner/process/output/original_user：执行、回收、采集、原用户恢复
+- `crates/runquiry-platform/src/container/` — 七运行时适配器与汇总（inventory/runtime/crictl/dockerlike{,/wire,/port}/lxdlike/lxc/parse）
+- `crates/runquiry-platform/src/linux/` — Linux 只读采集（procfs/process/summary/details/fdscan/network/locks/source/capabilities/container）
+- `crates/runquiry-platform/tests/` — command_runner、container_*、linux_adapters、fake_backends（超长套件按同名子目录拆分）
 - `crates/runquiry-platform/examples/` — linux_qa、container_qa（真实 QA）
 - `docs/witr-parity.md` — 采集与运行时行为契约
 - `.omo/plans/runquiry-gpui-desktop/03-container-runtime.md`、`04-linux-platform.md` — B3/B2 任务定义
@@ -53,3 +53,4 @@
 - 2026-09-02：初次索引。骨架状态，仅有 manifest 与 lib.rs 占位。
 - 2026-09-03：Batch 2 A5——新增 tests/support/（Scenario 失败注入、FakePlatform 假实现）与 tests/fake_backends.rs。
 - 2026-09-04：Batch 3——B2 Linux 只读适配器（`src/linux/`，20 测试 + linux_qa 示例）；B3 StdCommandRunner 与七容器运行时（`src/command/`、`src/container/`，41 测试 + container_qa 示例）；新增直接依赖 sysinfo/serde/serde_json/zbus/libc（全部锁内既有包，零新增）；lib.rs 声明 linux cfg 隔离与 crate 级 clippy 豁免；dockerlike/procfs 按 250 行红线拆分子模块；CommandRunner 进程组终止修复超时孙进程遗留。评审修复：LinuxPlatform 实现 `ProcessFileLocks`（/proc/locks 按 PID 过滤）、健康标签 HighCpu/HighMem（parity 阈值）、收养后代时间窗排除、用户表每轮 list() 复用；ContainerRuntimes 实现 `ContainerHealthcheckProbe`（docker/podman）。测试增至 75 个。
+- 2026-09-04：阻断项修复——CommandRunner 增加取消、超限硬失败、读取错误传播与稳定双流回归；rootless CLI 恢复 sudo 原用户。容器解析保留 command/Compose 私有临时键，补发布端口回退，nerdctl 键改为 containerd，host PID 通过 Linux cgroup 验证。Linux 生产 PID 枚举改回 sysinfo，构造墙钟生效，详情字段错误进入 Inspection，systemd 富化设方法超时和 single-flight。拆分超长测试与 runner 职责文件，测试增至 90 个。

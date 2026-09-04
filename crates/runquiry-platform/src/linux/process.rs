@@ -1,26 +1,31 @@
 //! Linux 进程基线与详情适配器：`ProcessInventory` / `ProcessDetailsProvider`
 //! 的 `/proc` 真实只读实现。
 //!
-//! 进程枚举以 `/proc` 目录扫描为基线并经 procfs 补齐全部字段；sysinfo 提供
-//! uid → 用户名解析（witr 的 `/etc/passwd` 手工解析等价物）。所有 `/proc`
-//! 读取经可注入的 [`ProcFs`] 根目录，测试用合成树驱动同一条代码路径。
+//! 生产进程枚举以 sysinfo 为基线，注入测试根仍以 `ProcFs` 枚举；随后统一经
+//! procfs 补齐字段。
 
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
+use std::sync::{Arc, atomic::AtomicBool};
 use std::time::SystemTime;
 
 use runquiry_core::{
-    CapabilityStatus, ContainerContext, DiagnosticCode, DiagnosticIssue, HealthStatus, Inspection,
-    Pid, ProcessIdentity, ProcessInventory, ProcessSummary,
+    CapabilityStatus, DiagnosticCode, DiagnosticIssue, Inspection, Pid, ProcessInventory,
+    ProcessSummary,
 };
-use sysinfo::Users;
+use sysinfo::{ProcessesToUpdate, System, Users};
 
-use super::capabilities::decode_capabilities;
 use super::procfs::{
-    CLK_TCK, PAGE_SIZE, ProcFs, StatInfo, parse_boot_time, parse_environ, parse_null_list,
-    parse_stat, parse_status, start_time_from_ticks,
+    ProcFs, StatInfo, parse_boot_time, parse_environ, parse_stat, start_time_from_ticks,
 };
+use super::summary::SummaryContext;
+
+#[derive(Debug, Clone, Copy)]
+enum PidEnumeration {
+    ProcFs,
+    Sysinfo,
+}
 
 /// 单条目读取失败 → 诊断（部分成功红线：单点失败不抹掉其余条目）。
 pub(super) fn diagnostic_for_io(pid: u32, error: &io::Error) -> DiagnosticIssue {
@@ -37,6 +42,15 @@ pub(super) fn diagnostic_for_io(pid: u32, error: &io::Error) -> DiagnosticIssue 
     }
 }
 
+pub(super) fn diagnostic_for_field(pid: u32, field: &str, error: &io::Error) -> DiagnosticIssue {
+    let code = if error.kind() == io::ErrorKind::PermissionDenied {
+        DiagnosticCode::PermissionDenied
+    } else {
+        DiagnosticCode::Unknown
+    };
+    DiagnosticIssue::new(code, format!("进程 {pid} 的 {field} 不可读：{error}"))
+}
+
 /// Linux 只读采集适配器：单一结构实现五个只读端口。
 ///
 /// 自身排除策略（可测试，不靠进程名猜测）：构造时对 `/proc` 做一次 PID
@@ -50,6 +64,7 @@ pub struct LinuxPlatform {
     own_pid: Pid,
     /// 构造时刻的 PID 基准快照。
     baseline_pids: Vec<u32>,
+    pid_enumeration: PidEnumeration,
     /// systemd 运行探测目录（parity：`IsSystemdRunning` 读
     /// `/run/systemd/system` 存在性）。
     pub(super) systemd_run_dir: PathBuf,
@@ -57,6 +72,7 @@ pub struct LinuxPlatform {
     /// 注入确定性值）。`Some` 时参与自身排除：启动晚于构造时刻的进程视为
     /// 采集期辅助进程，即使其父进程已退出（被收养导致 PPID 链断裂）。
     constructed_at: Option<SystemTime>,
+    pub(super) systemd_in_flight: Arc<AtomicBool>,
 }
 
 impl LinuxPlatform {
@@ -67,11 +83,15 @@ impl LinuxPlatform {
     pub fn new() -> io::Result<Self> {
         let own_pid = Pid::new(std::process::id())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "自身 PID 为 0"))?;
-        Ok(Self::with_injected(
-            PathBuf::from("/proc"),
-            PathBuf::from("/run/systemd/system"),
+        Ok(Self {
+            procfs: ProcFs::new(PathBuf::from("/proc")),
             own_pid,
-        ))
+            baseline_pids: Self::sysinfo_pids(),
+            pid_enumeration: PidEnumeration::Sysinfo,
+            systemd_run_dir: PathBuf::from("/run/systemd/system"),
+            constructed_at: Some(SystemTime::now()),
+            systemd_in_flight: Arc::new(AtomicBool::new(false)),
+        })
     }
 
     /// 以显式注入的根目录、systemd 探测目录与自身 PID 构造（测试合成树与
@@ -85,8 +105,10 @@ impl LinuxPlatform {
             procfs,
             own_pid,
             baseline_pids,
+            pid_enumeration: PidEnumeration::ProcFs,
             systemd_run_dir,
             constructed_at: None,
+            systemd_in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -116,6 +138,21 @@ impl LinuxPlatform {
                 format!("PID {pid} 的 stat 字段不足 22"),
             )
         })
+    }
+
+    fn sysinfo_pids() -> Vec<u32> {
+        let mut system = System::new();
+        system.refresh_processes(ProcessesToUpdate::All);
+        let mut pids: Vec<u32> = system.processes().keys().map(|pid| pid.as_u32()).collect();
+        pids.sort_unstable();
+        pids
+    }
+
+    pub(super) fn list_pids(&self) -> io::Result<Vec<u32>> {
+        match self.pid_enumeration {
+            PidEnumeration::ProcFs => self.procfs.list_pids(),
+            PidEnumeration::Sysinfo => Ok(Self::sysinfo_pids()),
+        }
     }
 
     /// exe 链接目标与「已删除」标记（witr `isBinaryDeleted`：只有 readlink
@@ -180,78 +217,12 @@ impl LinuxPlatform {
 
     /// 全量快照的 PPID 映射（自身后代排除与子进程发现共用）。
     pub(super) fn ppid_map(&self) -> HashMap<u32, u32> {
-        let Ok(pids) = self.procfs.list_pids() else {
+        let Ok(pids) = self.list_pids() else {
             return HashMap::new();
         };
         pids.into_iter()
             .filter_map(|pid| self.stat_of(pid).ok().map(|stat| (pid, stat.ppid)))
             .collect()
-    }
-
-    fn cgroup_context_of(&self, pid: u32) -> Option<ContainerContext> {
-        let raw = self.procfs.read_string(&format!("{pid}/cgroup")).ok()?;
-        runquiry_core::detect_container_from_cgroup(&raw)
-    }
-
-    fn command_of(stat: &StatInfo, command_line: Option<&str>) -> String {
-        if stat.comm.is_empty() {
-            // comm 缺失时回退命令行首参数的末段。
-            command_line
-                .and_then(|line| line.split_whitespace().next())
-                .and_then(|first| first.rsplit('/').next())
-                .unwrap_or_default()
-                .to_string()
-        } else {
-            stat.comm.clone()
-        }
-    }
-
-    fn build_summary(
-        &self,
-        pid: u32,
-        stat: &StatInfo,
-        boot: Option<SystemTime>,
-        users: &Users,
-    ) -> ProcessSummary {
-        let status = self
-            .procfs
-            .read_string(&format!("{pid}/status"))
-            .map(|raw| parse_status(&raw))
-            .unwrap_or_default();
-        let command_line = self
-            .procfs
-            .read(&format!("{pid}/cmdline"))
-            .ok()
-            .map(|bytes| parse_null_list(&bytes).join(" "))
-            .filter(|line| !line.is_empty());
-        let (exe, exe_deleted) = self.exe_of(pid);
-        let start_time = boot.and_then(|boot| start_time_from_ticks(boot, stat.start_ticks));
-        let health = match stat.state {
-            'Z' => HealthStatus::Zombie,
-            'T' => HealthStatus::Stopped,
-            // parity witr process_linux.go:193-200：healthy 时才判 high-cpu
-            // （累计 CPU > 2h）与 high-mem（RSS > 1GiB），前者优先。
-            _ if (stat.utime + stat.stime) / CLK_TCK > 2 * 60 * 60 => HealthStatus::HighCpu,
-            _ if stat.rss_pages.saturating_mul(PAGE_SIZE) > 1024 * 1024 * 1024 => {
-                HealthStatus::HighMem
-            }
-            _ => HealthStatus::Healthy,
-        };
-        ProcessSummary {
-            identity: ProcessIdentity::new(Pid::new(pid).unwrap_or(Pid::MIN), start_time, exe),
-            parent_pid: Pid::new(stat.ppid).ok(),
-            command: Self::command_of(stat, command_line.as_deref()),
-            command_line,
-            user: Self::user_of(status.uid, users),
-            health,
-            container: self.cgroup_context_of(pid),
-            exe_deleted,
-            capabilities: status
-                .cap_eff_hex
-                .as_deref()
-                .map(decode_capabilities)
-                .unwrap_or_default(),
-        }
     }
 }
 
@@ -261,7 +232,7 @@ impl ProcessInventory for LinuxPlatform {
     }
 
     fn list(&self) -> Inspection<Vec<ProcessSummary>> {
-        let pids = match self.procfs.list_pids() {
+        let pids = match self.list_pids() {
             Ok(pids) => pids,
             Err(error) => {
                 return Inspection::failed(vec![DiagnosticIssue::new(
@@ -273,13 +244,16 @@ impl ProcessInventory for LinuxPlatform {
         let boot = self.boot_time();
         let users = Users::new_with_refreshed_list();
         let baseline_ppids = self.ppid_map();
+        let summary_context = SummaryContext::new(self, boot, &users);
         let mut summaries = Vec::new();
         let mut issues = Vec::new();
         for pid in pids {
             match self.stat_of(pid) {
                 Ok(stat) => {
                     if !self.excluded(pid, &stat, boot, &baseline_ppids) {
-                        summaries.push(self.build_summary(pid, &stat, boot, &users));
+                        let (summary, field_issues) = summary_context.build(pid, &stat);
+                        summaries.push(summary);
+                        issues.extend(field_issues);
                     }
                 }
                 Err(error) => issues.push(diagnostic_for_io(pid, &error)),
@@ -307,4 +281,17 @@ pub(super) fn read_environ(procfs: &ProcFs, pid: u32) -> Vec<(String, String)> {
 /// 读取 cgroup 原文（来源证据采集）。
 pub(super) fn read_cgroup(procfs: &ProcFs, pid: u32) -> Option<String> {
     procfs.read_string(&format!("{pid}/cgroup")).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LinuxPlatform, PidEnumeration};
+
+    #[test]
+    fn linux_production_constructor_uses_sysinfo_and_wall_clock() -> Result<(), std::io::Error> {
+        let platform = LinuxPlatform::new()?;
+        assert!(matches!(platform.pid_enumeration, PidEnumeration::Sysinfo));
+        assert!(platform.constructed_at.is_some());
+        Ok(())
+    }
 }

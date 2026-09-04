@@ -41,8 +41,11 @@ impl ProcessDetailsProvider for FakeProcessDetails {
         CapabilityStatus::Supported
     }
 
-    fn details(&self, identity: &ProcessIdentity) -> Result<ProcessDetails, InspectError> {
-        Ok(ProcessDetails {
+    fn details(
+        &self,
+        identity: &ProcessIdentity,
+    ) -> Result<Inspection<ProcessDetails>, InspectError> {
+        Ok(Inspection::complete(ProcessDetails {
             identity: identity.clone(),
             cpu_percent: Some(1.5),
             memory_rss_bytes: Some(2048),
@@ -55,7 +58,7 @@ impl ProcessDetailsProvider for FakeProcessDetails {
             open_files: Vec::new(),
             fd_count: None,
             fd_limit: None,
-        })
+        }))
     }
 }
 
@@ -222,7 +225,9 @@ fn all_seven_ports_are_implementable_and_callable() -> TestResult {
     assert_eq!(processes.list().data.as_ref().map(Vec::len), Some(1));
     assert_eq!(processes.capability(), CapabilityStatus::Supported);
 
-    let details = processes_details(&FakeProcessDetails, &identity)?;
+    let details = processes_details(&FakeProcessDetails, &identity)?
+        .data
+        .ok_or("详情端口应返回数据")?;
     assert!(
         details.identity.same_process(&identity),
         "详情快照必须对应同一可验证身份"
@@ -270,6 +275,6 @@ fn all_seven_ports_are_implementable_and_callable() -> TestResult {
 fn processes_details(
     provider: &FakeProcessDetails,
     identity: &ProcessIdentity,
-) -> Result<ProcessDetails, InspectError> {
+) -> Result<Inspection<ProcessDetails>, InspectError> {
     ProcessDetailsProvider::details(provider, identity)
 }

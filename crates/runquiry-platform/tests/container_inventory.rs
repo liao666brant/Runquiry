@@ -3,10 +3,12 @@
 //! runtime + id 去重（跨运行时重复短 ID 不合并）、能力状态、Compose 临时键
 //! 不随 [`ContainerInventory`] 快照外泄、未知运行时与超长 ID 的边界。
 
+#[path = "container_inventory/host_pid.rs"]
+mod host_pid;
 #[path = "container_support.rs"]
 mod support;
 
-use runquiry_core::{CapabilityStatus, ContainerInventory, ContainerKey, DiagnosticCode, Pid};
+use runquiry_core::{CapabilityStatus, ContainerInventory, ContainerKey, DiagnosticCode};
 use runquiry_platform::container::{ContainerRuntimes, RuntimeBinaries};
 use support::{TempDir, TestResult, absent_binaries, fake_cli, subcommand_response};
 
@@ -25,16 +27,12 @@ fn container_one_runtime_missing_keeps_other_runtime_results() -> TestResult {
         docker: docker.display().to_string(),
         ..absent_binaries()
     });
-    let inspection = inventory.list_detailed();
+    let inspection = ContainerInventory::list(&inventory);
     let items = inspection
         .data
         .as_ref()
         .ok_or("docker 数据不应被 podman 缺失抹掉")?;
-    assert!(
-        items
-            .iter()
-            .any(|entry| entry.summary.key.runtime == "docker")
-    );
+    assert!(items.iter().any(|entry| entry.key.runtime == "docker"));
     // CLI 缺失按任务规格记录为 ExternalToolFailed 诊断。
     assert!(
         inspection
@@ -60,16 +58,12 @@ fn container_one_runtime_timeout_keeps_other_runtime_results() -> TestResult {
         crictl: crictl.display().to_string(),
         ..absent_binaries()
     });
-    let inspection = inventory.list_detailed();
+    let inspection = ContainerInventory::list(&inventory);
     let items = inspection
         .data
         .as_ref()
         .ok_or("docker 数据不应被 crictl 超时抹掉")?;
-    assert!(
-        items
-            .iter()
-            .any(|entry| entry.summary.key.runtime == "docker")
-    );
+    assert!(items.iter().any(|entry| entry.key.runtime == "docker"));
     assert!(
         inspection
             .issues
@@ -94,16 +88,12 @@ fn container_one_runtime_nonzero_exit_keeps_other_runtime_results() -> TestResul
         podman: podman.display().to_string(),
         ..absent_binaries()
     });
-    let inspection = inventory.list_detailed();
+    let inspection = ContainerInventory::list(&inventory);
     let items = inspection
         .data
         .as_ref()
         .ok_or("docker 数据不应被 podman 失败抹掉")?;
-    assert!(
-        items
-            .iter()
-            .any(|entry| entry.summary.key.runtime == "docker")
-    );
+    assert!(items.iter().any(|entry| entry.key.runtime == "docker"));
     assert!(
         inspection
             .issues
@@ -139,18 +129,18 @@ fn container_same_short_id_across_runtimes_is_two_containers() -> TestResult {
         podman: podman.display().to_string(),
         ..absent_binaries()
     });
-    let items = inventory.list_detailed().data.ok_or("应有双运行时数据")?;
+    let items = ContainerInventory::list(&inventory)
+        .data
+        .ok_or("应有双运行时数据")?;
     assert_eq!(items.len(), 2);
+    assert!(items.iter().any(|entry| entry.key.runtime == "docker"
+        && entry.key.id == "deadbeefdead"
+        && entry.name.as_deref() == Some("from-docker")));
     assert!(
         items
             .iter()
-            .any(|entry| entry.summary.key.runtime == "docker"
-                && entry.summary.key.id == "deadbeefdead"
-                && entry.summary.name.as_deref() == Some("from-docker"))
+            .any(|entry| entry.key.runtime == "podman" && entry.key.id == "deadbeefdead")
     );
-    assert!(items.iter().any(
-        |entry| entry.summary.key.runtime == "podman" && entry.summary.key.id == "deadbeefdead"
-    ));
     Ok(())
 }
 
@@ -164,7 +154,9 @@ fn container_duplicate_id_within_runtime_is_deduped() -> TestResult {
         docker: docker.display().to_string(),
         ..absent_binaries()
     });
-    let items = inventory.list_detailed().data.ok_or("应有数据")?;
+    let items = ContainerInventory::list(&inventory)
+        .data
+        .ok_or("应有数据")?;
     assert_eq!(items.len(), 1);
     Ok(())
 }
@@ -209,9 +201,8 @@ fn container_trait_list_drops_compose_temporary_keys() -> TestResult {
         docker: docker.display().to_string(),
         ..absent_binaries()
     });
-    let detailed = inventory.list_detailed().data.ok_or("应有数据")?;
-    assert_eq!(detailed[0].compose_project.as_deref(), Some("demo"));
-    assert_eq!(detailed[0].compose_service.as_deref(), Some("web"));
+    assert!(inventory.resolve("demo", true)?.data.is_some());
+    assert!(inventory.resolve("web", true)?.data.is_some());
     // trait 快照只含 ContainerSummary：Compose 键不外泄（结构上无此字段）。
     let summaries = ContainerInventory::list(&inventory)
         .data
@@ -223,51 +214,6 @@ fn container_trait_list_drops_compose_temporary_keys() -> TestResult {
             runtime: String::from("docker"),
             id: String::from("1111111111111111111111111111111111111111111111111111111111111111"),
         }
-    );
-    Ok(())
-}
-
-#[test]
-fn container_host_pid_unknown_runtime_is_unsupported() -> TestResult {
-    let dir = TempDir::new("unknown-runtime")?;
-    let docker = fake_cli(&dir, "docker", &docker_lines())?;
-    let inventory = ContainerRuntimes::with_binaries(RuntimeBinaries {
-        docker: docker.display().to_string(),
-        ..absent_binaries()
-    });
-    let key = ContainerKey {
-        runtime: String::from("jail"),
-        id: String::from("abc"),
-    };
-    assert!(matches!(
-        ContainerInventory::host_pid(&inventory, &key),
-        Err(runquiry_core::InspectError::Unsupported { .. })
-    ));
-    Ok(())
-}
-
-#[test]
-fn container_host_pid_dispatches_to_owning_runtime() -> TestResult {
-    let dir = TempDir::new("dispatch")?;
-    let docker = fake_cli(
-        &dir,
-        "docker",
-        &subcommand_response(
-            "inspect",
-            r#"{"Pid":4242,"StartedAt":"2026-08-30T10:00:00Z"}"#,
-        ),
-    )?;
-    let inventory = ContainerRuntimes::with_binaries(RuntimeBinaries {
-        docker: docker.display().to_string(),
-        ..absent_binaries()
-    });
-    let key = ContainerKey {
-        runtime: String::from("docker"),
-        id: String::from("1111111111111111111111111111111111111111111111111111111111111111"),
-    };
-    assert_eq!(
-        ContainerInventory::host_pid(&inventory, &key)?,
-        Some(Pid::new(4242)?)
     );
     Ok(())
 }

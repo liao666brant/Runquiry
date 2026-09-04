@@ -77,7 +77,7 @@ pub(super) use netparse::{
     InetSocketRow, UnixSocketRow, parse_inet_table, parse_socket_inode, parse_unix_table,
 };
 pub(super) use process_files::{
-    CLK_TCK, PAGE_SIZE, StatInfo, parse_boot_time, parse_environ, parse_fd_limit, parse_io,
-    parse_meminfo_total, parse_null_list, parse_stat, parse_statm, parse_status,
-    start_time_from_ticks,
+    CLK_TCK, PAGE_SIZE, StatInfo, StatusInfo, parse_boot_time, parse_environ,
+    parse_environ_checked, parse_fd_limit, parse_io, parse_meminfo_total, parse_null_list,
+    parse_stat, parse_statm, parse_status, start_time_from_ticks,
 };

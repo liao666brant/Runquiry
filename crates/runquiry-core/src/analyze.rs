@@ -143,7 +143,10 @@ pub fn analyze(
     // 6. 进程详情：身份比对失败（PID 复用）或进程退出 → 整体失败；
     //    其他错误降级为诊断，资源详情缺失继续。
     let details = match ports.details.details(target) {
-        Ok(details) => Some(details),
+        Ok(details) => {
+            issues.extend(details.issues);
+            details.data
+        }
         Err(err @ (InspectError::ProcessChanged { .. } | InspectError::NotFound { .. })) => {
             return Err(err);
         }

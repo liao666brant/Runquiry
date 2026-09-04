@@ -3,7 +3,7 @@
 //! 用生产适配器读取当前进程（自身）与一个自建短生命周期子进程，输出进程
 //! 基线、FD、端口与部分权限结果的可观察摘要。
 //!
-//! 安全红线：**绝不打印环境变量值与敏感参数**——环境只输出 key 列表与计数；
+//! 安全红线：**绝不打印环境变量值与敏感参数**——环境只输出计数；
 //! 不读其他进程的环境值；不使用 sudo，不自动提权。
 #![allow(clippy::print_stdout, clippy::print_stderr)] // QA 示例以控制台输出为交付物
 
@@ -55,9 +55,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2) 自身详情（身份 start_time 未知时按 QA 约定直读当前数据）。
     let own_identity = ProcessIdentity::new(own, None, None);
-    let details = ProcessDetailsProvider::details(&platform, &own_identity)?;
+    let details_inspection = ProcessDetailsProvider::details(&platform, &own_identity)?;
+    let details = details_inspection
+        .data
+        .ok_or("自身详情完全失败（无数据）")?;
     println!(
-        "自身详情: comm={:?}, fd={:?} / limit={:?}, cwd={:?}, 环境变量 {} 个（只报计数，不报值）",
+        "自身详情: comm={:?}, fd={:?} / limit={:?}, cwd={:?}, 环境变量 {} 个，诊断 {} 条（不报环境值）",
         summaries
             .iter()
             .find(|entry| entry.identity.pid() == own)
@@ -65,24 +68,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         details.fd_count,
         details.fd_limit,
         details.working_dir,
-        details.environment.len()
+        details.environment.len(),
+        details_inspection.issues.len()
     );
 
     // 3) 自建短生命周期子进程：spawn sleep 3 秒后采集，结束后回收。
     let mut child = Command::new("sleep").arg("3").spawn()?;
     let child_pid = Pid::new(child.id())?;
-    let child_details =
-        ProcessDetailsProvider::details(&platform, &ProcessIdentity::new(child_pid, None, None))?;
-    println!(
-        "子进程 {child_pid}: fd={:?} / limit={:?}, 打开文件 {:?}",
-        child_details.fd_count, child_details.fd_limit, child_details.open_files
-    );
-    let child_sockets = NetworkInventory::sockets_of(&platform, child_pid);
-    println!(
-        "子进程 socket: {} 条, 诊断 {} 条",
-        child_sockets.data.as_ref().map_or(0, Vec::len),
-        child_sockets.issues.len()
-    );
+    print_child_details(&platform, child_pid)?;
     let _ = child.wait()?;
 
     // 4) 端口清单：部分权限结果以诊断呈现，无主端口保留为 pid None。
@@ -117,5 +110,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         holders.issues.len()
     );
     println!("== QA 结束（普通用户权限；未打印任何环境变量值） ==");
+    Ok(())
+}
+
+fn print_child_details(
+    platform: &LinuxPlatform,
+    child_pid: Pid,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let inspected =
+        ProcessDetailsProvider::details(platform, &ProcessIdentity::new(child_pid, None, None))?;
+    let details = inspected.data.ok_or("子进程详情完全失败（无数据）")?;
+    println!(
+        "子进程 {child_pid}: fd={:?} / limit={:?}, 打开文件 {:?}, 诊断 {} 条",
+        details.fd_count,
+        details.fd_limit,
+        details.open_files,
+        inspected.issues.len()
+    );
+    let sockets = NetworkInventory::sockets_of(platform, child_pid);
+    println!(
+        "子进程 socket: {} 条, 诊断 {} 条",
+        sockets.data.as_ref().map_or(0, Vec::len),
+        sockets.issues.len()
+    );
     Ok(())
 }

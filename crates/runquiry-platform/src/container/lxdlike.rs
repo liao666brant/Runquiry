@@ -134,6 +134,14 @@ fn run_for_list(
             DiagnosticCode::Timeout,
             format!("{} 列表命令超时（{}ms）", runtime, timeout.as_millis()),
         )),
+        Err(CommandFailure::OutputLimit { .. }) => Err(DiagnosticIssue::new(
+            DiagnosticCode::OutputLimitExceeded,
+            format!("{runtime} 列表命令输出超过上限"),
+        )),
+        Err(CommandFailure::Cancelled { .. }) => Err(DiagnosticIssue::new(
+            DiagnosticCode::ExternalToolFailed,
+            format!("{runtime} 列表命令已取消"),
+        )),
     }
 }
 
@@ -179,6 +187,7 @@ fn to_listed(runtime: &str, instance: &LxdInstance) -> ListedContainer {
     };
     ListedContainer {
         summary,
+        command: None,
         compose_project: None,
         compose_service: None,
     }

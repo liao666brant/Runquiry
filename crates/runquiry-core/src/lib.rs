@@ -40,10 +40,13 @@ pub use model::resource_usage::{IoStats, MemoryInfo};
 pub use model::source::{Source, SourceType};
 pub use model::target::QueryTarget;
 pub use port::command::{
-    CommandOutput, CommandRunner, CommandSpec, DETAIL_TIMEOUT, LIST_TIMEOUT, PROBE_TIMEOUT,
-    STDERR_LIMIT_BYTES, STDOUT_LIMIT_BYTES,
+    CancellationToken, CommandOutput, CommandRunner, CommandSpec, DETAIL_TIMEOUT, LIST_TIMEOUT,
+    PROBE_TIMEOUT, STDERR_LIMIT_BYTES, STDOUT_LIMIT_BYTES,
 };
-pub use port::container::{ContainerHealthcheckProbe, ContainerInventory, ContainerSummary};
+pub use port::container::{
+    ContainerHealthcheckProbe, ContainerInventory, ContainerProcessVerifier, ContainerSummary,
+    verified_host_pid,
+};
 pub use port::file::{FileInventory, FileLockEntry, LockMode, LockType, ProcessFileLocks};
 pub use port::network::{
     NetworkInventory, OpenPortEntry, Protocol, SocketEntry, validate_socket_entries,

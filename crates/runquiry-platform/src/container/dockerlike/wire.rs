@@ -26,7 +26,7 @@ pub(super) struct DockerLikeEntry {
     image: Option<String>,
     /// 入口命令（witr 字段集对齐，但快照无对应字段，不进入摘要）。
     #[serde(rename = "Command", default, deserialize_with = "de_string_or_array")]
-    _command: Option<String>,
+    command: Option<String>,
     /// 运行状态（如 `running`）。
     #[serde(rename = "State", default)]
     state: Option<String>,
@@ -124,6 +124,7 @@ pub(super) fn to_listed(runtime: &str, entry: DockerLikeEntry) -> ListedContaine
     };
     ListedContainer {
         summary,
+        command: entry.command.map(|command| command.trim().to_string()),
         compose_project: entry
             .labels
             .as_ref()

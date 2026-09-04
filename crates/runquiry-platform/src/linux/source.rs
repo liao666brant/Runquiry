@@ -4,21 +4,17 @@
 //! 富化键值），**不做任何来源类型判定**（core 的 detect 职责）。环境变量值
 //! 不写入任何日志或错误消息（采集即脱敏边界）。
 
-use std::collections::HashMap;
+use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use std::time::Duration;
 
-use runquiry_core::{ProcessSummary, SourceEvidence, SourceEvidenceProvider};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
-
+use self::systemd::enrich_systemd;
 use super::process::{LinuxPlatform, read_cgroup, read_environ};
+use runquiry_core::{ProcessSummary, SourceEvidence, SourceEvidenceProvider};
+
+mod systemd;
 
 /// systemd D-Bus 交互上限（witr `dbusTimeout` 同值：挂死的总线不能拖住采集）。
 const DBUS_TIMEOUT: Duration = Duration::from_secs(2);
-
-const SYSTEMD_DESTINATION: &str = "org.freedesktop.systemd1";
-const SYSTEMD_OBJECT_PATH: &str = "/org/freedesktop/systemd1";
-const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
-const PROPERTIES_INTERFACE: &str = "org.freedesktop.DBus.Properties";
 
 impl SourceEvidenceProvider for LinuxPlatform {
     fn evidence(&self, ancestry: &[ProcessSummary]) -> SourceEvidence {
@@ -42,7 +38,8 @@ impl SourceEvidenceProvider for LinuxPlatform {
             && let Some(unit) = runquiry_core::systemd_unit_from_cgroup(target_cgroup)
         {
             // best-effort 富化：总线缺失、权限不足或单元未加载只省略对应键。
-            evidence.systemd_details = enrich_systemd_bounded(&unit);
+            evidence.systemd_details =
+                enrich_systemd_bounded(&unit, Arc::clone(&self.systemd_in_flight));
         }
         evidence
     }
@@ -50,220 +47,92 @@ impl SourceEvidenceProvider for LinuxPlatform {
 
 /// 有界 D-Bus 富化：独立线程执行 + `recv_timeout` 兜底，总线挂死不拖住
 /// 调用方（超时的线程随后自行结束并释放连接）。
-fn enrich_systemd_bounded(unit: &str) -> Vec<(String, String)> {
-    let (sender, receiver) = std::sync::mpsc::channel();
+fn enrich_systemd_bounded(unit: &str, in_flight: Arc<AtomicBool>) -> Vec<(String, String)> {
     let unit = String::from(unit);
+    enrich_systemd_with(in_flight, DBUS_TIMEOUT, move || enrich_systemd(&unit))
+}
+
+fn enrich_systemd_with<F>(
+    in_flight: Arc<AtomicBool>,
+    timeout: Duration,
+    work: F,
+) -> Vec<(String, String)>
+where
+    F: FnOnce() -> Vec<(String, String)> + Send + 'static,
+{
+    if in_flight
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Vec::new();
+    }
+    let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = sender.send(enrich_systemd(&unit));
+        let _guard = InFlightGuard(in_flight);
+        drop(sender.send(work()));
     });
-    receiver.recv_timeout(DBUS_TIMEOUT).unwrap_or_default()
+    receiver.recv_timeout(timeout).unwrap_or_default()
 }
 
-/// systemd D-Bus 富化（parity：`enrichFromSystemd` 的键——`Description` /
-/// `FragmentPath` / `SourcePath` / `NRestarts` / 定时器 `schedule`）。
-fn enrich_systemd(unit: &str) -> Vec<(String, String)> {
-    let Ok(connection) = zbus::blocking::Connection::system() else {
-        return Vec::new();
-    };
-    let Ok(manager) = zbus::blocking::Proxy::new(
-        &connection,
-        SYSTEMD_DESTINATION,
-        SYSTEMD_OBJECT_PATH,
-        SYSTEMD_MANAGER,
-    ) else {
-        return Vec::new();
-    };
-    let Ok(unit_path) = manager.call::<_, _, OwnedObjectPath>("GetUnit", &(unit,)) else {
-        return Vec::new();
-    };
-    let mut details = Vec::new();
-    if let Some(properties) = get_all(&connection, &unit_path, "org.freedesktop.systemd1.Unit") {
-        append_unit_properties(&mut details, &properties);
-    }
-    if let Some(base) = unit.strip_suffix(".service") {
-        if let Some(service) = get_all(&connection, &unit_path, "org.freedesktop.systemd1.Service")
-            && let Some(restarts) = u32_prop(&service, "NRestarts")
-        {
-            details.push((String::from("NRestarts"), restarts.to_string()));
-        }
-        let timer_unit = format!("{base}.timer");
-        if let Ok(timer_path) =
-            manager.call::<_, _, OwnedObjectPath>("GetUnit", &(timer_unit.as_str(),))
-            && let Some(timer) = get_all(&connection, &timer_path, "org.freedesktop.systemd1.Timer")
-            && let Some(schedule) = timer_schedule(&timer)
-        {
-            details.push((String::from("schedule"), schedule));
-        }
-    }
-    details
-}
+struct InFlightGuard(Arc<AtomicBool>);
 
-/// Unit 接口属性 → 富化键值（顺序固定，core 只透传）。
-fn append_unit_properties(
-    details: &mut Vec<(String, String)>,
-    properties: &HashMap<String, OwnedValue>,
-) {
-    if let Some(description) = string_prop(properties, "Description") {
-        details.push((String::from("Description"), description));
-    }
-    if let Some(fragment) = string_prop(properties, "FragmentPath").filter(|path| !path.is_empty())
-    {
-        details.push((String::from("FragmentPath"), fragment));
-    } else if let Some(source) =
-        string_prop(properties, "SourcePath").filter(|path| !path.is_empty())
-    {
-        details.push((String::from("SourcePath"), source));
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
     }
 }
 
-/// `Properties.GetAll` 调用（失败返回 `None`，调用方按 best-effort 省略）。
-fn get_all(
-    connection: &zbus::blocking::Connection,
-    path: &OwnedObjectPath,
-    interface: &str,
-) -> Option<HashMap<String, OwnedValue>> {
-    let proxy =
-        zbus::blocking::Proxy::new(connection, SYSTEMD_DESTINATION, path, PROPERTIES_INTERFACE)
-            .ok()?;
-    proxy.call("GetAll", &(interface,)).ok()
-}
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, atomic::AtomicBool, mpsc};
+    use std::time::{Duration, Instant};
 
-fn string_prop(properties: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
-    let value = properties.get(key)?;
-    match &**value {
-        Value::Str(text) => Some(text.as_str().to_string()),
-        Value::Value(inner) => match &**inner {
-            Value::Str(text) => Some(text.as_str().to_string()),
-            _ => None,
-        },
-        _ => None,
-    }
-}
+    use super::enrich_systemd_with;
 
-fn u32_prop(properties: &HashMap<String, OwnedValue>, key: &str) -> Option<u32> {
-    let value = properties.get(key)?;
-    match &**value {
-        Value::U32(number) => Some(*number),
-        Value::Value(inner) => match &**inner {
-            Value::U32(number) => Some(*number),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// 递归取字符串（variant 包装时穿透一层）。
-fn as_string(value: &Value<'_>) -> Option<String> {
-    match value {
-        Value::Str(text) => Some(text.as_str().to_string()),
-        Value::Value(inner) => as_string(inner),
-        _ => None,
-    }
-}
-
-/// 递归取 u64（variant 包装时穿透一层）。
-fn as_u64(value: &Value<'_>) -> Option<u64> {
-    match value {
-        Value::U64(number) => Some(*number),
-        Value::Value(inner) => as_u64(inner),
-        _ => None,
-    }
-}
-
-/// 定时器调度（parity：`timerSchedule`；相对时间格式化属展示层，这里只取
-/// 调度表达式：calendar spec 或 monotonic 的 "every …" 短语）。
-fn timer_schedule(properties: &HashMap<String, OwnedValue>) -> Option<String> {
-    if let Some(spec) = properties
-        .get("TimersCalendar")
-        .and_then(|value| calendar_spec(value))
-    {
-        return Some(spec);
-    }
-    if let Some(value) = properties.get("TimersMonotonic") {
-        return monotonic_spec(value);
-    }
-    None
-}
-
-/// TimersCalendar（数组，每项含日历表达式字符串）→ 表达式
-/// （parity：`calendarSpec` 取每项的 spec 字符串字段）。
-fn calendar_spec(value: &Value<'_>) -> Option<String> {
-    let Value::Array(items) = value else {
-        return None;
-    };
-    for item in items.iter() {
-        let Value::Structure(fields) = item else {
-            continue;
-        };
-        for field in fields.fields() {
-            if let Value::Str(spec) = field
-                && !spec.as_str().is_empty()
-            {
-                return Some(spec.as_str().to_string());
-            }
-        }
-    }
-    None
-}
-
-/// TimersMonotonic（数组，每项形如 (base, usec, …)）→ "every …" 短语
-/// （parity：`monotonicSpec` 的三种前缀分支）。
-fn monotonic_spec(value: &Value<'_>) -> Option<String> {
-    let Value::Array(items) = value else {
-        return None;
-    };
-    for item in items.iter() {
-        let Value::Structure(fields) = item else {
-            continue;
-        };
-        let all = fields.fields();
-        let Some(base) = all.first().and_then(as_string) else {
-            continue;
-        };
-        let Some(usec) = all.get(1).and_then(as_u64) else {
-            continue;
-        };
-        if usec == 0 {
-            continue;
-        }
-        let human = human_duration(usec);
-        return Some(if base.starts_with("OnBoot") {
-            format!("every boot + {human}")
-        } else if base.starts_with("OnUnitInactive") {
-            format!("every {human} after idle")
-        } else {
-            format!("every {human}")
+    #[test]
+    fn systemd_enrichment_is_single_flight_without_sleep() -> Result<(), String> {
+        let in_flight = Arc::new(AtomicBool::new(false));
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker_flag = Arc::clone(&in_flight);
+        let worker = std::thread::spawn(move || {
+            enrich_systemd_with(worker_flag, Duration::from_secs(1), move || {
+                assert!(started_tx.send(()).is_ok());
+                assert!(release_rx.recv().is_ok());
+                vec![(String::from("Description"), String::from("fixture"))]
+            })
         });
-    }
-    None
-}
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .map_err(|error| error.to_string())?;
 
-/// 微秒时长的人类短语（parity：`humanDuration` 的取整规则）。
-fn human_duration(usec: u64) -> String {
-    let seconds = usec / 1_000_000;
-    if seconds >= 86_400 {
-        let days = seconds / 86_400;
-        let hours = (seconds % 86_400) / 3_600;
-        if hours > 0 {
-            return format!("{days}d {hours}h");
-        }
-        return format!("{days}d");
+        let duplicate = enrich_systemd_with(Arc::clone(&in_flight), Duration::from_secs(1), || {
+            vec![(String::from("unexpected"), String::from("worker"))]
+        });
+        assert!(duplicate.is_empty(), "重复刷新不得启动第二个 worker");
+        release_tx.send(()).map_err(|error| error.to_string())?;
+        let first = worker.join().map_err(|_| String::from("worker panic"))?;
+        assert_eq!(first.len(), 1);
+        Ok(())
     }
-    if seconds >= 3_600 {
-        let hours = seconds / 3_600;
-        let minutes = (seconds % 3_600) / 60;
-        if minutes > 0 {
-            return format!("{hours}h {minutes}min");
-        }
-        return format!("{hours}h");
+
+    #[test]
+    fn systemd_enrichment_timeout_returns_before_worker_finishes() -> Result<(), String> {
+        let in_flight = Arc::new(AtomicBool::new(false));
+        let (release_tx, release_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let started = Instant::now();
+        let details = enrich_systemd_with(in_flight, Duration::from_millis(10), move || {
+            assert!(release_rx.recv().is_ok());
+            assert!(done_tx.send(()).is_ok());
+            Vec::new()
+        });
+        assert!(details.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(1));
+        release_tx.send(()).map_err(|error| error.to_string())?;
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .map_err(|error| error.to_string())?;
+        Ok(())
     }
-    if seconds >= 60 {
-        let minutes = seconds / 60;
-        let rest = seconds % 60;
-        if rest > 0 {
-            return format!("{minutes}min {rest}s");
-        }
-        return format!("{minutes}min");
-    }
-    format!("{seconds}s")
 }

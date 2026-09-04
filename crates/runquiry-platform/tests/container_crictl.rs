@@ -5,7 +5,7 @@
 #[path = "container_support.rs"]
 mod support;
 
-use runquiry_core::{ContainerKey, DiagnosticCode, Pid};
+use runquiry_core::{ContainerInventory, ContainerKey, DiagnosticCode, Pid};
 use runquiry_platform::container::{ContainerRuntimes, RuntimeBinaries};
 use support::{TempDir, TestResult, absent_binaries, fake_cli, subcommand_response};
 
@@ -32,21 +32,22 @@ fn container_crictl_list_parses_containers_and_state_prefix() -> TestResult {
     );
     let crictl = fake_cli(&dir, "crictl", &body)?;
     let inventory = crictl_inventory(&crictl);
-    let items = inventory.list_detailed().data.ok_or("应有 k8s 数据")?;
+    let items = ContainerInventory::list(&inventory)
+        .data
+        .ok_or("应有 k8s 数据")?;
     assert_eq!(items.len(), 2);
     let first = &items[0];
-    assert_eq!(first.summary.key.runtime, "k8s");
-    assert_eq!(first.summary.name.as_deref(), Some("web-pod-1"));
+    assert_eq!(first.key.runtime, "k8s");
+    assert_eq!(first.name.as_deref(), Some("web-pod-1"));
     assert_eq!(
-        first.summary.image.as_deref(),
+        first.image.as_deref(),
         Some("registry.example.internal/app:1")
     );
-    assert_eq!(first.summary.status.as_deref(), Some("RUNNING"));
+    assert_eq!(first.status.as_deref(), Some("RUNNING"));
     assert!(
-        first.summary.started_at.is_some(),
+        first.started_at.is_some(),
         "crictl 的 StartedAt 取列表 createdAt"
     );
-    assert_eq!(first.compose_project, None);
     Ok(())
 }
 
@@ -104,7 +105,9 @@ fn container_crictl_empty_list_is_success() -> TestResult {
         &subcommand_response("ps", r#"{"containers":[]}"#),
     )?;
     let inventory = crictl_inventory(&crictl);
-    let items = inventory.list_detailed().data.ok_or("应有空数据")?;
+    let items = ContainerInventory::list(&inventory)
+        .data
+        .ok_or("应有空数据")?;
     assert!(items.is_empty());
     Ok(())
 }
@@ -118,7 +121,7 @@ fn container_crictl_corrupt_json_is_parse_failed() -> TestResult {
         &subcommand_response("ps", "{\"containers\":["),
     )?;
     let inventory = crictl_inventory(&crictl);
-    let inspection = inventory.list_detailed();
+    let inspection = ContainerInventory::list(&inventory);
     assert_eq!(inspection.data, None);
     assert!(inspection.issues.iter().any(
         |issue| issue.code() == DiagnosticCode::ParseFailed && issue.message().contains("k8s")

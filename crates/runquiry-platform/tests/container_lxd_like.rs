@@ -5,7 +5,7 @@
 #[path = "container_support.rs"]
 mod support;
 
-use runquiry_core::{ContainerKey, Pid};
+use runquiry_core::{ContainerInventory, ContainerKey, Pid};
 use runquiry_platform::container::{ContainerRuntimes, RuntimeBinaries};
 use support::{TempDir, TestResult, absent_binaries, fake_cli, subcommand_response};
 
@@ -38,19 +38,21 @@ fn container_incus_list_parses_shared_rest_shape() -> TestResult {
         incus: incus.display().to_string(),
         ..absent_binaries()
     });
-    let items = inventory.list_detailed().data.ok_or("应有 incus 数据")?;
+    let items = ContainerInventory::list(&inventory)
+        .data
+        .ok_or("应有 incus 数据")?;
     assert_eq!(items.len(), 2);
     let c1 = &items[0];
-    assert_eq!(c1.summary.key.runtime, "incus");
-    assert_eq!(c1.summary.key.id, "c1");
-    assert_eq!(c1.summary.name.as_deref(), Some("c1"));
-    assert_eq!(c1.summary.image.as_deref(), Some("Debian 13"));
-    assert_eq!(c1.summary.status.as_deref(), Some("Running"));
+    assert_eq!(c1.key.runtime, "incus");
+    assert_eq!(c1.key.id, "c1");
+    assert_eq!(c1.name.as_deref(), Some("c1"));
+    assert_eq!(c1.image.as_deref(), Some("Debian 13"));
+    assert_eq!(c1.status.as_deref(), Some("Running"));
     // 列表载荷自带 state.pid：运行中实例的主机 PID 直接可用。
-    assert_eq!(c1.summary.host_pid, Some(Pid::new(5101)?));
+    assert_eq!(c1.host_pid, Some(Pid::new(5101)?));
     // 镜像回退到 image.os + image.release；停止实例 PID 为 0 → None。
-    assert_eq!(items[1].summary.image.as_deref(), Some("Alpine 3.20"));
-    assert_eq!(items[1].summary.host_pid, None);
+    assert_eq!(items[1].image.as_deref(), Some("Alpine 3.20"));
+    assert_eq!(items[1].host_pid, None);
     Ok(())
 }
 
@@ -63,7 +65,7 @@ fn container_lxd_requires_client_and_daemon_binaries() -> TestResult {
         lxd_client: client.display().to_string(),
         ..absent_binaries()
     });
-    let items = inventory.list_detailed().data;
+    let items = ContainerInventory::list(&inventory).data;
     assert_eq!(items, None, "缺 lxd 守护进程时 LXD 不可用");
     Ok(())
 }
@@ -101,14 +103,12 @@ fn container_same_instance_name_across_incus_and_lxd_is_not_merged() -> TestResu
         lxd_daemon: daemon.display().to_string(),
         ..absent_binaries()
     });
-    let items = inventory.list_detailed().data.ok_or("应有数据")?;
+    let items = ContainerInventory::list(&inventory)
+        .data
+        .ok_or("应有数据")?;
     // 同名实例在 incus 与 lxd 下是两个容器（runtime + id 去重键）。
-    assert!(
-        items
-            .iter()
-            .any(|entry| entry.summary.key == incus_key("c1"))
-    );
-    assert!(items.iter().any(|entry| entry.summary.key == lxd_key("c1")));
+    assert!(items.iter().any(|entry| entry.key == incus_key("c1")));
+    assert!(items.iter().any(|entry| entry.key == lxd_key("c1")));
     assert_eq!(items.len(), 4);
     Ok(())
 }

@@ -6,24 +6,23 @@
 
 mod crictl;
 mod dockerlike;
+mod inventory;
 mod lxc;
 mod lxdlike;
 mod parse;
 mod runtime;
 
-use std::collections::HashSet;
-
 use runquiry_core::{
-    CapabilityStatus, CommandSpec, ContainerHealthcheckProbe, ContainerInventory as InventoryPort,
-    ContainerKey, ContainerSummary, DiagnosticCode, DiagnosticIssue, HealthcheckStatus,
-    InspectError, Inspection, Pid, port::command::PROBE_TIMEOUT,
+    CommandSpec, ContainerHealthcheckProbe, ContainerKey, ContainerProcessVerifier,
+    DiagnosticIssue, HealthcheckStatus, InspectError, Pid, port::command::PROBE_TIMEOUT,
 };
 
 use crate::command::StdCommandRunner;
 use crate::container::runtime::RuntimeKind;
 
 // 供外部（如测试 crate）直接引用的公共类型再导出。
-pub use crate::container::runtime::{ContainerEnrichment, ListedContainer, RuntimeBinaries};
+use crate::container::runtime::ListedContainer;
+pub use crate::container::runtime::{ContainerEnrichment, RuntimeBinaries};
 
 /// 七种容器运行时的汇总清单：单一运行时失败不阻断其他运行时（Inspection 部分成功）。
 ///
@@ -58,75 +57,8 @@ impl ContainerRuntimes {
         }
     }
 
-    /// 容器能力状态：探测各运行时 CLI 可用性后汇总。
-    pub fn capability(&self) -> CapabilityStatus {
-        let mut available = Vec::new();
-        let mut missing = Vec::new();
-        for kind in RuntimeKind::ALL {
-            if self.probe(kind) {
-                available.push(kind.display_name());
-            } else {
-                missing.push(kind.display_name());
-            }
-        }
-        if available.is_empty() {
-            return CapabilityStatus::Unavailable(String::from(
-                "未发现任何容器运行时 CLI（docker/podman/nerdctl/crictl/incus/lxd/lxc）",
-            ));
-        }
-        if missing.is_empty() {
-            return CapabilityStatus::Supported;
-        }
-        CapabilityStatus::Partial(format!(
-            "可用运行时: {}；缺失: {}",
-            available.join(", "),
-            missing.join(", ")
-        ))
-    }
-
-    /// 列出各可用运行时的容器（含 Compose 临时匹配键）。
-    ///
-    /// 失败隔离：任一运行时的探测失败 / 命令失败 / 超时 / 解析失败只产生
-    /// [`DiagnosticIssue`]，其他运行时的结果照常返回；全部失败时 `data` 为 `None`。
-    /// 同一运行时内与跨运行时均按 `runtime|id` 去重。
-    pub fn list_detailed(&self) -> Inspection<Vec<ListedContainer>> {
-        let mut items = Vec::new();
-        let mut issues = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
-        let mut any_success = false;
-        for kind in RuntimeKind::ALL {
-            if !self.probe(kind) {
-                issues.push(DiagnosticIssue::new(
-                    DiagnosticCode::ExternalToolFailed,
-                    format!("{} 运行时不可用：CLI 缺失或无法执行", kind.display_name()),
-                ));
-                continue;
-            }
-            match self.list_one(kind) {
-                Ok((list, extra_issues)) => {
-                    any_success = true;
-                    issues.extend(extra_issues);
-                    for entry in list {
-                        if seen.insert(entry.summary.key.dedup_key()) {
-                            items.push(entry);
-                        }
-                    }
-                }
-                Err(issue) => issues.push(issue),
-            }
-        }
-        if any_success {
-            Inspection::partial(items, issues)
-        } else {
-            Inspection::failed(issues)
-        }
-    }
-
-    /// 解析容器在主机上的进程 ID；运行时无法给出时返回 `Ok(None)`。
-    ///
-    /// 主机 PID 缺失、为零或为负一律 `None`，不伪造进程详情；"PID 是否真属于
-    /// 容器" 的 cgroup 校验属 Linux 管线职责，不在本层。
-    pub fn host_pid(&self, key: &ContainerKey) -> Result<Option<Pid>, InspectError> {
+    /// 读取运行时报告的宿主 PID 候选；仅供归属验证流程使用。
+    fn host_pid_candidate(&self, key: &ContainerKey) -> Result<Option<Pid>, InspectError> {
         let kind = Self::kind_for(&key.runtime)?;
         Self::require_valid_id(&key.id)?;
         match kind {
@@ -145,6 +77,19 @@ impl ContainerRuntimes {
             ),
             RuntimeKind::Lxc => lxc::host_pid(&self.bins.lxc_info, self.runner, &key.id),
         }
+    }
+
+    /// 查询主机 PID，并由平台验证器确认该 PID 仍属于目标容器。
+    ///
+    /// # Errors
+    /// 运行时不支持、容器 ID 非法或 CLI 查询失败时返回对应领域错误。
+    pub fn verified_host_pid(
+        &self,
+        key: &ContainerKey,
+        verifier: &dyn ContainerProcessVerifier,
+    ) -> Result<Option<Pid>, InspectError> {
+        let candidate = self.host_pid_candidate(key)?;
+        Ok(candidate.filter(|pid| verifier.belongs_to_container(*pid, key)))
     }
 
     /// 富集容器：补充列表阶段没有的字段（如 docker-like 的启动时间）。
@@ -189,6 +134,7 @@ impl ContainerRuntimes {
             runtime: RuntimeKind::Docker.key_name(),
             list_format: "{{json .}}",
             line_delimited: true,
+            original_user: RuntimeKind::Docker.runs_as_original_user(),
         }
     }
 
@@ -198,6 +144,7 @@ impl ContainerRuntimes {
             runtime: RuntimeKind::Podman.key_name(),
             list_format: "json",
             line_delimited: false,
+            original_user: RuntimeKind::Podman.runs_as_original_user(),
         }
     }
 
@@ -207,6 +154,7 @@ impl ContainerRuntimes {
             runtime: RuntimeKind::Nerdctl.key_name(),
             list_format: "json",
             line_delimited: false,
+            original_user: RuntimeKind::Nerdctl.runs_as_original_user(),
         }
     }
 
@@ -214,23 +162,35 @@ impl ContainerRuntimes {
     /// （`PROBE_TIMEOUT）；能启动即视为可用（parity：witr` 只检查二进制存在）。
     fn probe(&self, kind: RuntimeKind) -> bool {
         match kind {
-            RuntimeKind::Docker => self.probe_program(&self.bins.docker),
-            RuntimeKind::Podman => self.probe_program(&self.bins.podman),
-            RuntimeKind::Nerdctl => self.probe_program(&self.bins.nerdctl),
-            RuntimeKind::Crictl => self.probe_program(&self.bins.crictl),
-            RuntimeKind::Incus => self.probe_program(&self.bins.incus),
+            RuntimeKind::Docker => {
+                self.probe_program(&self.bins.docker, kind.runs_as_original_user())
+            }
+            RuntimeKind::Podman => {
+                self.probe_program(&self.bins.podman, kind.runs_as_original_user())
+            }
+            RuntimeKind::Nerdctl => {
+                self.probe_program(&self.bins.nerdctl, kind.runs_as_original_user())
+            }
+            RuntimeKind::Crictl => self.probe_program(&self.bins.crictl, false),
+            RuntimeKind::Incus => self.probe_program(&self.bins.incus, false),
             // LXD 需客户端与守护进程二进制同时存在，避免误入经典 LXC 工具链。
             RuntimeKind::Lxd => {
-                self.probe_program(&self.bins.lxd_client)
-                    && self.probe_program(&self.bins.lxd_daemon)
+                self.probe_program(&self.bins.lxd_client, false)
+                    && self.probe_program(&self.bins.lxd_daemon, false)
             }
-            RuntimeKind::Lxc => self.probe_program(&self.bins.lxc_ls),
+            RuntimeKind::Lxc => self.probe_program(&self.bins.lxc_ls, false),
         }
     }
 
-    fn probe_program(&self, program: &str) -> bool {
+    fn probe_program(&self, program: &str, original_user: bool) -> bool {
         let spec = CommandSpec::new(program, ["--version"]);
-        self.runner.run_classified(&spec, PROBE_TIMEOUT).is_ok()
+        if original_user {
+            self.runner
+                .run_classified_as_original_user(&spec, PROBE_TIMEOUT)
+                .is_ok()
+        } else {
+            self.runner.run_classified(&spec, PROBE_TIMEOUT).is_ok()
+        }
     }
 
     fn list_one(
@@ -246,26 +206,6 @@ impl ContainerRuntimes {
             RuntimeKind::Lxd => lxdlike::list(&self.bins.lxd_client, self.runner, kind.key_name()),
             RuntimeKind::Lxc => lxc::list(&self.bins.lxc_ls, self.runner),
         }
-    }
-}
-
-impl InventoryPort for ContainerRuntimes {
-    fn capability(&self) -> CapabilityStatus {
-        Self::capability(self)
-    }
-
-    fn list(&self) -> Inspection<Vec<ContainerSummary>> {
-        // Compose 临时匹配键止步于解析阶段结构，不随 trait 快照外泄。
-        self.list_detailed().map(|items| {
-            items
-                .into_iter()
-                .map(ListedContainer::into_summary)
-                .collect()
-        })
-    }
-
-    fn host_pid(&self, key: &ContainerKey) -> Result<Option<Pid>, InspectError> {
-        Self::host_pid(self, key)
     }
 }
 
@@ -289,12 +229,5 @@ impl ContainerHealthcheckProbe for ContainerRuntimes {
         dockerlike::healthcheck_config(&bin, self.runner, container_id)
             .ok()
             .flatten()
-    }
-}
-
-impl ListedContainer {
-    /// 取快照部分（丢弃 Compose 临时匹配键）。
-    pub fn into_summary(self) -> ContainerSummary {
-        self.summary
     }
 }

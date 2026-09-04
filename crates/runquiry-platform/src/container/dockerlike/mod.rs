@@ -26,7 +26,10 @@ use super::parse::parse_machine_time;
 use super::{ContainerEnrichment, ListedContainer};
 use wire::{DockerLikeEntry, parse_array, parse_line_delimited, to_listed};
 
+mod port;
 mod wire;
+
+pub(crate) use port::published_on;
 
 /// docker-like 家族某二进制的调用形态。
 pub(crate) struct DockerLikeBin {
@@ -38,6 +41,8 @@ pub(crate) struct DockerLikeBin {
     pub list_format: &'static str,
     /// 列表输出形态：docker 逐行 JSON，podman / nerdctl 为 JSON 数组。
     pub line_delimited: bool,
+    /// 是否在 sudo 启动时恢复原始普通用户（Podman/nerdctl rootless store）。
+    pub original_user: bool,
 }
 
 /// `inspect --format {{json .State}}` 的解析结构。
@@ -61,7 +66,7 @@ pub(crate) fn list(
         &bin.program,
         ["ps", "--no-trunc", "--format", bin.list_format],
     );
-    let output = run_for_list(bin.runtime, runner, &spec)?;
+    let output = run_for_list(bin, runner, &spec)?;
     // 截断判定优先于退出码：超限 kill 后子进程退出码必然不可得（None）。
     if output.stdout_truncated {
         return Err(DiagnosticIssue::new(
@@ -120,9 +125,7 @@ fn inspect_state(
         &bin.program,
         ["inspect", "--format", "{{json .State}}", "--", id],
     );
-    let output = runner
-        .run_classified(&spec, DETAIL_TIMEOUT)
-        .map_err(CommandFailure::into_inspect_error)?;
+    let output = run_detail(bin, runner, &spec)?;
     if output.exit_code != Some(0) {
         return Err(InspectError::ExternalTool {
             program: bin.program.clone(),
@@ -172,9 +175,7 @@ pub(crate) fn healthcheck_config(
             id,
         ],
     );
-    let output = runner
-        .run_classified(&spec, DETAIL_TIMEOUT)
-        .map_err(CommandFailure::into_inspect_error)?;
+    let output = run_detail(bin, runner, &spec)?;
     if output.exit_code != Some(0) {
         return Err(InspectError::ExternalTool {
             program: bin.program.clone(),
@@ -197,21 +198,47 @@ pub(crate) fn healthcheck_config(
 }
 
 fn run_for_list(
-    runtime: &str,
+    bin: &DockerLikeBin,
     runner: StdCommandRunner,
     spec: &CommandSpec,
 ) -> Result<CommandOutput, DiagnosticIssue> {
-    match runner.run_classified(spec, LIST_TIMEOUT) {
+    let result = if bin.original_user {
+        runner.run_classified_as_original_user(spec, LIST_TIMEOUT)
+    } else {
+        runner.run_classified(spec, LIST_TIMEOUT)
+    };
+    match result {
         Ok(output) => Ok(output),
         Err(CommandFailure::Spawn { detail, .. }) => Err(DiagnosticIssue::new(
             DiagnosticCode::ExternalToolFailed,
-            format!("{runtime} 列表命令无法启动：{detail}"),
+            format!("{} 列表命令无法启动：{detail}", bin.runtime),
         )),
         Err(CommandFailure::Timeout { timeout, .. }) => Err(DiagnosticIssue::new(
             DiagnosticCode::Timeout,
-            format!("{} 列表命令超时（{}ms）", runtime, timeout.as_millis()),
+            format!("{} 列表命令超时（{}ms）", bin.runtime, timeout.as_millis()),
+        )),
+        Err(CommandFailure::OutputLimit { .. }) => Err(DiagnosticIssue::new(
+            DiagnosticCode::OutputLimitExceeded,
+            format!("{} 列表命令输出超过上限", bin.runtime),
+        )),
+        Err(CommandFailure::Cancelled { .. }) => Err(DiagnosticIssue::new(
+            DiagnosticCode::ExternalToolFailed,
+            format!("{} 列表命令已取消", bin.runtime),
         )),
     }
+}
+
+fn run_detail(
+    bin: &DockerLikeBin,
+    runner: StdCommandRunner,
+    spec: &CommandSpec,
+) -> Result<CommandOutput, InspectError> {
+    let result = if bin.original_user {
+        runner.run_classified_as_original_user(spec, DETAIL_TIMEOUT)
+    } else {
+        runner.run_classified(spec, DETAIL_TIMEOUT)
+    };
+    result.map_err(CommandFailure::into_inspect_error)
 }
 
 /// 非零退出码在调用方判定：列表命令非零退出视为该运行时失败（parity：witr

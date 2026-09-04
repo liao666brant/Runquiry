@@ -101,13 +101,28 @@ pub(in crate::linux) fn parse_null_list(bytes: &[u8]) -> Vec<String> {
 
 /// 解析 environ 原文为键值对（无 `=` 的段跳过）。
 pub(in crate::linux) fn parse_environ(bytes: &[u8]) -> Vec<(String, String)> {
-    parse_null_list(bytes)
-        .into_iter()
-        .filter_map(|entry| {
-            let (key, value) = entry.split_once('=')?;
-            Some((String::from(key), String::from(value)))
-        })
-        .collect()
+    parse_environ_checked(bytes).0
+}
+
+/// 解析 environ 并标记无效 UTF-8 或缺少 `=` 的非空条目。
+pub(in crate::linux) fn parse_environ_checked(bytes: &[u8]) -> (Vec<(String, String)>, bool) {
+    let mut environment = Vec::new();
+    let mut valid = true;
+    for entry in bytes
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+    {
+        let Ok(entry) = std::str::from_utf8(entry) else {
+            valid = false;
+            continue;
+        };
+        let Some((key, value)) = entry.split_once('=') else {
+            valid = false;
+            continue;
+        };
+        environment.push((String::from(key), String::from(value)));
+    }
+    (environment, valid)
 }
 
 /// 解析 `/proc/PID/limits` 的 "Max open files" 软限制（witr `getFileLimit`）：
@@ -129,8 +144,9 @@ pub(in crate::linux) fn parse_fd_limit(raw: &str) -> Option<u64> {
 }
 
 /// 解析 `/proc/PID/io`（`read_bytes` / `write_bytes` / `syscr` / `syscw`）。
-pub(in crate::linux) fn parse_io(raw: &str) -> IoStats {
+pub(in crate::linux) fn parse_io(raw: &str) -> Option<IoStats> {
     let mut stats = IoStats::default();
+    let mut parsed = false;
     for line in raw.lines() {
         let Some((key, value)) = line.split_once(':') else {
             continue;
@@ -139,14 +155,26 @@ pub(in crate::linux) fn parse_io(raw: &str) -> IoStats {
             continue;
         };
         match key.trim() {
-            "read_bytes" => stats.read_bytes = value,
-            "write_bytes" => stats.write_bytes = value,
-            "syscr" => stats.read_ops = value,
-            "syscw" => stats.write_ops = value,
+            "read_bytes" => {
+                stats.read_bytes = value;
+                parsed = true;
+            }
+            "write_bytes" => {
+                stats.write_bytes = value;
+                parsed = true;
+            }
+            "syscr" => {
+                stats.read_ops = value;
+                parsed = true;
+            }
+            "syscw" => {
+                stats.write_ops = value;
+                parsed = true;
+            }
             _ => {}
         }
     }
-    stats
+    parsed.then_some(stats)
 }
 
 /// 解析 `/proc/PID/statm` 为详细内存信息（7 字段 × 页大小，witr `ReadExtendedInfo`）。

@@ -43,7 +43,7 @@
     - 依赖批准记录（依赖守门人，2026-09-03）：runquiry-core 新增 serde 1.0.229（derive）与 serde_json 1.0.151（dev）——两者均已在 Cargo.lock 中作为 GPUI 传递依赖存在，零新增包；Cargo.lock 变更仅为 runquiry-core/runquiry-ui 条目的依赖列表更新，Zed GPUI（23 包，f66ed399）与 gpui-component（4 包，91217366）source 未漂移，cargo deny check 全绿。
     - 验证结果：cargo fmt --all --check 通过；cargo test 12 个测试全过；cargo clippy --all-targets -- -D warnings 零警告（无豁免）；cargo tree -p runquiry-core --locked 无 gpui/OS API/tokio/async-std/smol/futures。
     - 接口冻结范围裁定：parity §1 中的容器上下文（ContainerID/ContainerRuntime/ContainerHealthcheck）、启动来源 Source、健康状态枚举、ExeDeleted、Capabilities、MemoryInfo/IOStats、FileContext，以及 FileInventory 的全量打开文件列举，推迟到 B1/B2 随分析管线一并实现（避免 A3 投机性建字段）；B1/B2 扩展时按 additive 演进。
-    - 对平台实现者的前置/后置条件与错误语义见 crates/runquiry-core/src/port/ 各 trait 契约文档（单条目失败只追加 issue 不丢数据、无主端口 pid: None + issue、运行时缺失用 Unavailable、执行前重读身份否则 ProcessChanged、超时/程序缺失归 ExternalTool、输出截断置 *_truncated）。
+    - 对平台实现者的前置/后置条件与错误语义见 crates/runquiry-core/src/port/ 各 trait 契约文档（单条目失败只追加 issue 不丢数据、无主端口 pid: None + issue、运行时缺失用 Unavailable、执行前重读身份否则 ProcessChanged、超时/程序缺失/输出超限归 ExternalTool；生产 CommandRunner 不得把截断输出作为成功结果）。
 
 - [x] **B1 目标解析与分析管线**
   - 依赖：A3、A5。
@@ -65,9 +65,10 @@
     - 契约门（additive，接口已冻结）：`model/source.rs`（SourceType 11 变体/Source 有序 details）、`model/health.rs`（HealthStatus）、`model/container_context.rs`（ContainerContext/HealthcheckStatus + cgroup v1/v2 纯函数）、`model/resource_usage.rs`（MemoryInfo/IoStats）；ProcessSummary/ProcessDetails 全部 `#[serde(default)]` 扩展（30 个既有 fixture 逐字节未改）；`InspectError::SocketOwnerUnknown`；`validate_socket_entry` 提升为公共 API（fixture loader 委托复用）；`port/source.rs`（SourceEvidence/SourceEvidenceProvider：平台只采集原始证据、core 做全部判定）；`resolution.rs`（matches_exact_token/matches_fuzzy/Resolution）。
     - B1 实现（全在 core，零 OS/GPUI/外部命令依赖）：`resolve.rs`（parse_pid/parse_port/parse_query/parse_file_path 边界解析；scan_name_candidates 忽略链+纯数字守卫+去重升序；resolve_name（NotFound/Ambiguous+完整候选；merge_service_pid 服务 PID 首位合并）；resolve_port_owner（SocketOwnerUnknown/多属主 Ambiguous）；resolve_containers（五字段匹配含 Compose 临时键、runtime+id 去重）；resolve_file_holders）；`ancestry.rs`（resolve_ancestry：环检测、root→target、单跳截断部分成功）；`source_detect.rs` + `source_shell.rs`（固定优先级链 container→ssh→shell→systemd→launchd→bsdrc→supervisor→cron→windows_service→init→unknown，Snap/Flatpak、LXC runtime 精化、SSH env 回溯、multiplexer 富化）；`warnings.rs`（§6 全部告警，顺序与 witr append 顺序逐条一致，可注入时钟 `now`，LD_PRELOAD 先于排序后的 DYLD_*）；`analyze.rs`（单一入口 analyze：祖先→来源→健康检查补全→详情/子进程/Socket/文件锁收集→告警→Analysis，单采集器失败不抹数据，NotFound/ProcessChanged 区分退出与 PID 复用）；`port/container.rs` additive `ContainerHealthcheckProbe`、`port/file.rs` additive `ProcessFileLocks`。
     - 行为锁定以测试内联 JSON 与 core tests/support 的假采集器实现（tests/fixtures/ 未新增文件，fixture 对照语义由既有 30 个 fixture + 测试内联合成数据共同覆盖）。
-    - 验证：`cargo test -p runquiry-core target|pipeline|warnings --locked` 23/30/16 通过；core 合计 104（lib 7 + domain 11 + fixtures 14 + pipeline 30 + ports 1 + controller 4 + target 21 + warnings 16）；`cargo tree -p runquiry-core --locked` 无 GPUI/OS crate/async runtime；clippy `-D warnings` 零警告。
+    - 验证：`cargo test -p runquiry-core target|pipeline|warnings --locked` 21/30/16 通过；core 合计 107（lib 7 + container contract 3 + domain 11 + fixtures 14 + pipeline 30 + ports 1 + controller 4 + target 21 + warnings 16）；`cargo tree -p runquiry-core --locked` 无 GPUI/OS crate/async runtime；clippy `-D warnings` 零警告。
     - 已知限制：systemd 服务回退的 systemctl 调用属平台/上层（core 仅提供 merge_service_pid 组合语义）；launchd/Windows SCM 判定保留类型与链位置，平台探测属 C1/C2。
     - 评审修复（2026-09-04）：`resolve_ancestry` 的 reader 升级为 `Result<Option<..>, DiagnosticIssue>`——单跳截断的失败原因（权限/快照失败）与清单缺失均写入 `Inspection.issues`，截断链与完整链可区分（根计划完成标准「部分结果可区分」）；`analyze` 改为单次 `list()` 快照，祖先链与子进程快照共用同一份（消除逐跳全量重复扫描与跨快照不一致）。
+    - 阻断项修复（2026-09-04）：`ProcessDetailsProvider::details` 返回 `Inspection<ProcessDetails>`，分析管线合并字段级诊断并保留可用详情；命令端口新增可克隆 `CancellationToken` 与运行中取消入口；容器端口新增 `ContainerProcessVerifier` 和纯函数 `verified_host_pid`，把运行时 PID 候选与平台归属证据分开，缺失/不匹配一律降级为容器 fallback。新增 3 个容器 PID 契约测试；超长 core 测试按领域拆入同名子目录，生产 API 与测试语义不变。
 
 ## 模块退出条件
 

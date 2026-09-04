@@ -1,5 +1,5 @@
 //! QA 示例（B3 验收）：经生产 `ContainerInventory` 完成一次真实只读的
-//! 容器列表 + 主机 PID + 富集读取，并打印摘要（无敏感值）。
+//! 容器列表 + 经归属验证的主机 PID + 富集读取，并打印摘要。
 //!
 //! 用法：
 //!
@@ -11,8 +11,10 @@
 
 use std::io::Write as _;
 
-use runquiry_core::{ContainerInventory, ContainerSummary, Pid};
+use runquiry_core::{ContainerInventory, ContainerKey, ContainerSummary, InspectError, Pid};
 use runquiry_platform::container::ContainerRuntimes;
+#[cfg(target_os = "linux")]
+use runquiry_platform::linux::LinuxPlatform;
 
 fn main() {
     let mut out = std::io::stdout().lock();
@@ -45,22 +47,22 @@ fn main() {
     for item in &items {
         print_summary(&mut out, item);
     }
-    // 对第一个容器走一次真实 host_pid + enrich（DETAIL_TIMEOUT）。
+    // 对第一个容器走一次真实 verified_host_pid + enrich（DETAIL_TIMEOUT）。
     let Some(first) = items.first() else {
         return;
     };
     let key = &first.key;
-    match inventory.host_pid(key) {
+    match verified_host_pid(&inventory, key) {
         Ok(pid) => {
             let _ = writeln!(
                 out,
-                "host_pid({}) = {:?}",
+                "verified_host_pid({}) = {:?}",
                 key.dedup_key(),
                 pid.map(Pid::get)
             );
         }
         Err(err) => {
-            let _ = writeln!(out, "host_pid({}) 失败: {err}", key.dedup_key());
+            let _ = writeln!(out, "verified_host_pid({}) 失败: {err}", key.dedup_key());
         }
     }
     match inventory.enrich(key) {
@@ -76,6 +78,25 @@ fn main() {
             let _ = writeln!(out, "enrich({}) 失败: {err}", key.dedup_key());
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn verified_host_pid(
+    inventory: &ContainerRuntimes,
+    key: &ContainerKey,
+) -> Result<Option<Pid>, InspectError> {
+    let verifier = LinuxPlatform::new().map_err(|error| InspectError::Unsupported {
+        reason: format!("无法初始化 Linux 容器归属验证器：{error}"),
+    })?;
+    inventory.verified_host_pid(key, &verifier)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn verified_host_pid(
+    _inventory: &ContainerRuntimes,
+    _key: &ContainerKey,
+) -> Result<Option<Pid>, InspectError> {
+    Ok(None)
 }
 
 fn print_summary(out: &mut std::io::StdoutLock<'_>, summary: &ContainerSummary) {
