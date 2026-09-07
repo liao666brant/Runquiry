@@ -20,6 +20,8 @@ impl AppShell {
             return;
         }
         self.target_kind = kind;
+        self.process_action_flow.invalidate_context();
+        self.process_action_menu_open = false;
         let _ = self.query_generation.next();
         self.query_outcome = None;
         self.query_error = None;
@@ -38,6 +40,8 @@ impl AppShell {
             return;
         };
         self.invalidate_active_refresh();
+        self.process_action_flow.invalidate_context();
+        self.process_action_menu_open = false;
         self.data.processes.select_row(*row);
         self.analysis = None;
         self.detail_loading = false;
@@ -82,6 +86,8 @@ impl AppShell {
     }
 
     pub(crate) fn submit_query(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.process_action_flow.invalidate_context();
+        self.process_action_menu_open = false;
         let raw = self.query_input.read(cx).value().to_string();
         let target = match self.target_kind.parse(&raw, false) {
             Ok(target) => target,
@@ -96,6 +102,8 @@ impl AppShell {
             }
         };
         let generation = self.query_generation.next();
+        self.process_action_flow.invalidate_context();
+        self.process_action_menu_open = false;
         self.query_error = None;
         self.query_outcome = None;
         self.analysis = None;

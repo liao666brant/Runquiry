@@ -12,13 +12,13 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use runquiry_core::{
-    FileInventory, InspectError, NetworkInventory, Pid, Port, ProcessInventory, QueryTarget,
-    Resolution,
+    CapabilityStatus, FileInventory, InspectError, NetworkInventory, Pid, Port, ProcessAction,
+    ProcessIdentity, ProcessInventory, QueryTarget, Resolution,
 };
 use runquiry_platform::linux::LinuxPlatform;
 use runquiry_ui::backend::{InvestigationTarget, WorkspaceBackend};
 
-use super::PlatformBackend;
+use super::{PlatformBackend, UnavailableBackend};
 
 const PORT_READY: &str = "RUNQUIRY_BACKEND_PORT=";
 const FILE_READY: &str = "RUNQUIRY_BACKEND_FILE_READY";
@@ -214,6 +214,63 @@ fn serializes_concurrent_analysis_admission() -> Result<(), Box<dyn std::error::
             .map_err(|_| io::Error::other("analysis gate probe thread panicked"))??;
     }
     assert_eq!(maximum.load(Ordering::Acquire), 1);
+    Ok(())
+}
+
+#[test]
+fn forwards_a_process_action_failure_without_reclassification()
+-> Result<(), Box<dyn std::error::Error>> {
+    let backend = PlatformBackend::new()?;
+    let impossible_pid = Pid::new(999_999_999)?;
+    let identity = ProcessIdentity::new(impossible_pid, Some(SystemTime::UNIX_EPOCH), None);
+
+    let result = backend.execute_process_action(&identity, ProcessAction::Terminate);
+
+    assert!(matches!(
+        result,
+        Err(InspectError::NotFound { subject }) if subject == "进程 999999999"
+    ));
+    Ok(())
+}
+
+#[test]
+fn unavailable_backend_disables_process_actions_with_its_construction_reason() {
+    let backend = UnavailableBackend::new("Linux 平台采集器不可用");
+    let identity = ProcessIdentity::new(Pid::MIN, Some(SystemTime::UNIX_EPOCH), None);
+
+    assert_eq!(
+        backend.process_control_capability(),
+        CapabilityStatus::Unsupported(String::from("Linux 平台采集器不可用")),
+    );
+    assert!(matches!(
+        backend.execute_process_action(&identity, ProcessAction::Terminate),
+        Err(InspectError::Unsupported { reason }) if reason == "Linux 平台采集器不可用"
+    ));
+}
+
+#[test]
+fn executes_confirmed_actions_against_a_task_owned_process()
+-> Result<(), Box<dyn std::error::Error>> {
+    let backend = PlatformBackend::new()?;
+    let (mut helper, _) = TargetHelper::port()?;
+    let pid = helper.pid()?;
+    eprintln!("B7 app action test created task-owned PID {pid}");
+    let inventory = ProcessInventory::list(&LinuxPlatform::new()?)
+        .data
+        .ok_or_else(|| io::Error::other("进程清单采集未返回数据"))?;
+    let identity = inventory
+        .iter()
+        .find(|process| process.identity.pid() == pid)
+        .map(|process| process.identity.clone())
+        .ok_or_else(|| io::Error::other("任务自建进程未出现在进程清单中"))?;
+
+    backend.execute_process_action(&identity, ProcessAction::Pause)?;
+    backend.execute_process_action(&identity, ProcessAction::Resume)?;
+    backend.execute_process_action(&identity, ProcessAction::Terminate)?;
+
+    let status = helper.child.wait()?;
+    assert!(!status.success());
+    eprintln!("B7 app action test terminated and reaped task-owned PID {pid}: {status}");
     Ok(())
 }
 

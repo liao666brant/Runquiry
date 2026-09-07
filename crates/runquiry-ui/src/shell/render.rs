@@ -20,10 +20,13 @@ use gpui_component::{
 };
 
 use super::actions::{
-    FocusQuery, RefreshWorkspace, Workspace1, Workspace2, Workspace3, Workspace4,
+    CloseProcessActions, FocusQuery, KillProcess, OpenProcessActions, PauseProcess,
+    RefreshWorkspace, ReniceProcess, ResumeProcess, TerminateProcess, Workspace1, Workspace2,
+    Workspace3, Workspace4,
 };
 use super::{AppShell, KEY_CONTEXT};
 use crate::locale::Lang;
+use crate::processes::ProcessActionShortcut;
 use crate::session::WorkspaceId;
 
 /// 工具栏控件的稳定元素 ID 与 tab 顺序号（与视觉顺序一致，见 gallery 的做法）。
@@ -75,6 +78,27 @@ impl Render for AppShell {
             }))
             .on_action(cx.listener(|this, _: &Workspace4, _, cx| {
                 this.switch_workspace(WorkspaceId::FileLocks, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenProcessActions, window, cx| {
+                this.open_process_action_menu(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &KillProcess, window, cx| {
+                this.select_process_action_shortcut(ProcessActionShortcut::Kill, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &TerminateProcess, window, cx| {
+                this.select_process_action_shortcut(ProcessActionShortcut::Terminate, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PauseProcess, window, cx| {
+                this.select_process_action_shortcut(ProcessActionShortcut::Pause, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ResumeProcess, window, cx| {
+                this.select_process_action_shortcut(ProcessActionShortcut::Resume, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ReniceProcess, window, cx| {
+                this.select_process_action_shortcut(ProcessActionShortcut::Renice, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CloseProcessActions, _, cx| {
+                this.close_process_action_menu(cx);
             }))
             .text_color(cx.theme().foreground)
             .bg(cx.theme().background)

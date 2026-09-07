@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-可执行 crate（二进制名 `runquiry`）：依赖装配、窗口启动、配置持久化、资源与打包元数据。Batch 2 B4 起为真实产品壳层装配：runquiry-ui 的 `AppShell` 经 `Root` 装配进主窗口，设置持久化（allowlist 白名单）与快捷键在此层接线；Batch 4A I1 在本层装配 Linux 只读采集后端，UI 不直接访问操作系统或容器 CLI。
+可执行 crate（二进制名 `runquiry`）：依赖装配、窗口启动、配置持久化、资源与打包元数据。Batch 2 B4 起为真实产品壳层装配：runquiry-ui 的 `AppShell` 经 `Root` 装配进主窗口，设置持久化（allowlist 白名单）与快捷键在此层接线；Batch 4A I1 在本层装配 Linux 只读采集后端，UI 不直接访问操作系统或容器 CLI；Batch 4B B7 通过同一 `WorkspaceBackend` 桥接 Linux 进程控制能力，按动作请求 fresh platform 并原样传递结构化错误。
 
 ## 入口与启动
 
@@ -15,7 +15,7 @@
 
 ## 对外接口
 
-无对外 API。窗口行为（B4 起为产品壳层）：初始 1280×800（最小 960×640），`Root` 第一级视图装配 runquiry-ui 的 `AppShell`（侧栏四工作区/工具栏/主数据区/详情区/StatusBar）；启动设置（主题/语言/最后工作区/窗口尺寸）从设置文件恢复，`ShellEvent` 与窗口 bounds 变化写回 allowlist 设置。`PlatformBackend` 对每次 load/resolve/analyze 新建 `LinuxPlatform`，避免启动期进程排除基线漏掉后启动目标；共享 `AnalysisGate` 仍保证跨请求分析互斥。配置路径只接受平台环境提供的绝对路径；无安全路径时禁用持久化。
+无对外 API。窗口行为（B4 起为产品壳层）：初始 1280×800（最小 960×640），`Root` 第一级视图装配 runquiry-ui 的 `AppShell`（侧栏四工作区/工具栏/主数据区/详情区/StatusBar）；启动设置（主题/语言/最后工作区/窗口尺寸）从设置文件恢复，`ShellEvent` 与窗口 bounds 变化写回 allowlist 设置。`PlatformBackend` 对每次 load/resolve/analyze 新建 `LinuxPlatform`，避免启动期进程排除基线漏掉后启动目标；B7 的 `process_control_capability` 与 `execute_process_action` 同样按请求新建 platform，调用 core `ProcessController`，不在 UI 线程执行、不提权；失败按 `InspectError` 原样返回。共享 `AnalysisGate` 仍保证跨请求分析互斥。配置路径只接受平台环境提供的绝对路径；无安全路径时禁用持久化。
 
 另有独立开发实验台：`src` 同级的 `examples/gallery/`（`cargo run -p runquiry-app --example gallery --locked`），A4 组件 gallery，不参与产品打包。
 
@@ -29,7 +29,7 @@
 
 ## 测试与质量
 
-- `cargo test -p runquiry-app --locked`：21 个测试（settings 安全/持久化、窗口 bounds 更新、平台后端的真实 Linux 进程/端口/文件目标解析与容器 fallback）。
+- `cargo test -p runquiry-app --locked`：B7 变更后 24/24 个测试通过（settings 安全/持久化、窗口 bounds 更新、平台后端的真实 Linux 进程/端口/文件目标解析、容器 fallback 与进程动作桥接）。本轮不以该数字推断全仓测试或 GUI 验收。
 - 其他验证：`cargo check -p runquiry-app --locked --examples`、`cargo deny check`、Linux 实际开窗（Batch 2 已做主题/语言/工作区切换与重启恢复的真实 QA）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束（`print_stderr` 为 warn，main 中的错误输出是当前唯一例外）。
 
@@ -56,3 +56,4 @@
 - 2026-09-03：Batch 2 评审整改——「对外接口」段过期 `ShellView` 描述改写为产品壳层实际行为。
 - 2026-09-03：Batch 2 评审修复——窗口 bounds 变化即时持久化并通过 1100×700 重启恢复；设置路径拒绝相对/共享临时回退；唯一排他临时文件阻断固定 `.tmp` 符号链接覆盖，Unix 新目录/文件为 0700/0600。
 - 2026-09-04（未提交工作区）：Batch 4A I1——新增 `backend` 装配边界并将其注入 AppShell；每次采集/解析/分析建立 fresh `LinuxPlatform`，共享 `AnalysisGate` 保持跨请求互斥，端口无进程属主时可回退为已发布容器详情。快捷键改由 UI 的 `ProcessCommand` 统一映射；app 测试增至 21 个。
+- 2026-09-07（未提交工作区）：Batch 4B B7——`PlatformBackend` 增加进程控制能力查询与动作转发，`UnavailableBackend` 安全禁用并保留构造原因；App 测试增至 24 个。真实 X11 QA 已覆盖五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。

@@ -20,10 +20,14 @@ use gpui_component_assets::Assets;
 
 use backend::{PlatformBackend, UnavailableBackend};
 use runquiry_ui::backend::WorkspaceBackend;
-use runquiry_ui::processes::ProcessCommand;
+use runquiry_ui::processes::{ProcessActionShortcut, ProcessCommand};
 use runquiry_ui::shell::{
     ShellEvent, ShellStartup,
-    actions::{FocusQuery, RefreshWorkspace, Workspace1, Workspace2, Workspace3, Workspace4},
+    actions::{
+        CloseProcessActions, FocusQuery, KillProcess, OpenProcessActions, PauseProcess,
+        RefreshWorkspace, ReniceProcess, ResumeProcess, TerminateProcess, Workspace1, Workspace2,
+        Workspace3, Workspace4,
+    },
 };
 use runquiry_ui::{AppShell, set_language};
 use settings::{Settings, WindowSize, default_settings_path, load_settings, save_settings};
@@ -63,6 +67,27 @@ fn main() {
                 ProcessCommand::Workspace(2) => KeyBinding::new(key, Workspace2, Some(KEY_CONTEXT)),
                 ProcessCommand::Workspace(3) => KeyBinding::new(key, Workspace3, Some(KEY_CONTEXT)),
                 ProcessCommand::Workspace(_) => KeyBinding::new(key, Workspace4, Some(KEY_CONTEXT)),
+                ProcessCommand::OpenActionMenu => {
+                    KeyBinding::new(key, OpenProcessActions, Some(KEY_CONTEXT))
+                }
+                ProcessCommand::SelectAction(ProcessActionShortcut::Kill) => {
+                    KeyBinding::new(key, KillProcess, Some(KEY_CONTEXT))
+                }
+                ProcessCommand::SelectAction(ProcessActionShortcut::Terminate) => {
+                    KeyBinding::new(key, TerminateProcess, Some(KEY_CONTEXT))
+                }
+                ProcessCommand::SelectAction(ProcessActionShortcut::Pause) => {
+                    KeyBinding::new(key, PauseProcess, Some(KEY_CONTEXT))
+                }
+                ProcessCommand::SelectAction(ProcessActionShortcut::Resume) => {
+                    KeyBinding::new(key, ResumeProcess, Some(KEY_CONTEXT))
+                }
+                ProcessCommand::SelectAction(ProcessActionShortcut::Renice) => {
+                    KeyBinding::new(key, ReniceProcess, Some(KEY_CONTEXT))
+                }
+                ProcessCommand::CloseActionMenu => {
+                    KeyBinding::new(key, CloseProcessActions, Some(KEY_CONTEXT))
+                }
             }),
         );
         cx.activate(true);

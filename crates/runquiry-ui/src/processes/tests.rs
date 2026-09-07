@@ -283,4 +283,14 @@ fn keyboard_contract_maps_global_and_local_actions() {
     assert!(bindings.contains(&("cmd-k", ProcessCommand::FocusQuery)));
     assert!(bindings.contains(&("ctrl-r", ProcessCommand::Refresh)));
     assert!(bindings.contains(&("ctrl-3", ProcessCommand::Workspace(3))));
+    assert!(bindings.contains(&("a", ProcessCommand::OpenActionMenu)));
+    assert!(bindings.contains(&(
+        "k",
+        ProcessCommand::SelectAction(ProcessActionShortcut::Kill)
+    )));
+    assert!(bindings.contains(&(
+        "n",
+        ProcessCommand::SelectAction(ProcessActionShortcut::Renice)
+    )));
+    assert!(bindings.contains(&("escape", ProcessCommand::CloseActionMenu)));
 }

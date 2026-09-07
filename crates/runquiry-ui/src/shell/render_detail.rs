@@ -182,14 +182,7 @@ impl AppShell {
                         move |_, _, cx| shell.update(cx, Self::reveal_sensitive)
                     }),
             )
-            .child(
-                div()
-                    .mt_2()
-                    .p_2()
-                    .rounded_sm()
-                    .bg(cx.theme().muted)
-                    .child(t!("detail.actions_disabled").to_string()),
-            )
+            .child(self.render_process_actions(shell, cx))
             .into_any_element()
     }
 

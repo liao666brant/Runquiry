@@ -4,11 +4,13 @@ mod bindings;
 mod compact_detail;
 mod data;
 mod interactions;
+mod process_actions;
 mod refresh;
 mod render;
 mod render_detail;
 mod render_evidence;
 mod render_issues;
+mod render_process_actions;
 mod render_workspace;
 mod render_workspace_detail;
 mod workspace_interactions;
@@ -21,12 +23,12 @@ use gpui::{
     Window,
 };
 use gpui_component::{ThemeMode, input::InputState};
-use runquiry_core::{Analysis, Generation, InspectError, Inspection};
+use runquiry_core::{Analysis, CapabilityStatus, Generation, InspectError, Inspection};
 use rust_i18n::t;
 
 use crate::backend::{InvestigationTarget, WorkspaceBackend, WorkspaceResultGate};
 use crate::locale::{Lang, set_language};
-use crate::processes::{DetailRequest, QueryOutcome, TargetKind};
+use crate::processes::{DetailRequest, ProcessActionFlow, QueryOutcome, TargetKind};
 use crate::session::{AppSession, WorkspaceId};
 use crate::theme;
 use bindings::table_subscriptions;
@@ -59,7 +61,14 @@ pub mod actions {
             Workspace1,
             Workspace2,
             Workspace3,
-            Workspace4
+            Workspace4,
+            OpenProcessActions,
+            KillProcess,
+            TerminateProcess,
+            PauseProcess,
+            ResumeProcess,
+            ReniceProcess,
+            CloseProcessActions
         ]
     );
 }
@@ -86,12 +95,16 @@ pub struct AppShell {
     pub(crate) detail_focus: FocusHandle,
     pub(crate) query_input: Entity<InputState>,
     pub(crate) filter_input: Entity<InputState>,
+    pub(crate) renice_input: Entity<InputState>,
     pub(crate) target_kind: TargetKind,
     pub(crate) query_outcome: Option<QueryOutcome<InvestigationTarget>>,
     pub(crate) query_error: Option<InspectError>,
     pub(crate) analysis: Option<Inspection<Analysis>>,
     data: ShellData,
     backend: Arc<dyn WorkspaceBackend>,
+    process_action_capability: CapabilityStatus,
+    process_action_flow: ProcessActionFlow,
+    process_action_menu_open: bool,
     query_generation: Generation,
     detail_request: Option<DetailRequest>,
     refresh_started: Option<(WorkspaceResultGate, Instant)>,
@@ -99,6 +112,7 @@ pub struct AppShell {
     _auto_refresh_task: Task<()>,
     refresh_task: Option<Task<()>>,
     detail_task: Option<Task<()>>,
+    process_action_task: Option<Task<()>>,
     detail_loading: bool,
 }
 
@@ -137,7 +151,13 @@ impl AppShell {
         let filter_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder(t!("filter.placeholder").to_string())
         });
+        let renice_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value("0")
+                .placeholder(t!("actions.renice.placeholder").to_string())
+        });
         let subscriptions = table_subscriptions(&data, &query_input, &filter_input, window, cx);
+        let process_action_capability = backend.process_control_capability();
         Self {
             session,
             theme: startup.theme,
@@ -148,12 +168,16 @@ impl AppShell {
             detail_focus: cx.focus_handle().tab_index(17),
             query_input,
             filter_input,
+            renice_input,
             target_kind: TargetKind::Name,
             query_outcome: None,
             query_error: None,
             analysis: None,
             data,
             backend,
+            process_action_capability,
+            process_action_flow: ProcessActionFlow::new(),
+            process_action_menu_open: false,
             query_generation: Generation::first(),
             detail_request: None,
             refresh_started: None,
@@ -161,6 +185,7 @@ impl AppShell {
             _auto_refresh_task: spawn_auto_refresh(cx),
             refresh_task: None,
             detail_task: None,
+            process_action_task: None,
             detail_loading: false,
         }
     }
@@ -202,6 +227,9 @@ impl AppShell {
         self.filter_input.update(cx, |input, cx| {
             input.set_placeholder(t!("filter.placeholder").to_string(), window, cx);
         });
+        self.renice_input.update(cx, |input, cx| {
+            input.set_placeholder(t!("actions.renice.placeholder").to_string(), window, cx);
+        });
         self.data.relocalize(cx);
         cx.emit(ShellEvent::LanguageChanged(lang));
         cx.notify();
@@ -220,6 +248,8 @@ impl AppShell {
         self.session.switch_workspace(workspace);
         self.analysis = None;
         self.detail_loading = false;
+        self.process_action_flow.invalidate_context();
+        self.process_action_menu_open = false;
         cx.emit(ShellEvent::WorkspaceChanged(workspace));
         cx.notify();
         self.refresh_active(cx);

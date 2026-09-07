@@ -4,3 +4,8 @@
 /docs/target-verify
 # 本地代码图谱缓存（此前仅由 .git/info/exclude 覆盖，不随仓库分发）
 /.codegraph
+
+# Agent 本地运行证据与执行状态；正式计划仍纳入版本控制
+/.omo/evidence/
+/.omo/boulder.json
+/.omo/start-work/

@@ -51,7 +51,7 @@
     - 真实 QA（普通用户，2026-09-04）：`linux_qa` 从真实 `/proc` 读取 14 条进程且基线诊断为 0，自身 PID 已排除；真实详情、子进程、Socket、开放端口与文件锁路径均完成，环境变量仅报数量不打印值。该次环境未发现开放端口或文件锁，详情保留数据并带 1 条字段诊断，符合部分成功语义。
     - 已知限制：PAGE_SIZE 固定 4K（非 4K 内核 RSS 按比例偏差）；cpu_percent 恒 None（两样本差分属上层）；logind 阻止睡眠检测（ResourceContext 组成部分）未实现；D-Bus 富化是有界 best-effort，失败只省略键。
 
-- [ ] **B7 Unix 进程控制**
+- [x] **B7 Unix 进程控制**
   - 依赖：B2、B5。
   - 实现 SIGTERM、SIGKILL、SIGSTOP、SIGCONT 和 setpriority。
   - 执行前重新读取 ProcessIdentity；PID、启动时间或可执行文件不一致时返回 ProcessChanged。
@@ -64,6 +64,8 @@
     - 对第二个自建进程验证 kill
     - 使用假身份验证 PID 复用拒绝路径
   - 完成证据：临时 PID 清单、动作前后状态、全部清理回执。
+  - 实施记录（2026-09-07）：LinuxPlatform 实现 ProcessController，四类信号使用 pidfd；控制边界重验 PID、启动时间与 executable。renice 使用范围受限 setpriority，无自动提权；数字 PID 接口仍存在极窄 TOCTOU，详见平台证据。UI/App 完成二次确认、输入焦点安全键盘操作、权限/身份错误和动作后即时刷新。
+  - 验收：platform 定向 6/6；UI 完整套件 57/57 与后续确认态定向测试；App 24/24；相关 Clippy、格式、locked build 通过。真实 X11 五类动作、取消、非法输入、权限错误及 Sheet/Dialog Escape 分层已验证，任务自建进程与窗口已清理。本地证据汇总：`.omo/evidence/batch4b-final-gate.md`；本地产物记录：`batch4b-qa-final-smoke.md`（不纳入 Git）。不替代 B8。
 
 - [ ] **B8 Linux 纵向验收门**
   - 依赖：B1-B7。

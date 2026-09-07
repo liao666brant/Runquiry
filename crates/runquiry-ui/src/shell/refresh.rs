@@ -25,6 +25,17 @@ impl AppShell {
         }));
     }
 
+    /// 动作成功后的强制刷新：先使旧采集失效，再立即开始新代际。
+    pub(super) fn force_refresh_active(&mut self, cx: &mut Context<'_, Self>) {
+        if let Some((gate, _)) = self.refresh_started.take() {
+            self.session
+                .session_mut(gate.workspace())
+                .abort_refresh(gate.generation());
+        }
+        self.session.active_session_mut().invalidate_context();
+        self.refresh_active(cx);
+    }
+
     fn apply_refresh(
         &mut self,
         gate: WorkspaceResultGate,
@@ -75,4 +86,30 @@ pub(super) fn spawn_auto_refresh(cx: &Context<'_, AppShell>) -> Task<()> {
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{AppSession, WorkspaceId};
+
+    #[test]
+    fn action_refresh_supersedes_an_inflight_load_instead_of_being_dropped() {
+        let mut session = AppSession::new();
+        let first = session.active_session_mut().try_refresh();
+        assert!(first.is_some());
+        let Some(first) = first else { return };
+        assert!(session.active_session().is_refreshing());
+
+        assert!(
+            session
+                .session_mut(WorkspaceId::Processes)
+                .abort_refresh(first)
+        );
+        session.active_session_mut().invalidate_context();
+        let replacement = session.active_session_mut().try_refresh();
+
+        assert!(replacement.is_some(), "动作后的刷新不得被重入门吞掉");
+        assert!(replacement.is_some_and(|generation| generation != first));
+        assert!(session.active_session().is_refreshing());
+    }
 }

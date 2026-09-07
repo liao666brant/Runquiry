@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use runquiry_core::{
-    Analysis, CapabilityStatus, InspectError, Inspection, ProcessIdentity, QueryTarget, Resolution,
+    Analysis, CapabilityStatus, InspectError, Inspection, ProcessAction, ProcessIdentity,
+    QueryTarget, Resolution,
 };
 use runquiry_ui::WorkspaceId;
 use runquiry_ui::backend::{InvestigationTarget, WorkspaceBackend, WorkspaceSnapshot};
@@ -53,6 +54,20 @@ impl WorkspaceBackend for UnavailableBackend {
     }
 
     fn analyze(&self, _: &ProcessIdentity) -> Result<Inspection<Analysis>, InspectError> {
+        Err(InspectError::Unsupported {
+            reason: self.reason.clone(),
+        })
+    }
+
+    fn process_control_capability(&self) -> CapabilityStatus {
+        CapabilityStatus::Unsupported(self.reason.clone())
+    }
+
+    fn execute_process_action(
+        &self,
+        _: &ProcessIdentity,
+        _: ProcessAction,
+    ) -> Result<(), InspectError> {
         Err(InspectError::Unsupported {
             reason: self.reason.clone(),
         })

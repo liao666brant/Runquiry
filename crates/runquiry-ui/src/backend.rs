@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use runquiry_core::{
     Analysis, CapabilityStatus, ContainerSummary, DiagnosticIssue, FileInventoryEntry, Generation,
-    InspectError, Inspection, OpenPortEntry, Pid, ProcessIdentity, ProcessSummary, QueryTarget,
-    Resolution,
+    InspectError, Inspection, OpenPortEntry, Pid, ProcessAction, ProcessIdentity, ProcessSummary,
+    QueryTarget, Resolution,
 };
 
 use crate::WorkspaceId;
@@ -158,6 +158,25 @@ pub trait WorkspaceBackend: Send + Sync {
     /// # Errors
     /// 目标退出、PID 复用或关键采集失败时返回领域错误。
     fn analyze(&self, identity: &ProcessIdentity) -> Result<Inspection<Analysis>, InspectError>;
+
+    /// 当前平台的进程控制能力；默认后端必须明确保持安全禁用。
+    fn process_control_capability(&self) -> CapabilityStatus {
+        CapabilityStatus::Unsupported(String::from("process control is not configured"))
+    }
+
+    /// 执行已经过 UI 两步确认的进程动作。
+    ///
+    /// # Errors
+    /// 权限不足、身份变化、目标退出或平台不支持时返回领域错误。
+    fn execute_process_action(
+        &self,
+        _: &ProcessIdentity,
+        _: ProcessAction,
+    ) -> Result<(), InspectError> {
+        Err(InspectError::Unsupported {
+            reason: String::from("process control is not configured"),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -269,5 +288,24 @@ mod tests {
                 ascending: true,
             }));
         assert!(!sort_gate.accepts_session(&session, &snapshot));
+    }
+
+    #[test]
+    fn default_process_control_seam_is_explicitly_unsupported() {
+        let backend = FakeBackend;
+        let identity = ProcessIdentity::new(
+            runquiry_core::Pid::MIN,
+            Some(std::time::SystemTime::UNIX_EPOCH),
+            None,
+        );
+
+        assert!(matches!(
+            backend.process_control_capability(),
+            runquiry_core::CapabilityStatus::Unsupported(_)
+        ));
+        assert!(matches!(
+            backend.execute_process_action(&identity, runquiry_core::ProcessAction::Terminate),
+            Err(InspectError::Unsupported { .. })
+        ));
     }
 }

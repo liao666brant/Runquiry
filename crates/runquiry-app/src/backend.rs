@@ -11,9 +11,10 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use runquiry_core::{
-    Analysis, AnalysisPorts, ContainerInventory, FileInventory, InspectError, Inspection,
-    NetworkInventory, Pid, ProcessIdentity, ProcessInventory, ProcessSummary, QueryTarget,
-    Resolution, analyze, resolve_file_holders, resolve_name, resolve_port_owner,
+    Analysis, AnalysisPorts, CapabilityStatus, ContainerInventory, FileInventory, InspectError,
+    Inspection, NetworkInventory, Pid, ProcessAction, ProcessController, ProcessIdentity,
+    ProcessInventory, ProcessSummary, QueryTarget, Resolution, analyze, resolve_file_holders,
+    resolve_name, resolve_port_owner,
 };
 use runquiry_platform::{container::ContainerRuntimes, linux::LinuxPlatform};
 use runquiry_ui::WorkspaceId;
@@ -216,5 +217,22 @@ impl WorkspaceBackend for PlatformBackend {
             };
             analyze(identity, &ports, SystemTime::now(), false)
         })
+    }
+
+    fn process_control_capability(&self) -> CapabilityStatus {
+        match Self::fresh_platform() {
+            Ok(platform) => ProcessController::capability(&platform),
+            Err(InspectError::Unsupported { reason }) => CapabilityStatus::Unsupported(reason),
+            Err(error) => CapabilityStatus::Unsupported(error.to_string()),
+        }
+    }
+
+    fn execute_process_action(
+        &self,
+        identity: &ProcessIdentity,
+        action: ProcessAction,
+    ) -> Result<(), InspectError> {
+        let platform = Self::fresh_platform()?;
+        ProcessController::execute(&platform, identity, action)
     }
 }

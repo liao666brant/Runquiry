@@ -17,6 +17,7 @@
 
 mod capabilities;
 mod container;
+mod controller;
 mod details;
 mod fdscan;
 mod file_diagnostics;

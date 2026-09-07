@@ -171,9 +171,63 @@ detail.available:
 detail.sampling:
   en: Sampling or unavailable
   zh-CN: 采样中或不可用
-detail.actions_disabled:
-  en: Process actions arrive in B7 and are disabled in this build.
-  zh-CN: 进程操作将在 B7 提供，本版本保持禁用。
+actions.title:
+  en: Process actions
+  zh-CN: 进程操作
+actions.terminate:
+  en: Terminate
+  zh-CN: 终止
+actions.kill:
+  en: Kill
+  zh-CN: 强制终止
+actions.pause:
+  en: Pause
+  zh-CN: 暂停
+actions.resume:
+  en: Resume
+  zh-CN: 恢复
+actions.renice:
+  en: "Set nice to %{value}"
+  zh-CN: "调整 nice 为 %{value}"
+actions.renice_button:
+  en: Set nice
+  zh-CN: 调整 nice
+actions.renice.placeholder:
+  en: -20 to 19
+  zh-CN: -20 到 19
+actions.renice.invalid:
+  en: "Nice value '%{value}' must be an integer from -20 to 19."
+  zh-CN: "nice 值“%{value}”必须是 -20 到 19 的整数。"
+actions.keyboard_menu:
+  en: Action menu active — K kill, T terminate, P pause, R resume, N set nice, Esc/Q cancel.
+  zh-CN: 动作菜单已打开：K 强制终止、T 终止、P 暂停、R 恢复、N 调整 nice、Esc/Q 取消。
+actions.confirm.title:
+  en: "%{action} PID %{pid}?"
+  zh-CN: "对 PID %{pid} 执行“%{action}”？"
+actions.confirm.description:
+  en: "Identity: started %{started}; executable %{executable}. The action is aborted if this identity changed."
+  zh-CN: "进程身份：启动时间 %{started}；可执行文件 %{executable}。若身份已变化，操作将中止。"
+actions.cancel:
+  en: Cancel
+  zh-CN: 取消
+actions.confirming:
+  en: Waiting for confirmation…
+  zh-CN: 等待确认…
+actions.executing:
+  en: Applying the confirmed action…
+  zh-CN: 正在执行已确认的操作…
+actions.unavailable:
+  en: Process actions are unavailable.
+  zh-CN: 进程操作不可用。
+actions.error.permission:
+  en: "Permission denied for %{subject}. Runquiry does not elevate privileges automatically."
+  zh-CN: "没有操作 %{subject} 的权限。Runquiry 不会自动提权。"
+actions.error.process_changed:
+  en: "PID %{pid} changed identity. Refresh and try again. No action was applied."
+  zh-CN: "PID %{pid} 的身份已变化。请刷新后重试，本次未执行操作。"
+actions.error.generic:
+  en: "Process action failed: %{detail}"
+  zh-CN: "进程操作失败：%{detail}"
 detail.reveal_sensitive:
   en: Reveal sensitive values for this detail
   zh-CN: 仅在当前详情显示敏感值

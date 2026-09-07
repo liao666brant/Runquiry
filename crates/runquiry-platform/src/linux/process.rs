@@ -155,6 +155,12 @@ impl LinuxPlatform {
         }
     }
 
+    /// 仅生产 `/proc` 实例允许产生进程控制副作用；注入式实例用于 fixture，
+    /// 即使根目录碰巧指向真实 `/proc` 也必须保持只读。
+    pub(super) const fn process_control_enabled(&self) -> bool {
+        matches!(self.pid_enumeration, PidEnumeration::Sysinfo)
+    }
+
     /// exe 链接目标与「已删除」标记（witr `isBinaryDeleted`：只有 readlink
     /// 成功且目标带 " (deleted)" 后缀才置位；权限不足与进程消失不构成证据）。
     pub(super) fn exe_of(&self, pid: u32) -> (Option<PathBuf>, bool) {
