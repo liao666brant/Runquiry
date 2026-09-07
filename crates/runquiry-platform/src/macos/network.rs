@@ -15,8 +15,8 @@ use runquiry_core::{
     OpenPortEntry, Pid, Port, SocketEntry, validate_socket_entry,
 };
 
-use super::lsof;
 use super::MacosPlatform;
+use super::lsof;
 
 impl NetworkInventory for MacosPlatform {
     fn capability(&self) -> CapabilityStatus {
@@ -28,19 +28,23 @@ impl NetworkInventory for MacosPlatform {
     fn open_ports(&self) -> Inspection<Vec<OpenPortEntry>> {
         let output = match self.run_lsof(&["-i", "-P", "-n"], LIST_TIMEOUT) {
             Ok(output) => output,
-            Err(error) => return Inspection::failed(vec![DiagnosticIssue::new(
-                DiagnosticCode::ExternalToolFailed,
-                format!("lsof 不可用或超时：{error}"),
-            )]),
+            Err(error) => {
+                return Inspection::failed(vec![DiagnosticIssue::new(
+                    DiagnosticCode::ExternalToolFailed,
+                    format!("lsof 不可用或超时：{error}"),
+                )]);
+            }
         };
         let mut issues = Vec::new();
         if let Some(issue) = super::exit_salvage_issue(&output, "lsof -i -P -n") {
             issues.push(issue);
         }
         let (rows, parse_issues) = lsof::parse_open_ports(&String::from_utf8_lossy(&output.stdout));
-        issues.extend(parse_issues.into_iter().map(|reason| {
-            DiagnosticIssue::new(DiagnosticCode::ParseFailed, reason)
-        }));
+        issues.extend(
+            parse_issues
+                .into_iter()
+                .map(|reason| DiagnosticIssue::new(DiagnosticCode::ParseFailed, reason)),
+        );
         let mut seen = HashSet::new();
         let mut ports = Vec::new();
         for row in rows {

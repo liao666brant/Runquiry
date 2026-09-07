@@ -11,12 +11,10 @@
 #[path = "../src/macos/identity.rs"]
 mod identity;
 
+use identity::{health_of, same_control_target, start_time_from_unix_seconds};
 use runquiry_core::{HealthStatus, Pid, ProcessIdentity};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
-use identity::{
-    health_of, same_control_target, start_time_from_unix_seconds,
-};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -35,9 +33,15 @@ fn identity(seconds: Option<u64>, exe: Option<&str>) -> ProcessIdentity {
 fn same_control_target_rejects_unverifiable_and_changed_identities() -> TestResult {
     let expected = identity(Some(FIXTURE_EPOCH_SECS), Some(FIXTURE_EXE));
     // 同身份（同启动时间 + 同 exe）：接受。
-    assert!(same_control_target(&expected, &identity(Some(FIXTURE_EPOCH_SECS), Some(FIXTURE_EXE))));
+    assert!(same_control_target(
+        &expected,
+        &identity(Some(FIXTURE_EPOCH_SECS), Some(FIXTURE_EXE))
+    ));
     // current 启动时间不可得（None）：身份不可验证 → 保守拒绝（零副作用）。
-    assert!(!same_control_target(&expected, &identity(None, Some(FIXTURE_EXE))));
+    assert!(!same_control_target(
+        &expected,
+        &identity(None, Some(FIXTURE_EXE))
+    ));
     // PID 复用（启动时间不同）：拒绝。
     assert!(!same_control_target(
         &expected,
@@ -46,10 +50,16 @@ fn same_control_target_rejects_unverifiable_and_changed_identities() -> TestResu
     // exe 展示位不一致：拒绝（Linux controller 同语义）。
     assert!(!same_control_target(
         &expected,
-        &identity(Some(FIXTURE_EPOCH_SECS), Some("/Users/fixture-user/fxt-other"))
+        &identity(
+            Some(FIXTURE_EPOCH_SECS),
+            Some("/Users/fixture-user/fxt-other")
+        )
     ));
     // exe 不可得（proc_pidpath 失败）：拒绝。
-    assert!(!same_control_target(&expected, &identity(Some(FIXTURE_EPOCH_SECS), None)));
+    assert!(!same_control_target(
+        &expected,
+        &identity(Some(FIXTURE_EPOCH_SECS), None)
+    ));
     Ok(())
 }
 
@@ -69,7 +79,10 @@ fn health_thresholds_match_witr_darwin_semantics() -> TestResult {
     assert_eq!(health_of(false, true, 0.0, 0), HealthStatus::Stopped);
     // cpu > 90 → high-cpu；RSS > 1GiB → high-mem；阈值内 → healthy。
     assert_eq!(health_of(false, false, 90.5, 0), HealthStatus::HighCpu);
-    assert_eq!(health_of(false, false, 50.0, 1024 * 1024 * 1024), HealthStatus::Healthy);
+    assert_eq!(
+        health_of(false, false, 50.0, 1024 * 1024 * 1024),
+        HealthStatus::Healthy
+    );
     assert_eq!(
         health_of(false, false, 50.0, 1024 * 1024 * 1024 + 1),
         HealthStatus::HighMem

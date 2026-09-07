@@ -4,7 +4,7 @@
 //! 直接编译（C1 交叉编译前的可测性边界）。OS 相关模块只负责采集原始值
 //! （启动时间秒数、可执行路径），判定一律经本模块。
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use runquiry_core::{HealthStatus, ProcessIdentity};
 
@@ -83,7 +83,10 @@ mod tests {
         );
         assert!(!same_control_target(&expected, &unverifiable));
         // exe 缺失或不同：拒绝。
-        assert!(!same_control_target(&expected, &identity(1_700_000_000, None)));
+        assert!(!same_control_target(
+            &expected,
+            &identity(1_700_000_000, None)
+        ));
         assert!(!same_control_target(
             &expected,
             &identity(1_700_000_000, Some("/Users/fixture-user/fxt-other"))

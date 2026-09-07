@@ -14,8 +14,8 @@ use runquiry_core::{
 };
 use sysinfo::{System, Users};
 
-use crate::command::StdCommandRunner;
 use super::{identity, ppid_map, sysinfo_pids};
+use crate::command::StdCommandRunner;
 
 /// macOS 只读采集适配器：单一结构实现七个只读端口与
 /// [`runquiry_core::ProcessController`]。

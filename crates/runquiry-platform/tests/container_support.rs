@@ -1,4 +1,3 @@
-#![cfg(unix)]
 //! B3 测试共享助手：临时目录、假可执行脚本与子进程清理断言。
 //!
 //! 被各 `tests/command_*.rs` 与 `tests/container_*.rs` 经 `#[path]` 引入；
@@ -8,6 +7,7 @@
 //!
 //! 测试 crate 非 lib 目标，support `模块不对外导出：unreachable_pub` 不适用；
 //! 共享模块由各测试目标经 `#[path]` 取用，未用项不构成告警。
+#![cfg(unix)]
 #![allow(unreachable_pub)]
 #![allow(dead_code)]
 

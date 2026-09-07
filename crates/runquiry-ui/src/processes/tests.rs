@@ -210,7 +210,10 @@ fn from_parts_matches_list_workspace_state_semantics() {
             String::from("lsof missing"),
         )],
     );
-    assert!(matches!(tool_failed, SurfaceState::Error { issue_count: 1 }));
+    assert!(matches!(
+        tool_failed,
+        SurfaceState::Error { issue_count: 1 }
+    ));
 
     // 有快照 + 无诊断：正常态（真实空集合仍由空行触发 Empty 呈现）。
     assert_eq!(

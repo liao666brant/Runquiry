@@ -12,17 +12,17 @@ use std::path::Path;
 use runquiry_core::{DiagnosticCode, DiagnosticIssue, InspectError, Inspection};
 
 /// FileInventory 能力不可用的稳定原因键（CapabilityStatus 与诊断共用）。
-pub const FILE_LOCKS_REASON: &str = "Windows 平台不提供文件锁枚举（parity §10）";
+pub(super) const FILE_LOCKS_REASON: &str = "Windows 平台不提供文件锁枚举（parity §10）";
 
 /// ProcessController 能力不可用的稳定原因键（覆盖 terminate / kill /
 /// pause / resume / renice 整类动作）。
-pub const PROCESS_CONTROL_REASON: &str =
+pub(super) const PROCESS_CONTROL_REASON: &str =
     "Windows 平台不支持进程控制操作（terminate/kill/pause/resume/renice，parity §10）";
 
 /// File Locks 工作区的固定失败清单（`data = None` + Unsupported 诊断，
 /// 不返回伪数据）。
 #[must_use]
-pub fn file_locks_failed_list() -> Inspection<Vec<runquiry_core::FileInventoryEntry>> {
+pub(super) fn file_locks_failed_list() -> Inspection<Vec<runquiry_core::FileInventoryEntry>> {
     Inspection::failed(vec![DiagnosticIssue::new(
         DiagnosticCode::Unsupported,
         String::from(FILE_LOCKS_REASON),
@@ -31,7 +31,9 @@ pub fn file_locks_failed_list() -> Inspection<Vec<runquiry_core::FileInventoryEn
 
 /// 按路径的持有者查询：同为固定失败（Windows 文件目标为 Unsupported）。
 #[must_use]
-pub fn file_locks_failed_holders(path: &Path) -> Inspection<Vec<runquiry_core::FileInventoryEntry>> {
+pub(super) fn file_locks_failed_holders(
+    path: &Path,
+) -> Inspection<Vec<runquiry_core::FileInventoryEntry>> {
     let _unused = path;
     file_locks_failed_list()
 }
@@ -39,7 +41,7 @@ pub fn file_locks_failed_holders(path: &Path) -> Inspection<Vec<runquiry_core::F
 /// 进程操作的固定错误（正常流程不应到达——UI 依据能力态先行禁用；
 /// 防御性返回保证误用也不产生副作用）。
 #[must_use]
-pub fn control_error() -> InspectError {
+pub(super) fn control_error() -> InspectError {
     InspectError::Unsupported {
         reason: String::from(PROCESS_CONTROL_REASON),
     }
@@ -47,7 +49,9 @@ pub fn control_error() -> InspectError {
 
 #[cfg(test)]
 mod tests {
-    use super::{PROCESS_CONTROL_REASON, file_locks_failed_holders, control_error, file_locks_failed_list};
+    use super::{
+        PROCESS_CONTROL_REASON, control_error, file_locks_failed_holders, file_locks_failed_list,
+    };
     use runquiry_core::{CapabilityStatus, DiagnosticCode, FileInventory, Inspection};
     struct UnsupportedFileInventory;
 
@@ -91,7 +95,8 @@ mod tests {
                 .iter()
                 .all(|issue| issue.code() == DiagnosticCode::Unsupported)
         );
-        let holders = UnsupportedFileInventory.holders(std::path::Path::new("C:\\opt\\runquiry-fixtures\\fxt.lock"));
+        let holders = UnsupportedFileInventory
+            .holders(std::path::Path::new("C:\\opt\\runquiry-fixtures\\fxt.lock"));
         assert_eq!(holders.data, None);
         assert_eq!(
             UnsupportedFileInventory.capability().reason(),

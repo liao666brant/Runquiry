@@ -18,18 +18,16 @@ use runquiry_core::{
 };
 use sysinfo::ProcessesToUpdate;
 
+use super::MacosPlatform;
 use super::identity::{same_control_target, start_time_from_unix_seconds};
 use super::libproc;
-use super::MacosPlatform;
 
 impl ProcessController for MacosPlatform {
     fn capability(&self) -> CapabilityStatus {
         if self.process_control_enabled() {
             CapabilityStatus::Supported
         } else {
-            CapabilityStatus::Unsupported(String::from(
-                "注入式实例禁止真实进程控制",
-            ))
+            CapabilityStatus::Unsupported(String::from("注入式实例禁止真实进程控制"))
         }
     }
 

@@ -1,5 +1,5 @@
-#![cfg(unix)]
 //! Docker 发布端口回退：固定 argv、命中、空结果与失败诊断。
+#![cfg(unix)]
 
 #[path = "container_support.rs"]
 mod support;

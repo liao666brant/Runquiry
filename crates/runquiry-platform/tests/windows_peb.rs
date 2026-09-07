@@ -1,5 +1,8 @@
 //! Windows PEB 纯布局与读取计划的 Linux 编译入口（见 `windows_utf16.rs`
 //! 头注释）。
+// utf16 的边界常量与 fields 的 env_block_limits 由 cfg(windows) 生产模块
+// 消费，本目标不含。
+#![allow(dead_code)]
 
 #[path = "../src/windows/utf16.rs"]
 mod utf16;

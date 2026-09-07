@@ -13,51 +13,53 @@
 mod process;
 mod toolhelp;
 
-pub use process::{
-    filetime_to_system_time, get_process_times, handle_count, io_counters, is_wow64,
-    memory_counters, nt_peb_address, nt_wow64_peb_address, query_full_image_name,
-    total_physical_memory,
+pub(super) use process::{
+    get_process_times, handle_count, io_counters, is_wow64, memory_counters, nt_peb_address,
+    nt_wow64_peb_address, query_full_image_name, total_physical_memory,
 };
-pub use toolhelp::{ToolhelpEntry, toolhelp_snapshot};
+pub(super) use toolhelp::toolhelp_snapshot;
 
-use windows_sys::Win32::Foundation::{HANDLE, CloseHandle, GetLastError};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
 use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows_sys::Win32::System::Threading::{
-    PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ, OpenProcess,
+    OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
 };
 
 use super::winerror::Win32Error;
 
 /// 进程 / 服务句柄的 RAII 守卫：析构时统一 `CloseHandle` /
 /// `CloseServiceHandle`，调用方无需手工释放。
-pub struct HandleGuard(HANDLE);
+pub(super) struct HandleGuard(HANDLE);
 
 impl HandleGuard {
     /// 以请求的访问权限打开进程（`inherit = false`）。
     ///
     /// # Errors
     /// 返回 0 句柄（无权限 / 进程已消失 / 参数非法）时返回 `GetLastError`。
-    pub fn open_process(access: u32, pid: u32) -> Result<Self, Win32Error> {
-        // SAFETY：OpenProcess 仅读取标量参数；返回值 0 表示失败（HANDLE
+    pub(super) fn open_process(access: u32, pid: u32) -> Result<Self, Win32Error> {
+        // SAFETY:OpenProcess 仅读取标量参数；返回值 0 表示失败（HANDLE
         // 非空指针即有效），错误码经 GetLastError 取得。句柄所有权立即移入
         // HandleGuard，析构时 CloseHandle。
         let handle = unsafe { OpenProcess(access, 0, pid) };
         if handle.is_null() {
-            return Err(Win32Error(unsafe { GetLastError() }));
+            // SAFETY:仅读取当前线程错误码；紧随失败的 OpenProcess，无中间
+            // FFI 调用。
+            let last_error = unsafe { GetLastError() };
+            return Err(Win32Error(last_error));
         }
         Ok(Self(handle))
     }
 
     /// 原始句柄（只读借用；调用方不得关闭或复制所有权）。
     #[must_use]
-    pub const fn raw(&self) -> HANDLE {
+    pub(super) const fn raw(&self) -> HANDLE {
         self.0
     }
 }
 
 impl Drop for HandleGuard {
     fn drop(&mut self) {
-        // SAFETY：self.0 来自 OpenProcess 成功返回且未被复制或提前关闭；
+        // SAFETY:self.0 来自 OpenProcess 成功返回且未被复制或提前关闭；
         // Drop 恰好执行一次。
         unsafe {
             CloseHandle(self.0);
@@ -70,7 +72,7 @@ impl Drop for HandleGuard {
 /// # Errors
 /// 读取失败或实际读取字节数不足（进程在读取中退出 / 页面不可读）时返回
 /// `GetLastError` 或 0（以 `ERROR_INVALID_HANDLE` 归一，调用方按部分结果处理）。
-pub fn read_remote_memory(
+pub(super) fn read_remote_memory(
     handle: &HandleGuard,
     address: u64,
     out: &mut [u8],
@@ -79,7 +81,7 @@ pub fn read_remote_memory(
         return Ok(());
     }
     let mut bytes_read: usize = 0;
-    // SAFETY：handle 为 OpenProcess 返回的有效句柄；address 是目标进程内
+    // SAFETY:handle 为 OpenProcess 返回的有效句柄；address 是目标进程内
     // 经 NtQueryInformationProcess / PEB 计划得出的地址；out 的指针与长度
     // 由切片保证，生命周期覆盖本次调用；bytes_read 为 8 字节 usize（witr
     // 注释强调必须按指针宽度传递，不得用 u32）。返回 0 视为失败。
@@ -93,7 +95,10 @@ pub fn read_remote_memory(
         )
     };
     if ok == 0 {
-        return Err(Win32Error(unsafe { GetLastError() }));
+        // SAFETY:仅读取当前线程错误码；紧随失败的 ReadProcessMemory，无
+        // 中间 FFI 调用。
+        let last_error = unsafe { GetLastError() };
+        return Err(Win32Error(last_error));
     }
     if bytes_read != out.len() {
         // 部分读取（进程退出 / PEB 变化）：不返回半截数据当作完整。
@@ -107,7 +112,7 @@ pub fn read_remote_memory(
 ///
 /// # Errors
 /// 两次 OpenProcess 均失败时返回最后一次 `GetLastError`。
-pub fn open_process_graded(pid: u32) -> Result<HandleGuard, Win32Error> {
+pub(super) fn open_process_graded(pid: u32) -> Result<HandleGuard, Win32Error> {
     match HandleGuard::open_process(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, pid) {
         Ok(handle) => Ok(handle),
         Err(denied) => {

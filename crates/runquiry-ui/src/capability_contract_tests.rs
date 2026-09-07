@@ -20,8 +20,7 @@ use crate::state::DataState;
 use crate::workspaces::{LoadPresentation, interactions_enabled};
 
 /// macOS 文件能力的 best-effort 受限原因（与 platform 稳定原因键同形）。
-const MACOS_FILES_PARTIAL_REASON: &str =
-    "macOS 无 /proc/locks：真实锁经 lsof 锁标志位 best-effort";
+const MACOS_FILES_PARTIAL_REASON: &str = "macOS 无 /proc/locks：真实锁经 lsof 锁标志位 best-effort";
 /// Windows 文件锁能力的稳定原因键占位。
 const WINDOWS_FILE_LOCKS_REASON: &str = "Windows 平台不提供文件锁枚举（parity §10）";
 /// Windows 进程控制能力的稳定原因键占位。
@@ -180,10 +179,7 @@ impl WorkspaceBackend for LinuxStyleBackend {
         snapshot
     }
 
-    fn resolve(
-        &self,
-        _: &QueryTarget,
-    ) -> Result<Resolution<InvestigationTarget>, InspectError> {
+    fn resolve(&self, _: &QueryTarget) -> Result<Resolution<InvestigationTarget>, InspectError> {
         Err(InspectError::Unsupported {
             reason: String::from("契约测试不使用解析路径"),
         })
@@ -223,10 +219,7 @@ impl WorkspaceBackend for MacosStyleBackend {
         snapshot
     }
 
-    fn resolve(
-        &self,
-        _: &QueryTarget,
-    ) -> Result<Resolution<InvestigationTarget>, InspectError> {
+    fn resolve(&self, _: &QueryTarget) -> Result<Resolution<InvestigationTarget>, InspectError> {
         Err(InspectError::Unsupported {
             reason: String::from("契约测试不使用解析路径"),
         })
@@ -263,10 +256,7 @@ impl WorkspaceBackend for WindowsStyleBackend {
         snapshot
     }
 
-    fn resolve(
-        &self,
-        _: &QueryTarget,
-    ) -> Result<Resolution<InvestigationTarget>, InspectError> {
+    fn resolve(&self, _: &QueryTarget) -> Result<Resolution<InvestigationTarget>, InspectError> {
         Err(InspectError::Unsupported {
             reason: String::from(WINDOWS_FILE_LOCKS_REASON),
         })
@@ -311,10 +301,7 @@ impl WorkspaceBackend for UnavailableStyleBackend {
         }
     }
 
-    fn resolve(
-        &self,
-        _: &QueryTarget,
-    ) -> Result<Resolution<InvestigationTarget>, InspectError> {
+    fn resolve(&self, _: &QueryTarget) -> Result<Resolution<InvestigationTarget>, InspectError> {
         Err(InspectError::Unsupported {
             reason: self.reason.clone(),
         })
@@ -445,7 +432,7 @@ fn permission_tool_failure_and_real_empty_are_not_conflated() {
     assert!(load.apply(
         Generation::first(),
         &supported,
-        Inspection::failed::<Arc<[u8]>>(vec![DiagnosticIssue::new(
+        Inspection::<Arc<[u8]>>::failed(vec![DiagnosticIssue::new(
             DiagnosticCode::PermissionDenied,
             String::from("permission"),
         )]),
@@ -456,7 +443,7 @@ fn permission_tool_failure_and_real_empty_are_not_conflated() {
     assert!(load.apply(
         Generation::first(),
         &supported,
-        Inspection::failed::<Arc<[u8]>>(vec![DiagnosticIssue::new(
+        Inspection::<Arc<[u8]>>::failed(vec![DiagnosticIssue::new(
             DiagnosticCode::ExternalToolFailed,
             String::from("lsof missing"),
         )]),
@@ -467,7 +454,7 @@ fn permission_tool_failure_and_real_empty_are_not_conflated() {
     assert!(load.apply(
         Generation::first(),
         &supported,
-        Inspection::complete::<Arc<[u8]>>(Arc::default()),
+        Inspection::<Arc<[u8]>>::complete(Arc::default()),
     ));
     assert_eq!(load.state, DataState::Empty);
 }
@@ -497,9 +484,9 @@ fn capability_change_revokes_pending_confirmation() {
         action_identity(),
         ProcessAction::Terminate,
     ));
-    assert!(!flow.revoke_confirmation_if_unusable(&CapabilityStatus::Partial(
-        String::from("limited")
-    )));
+    assert!(
+        !flow.revoke_confirmation_if_unusable(&CapabilityStatus::Partial(String::from("limited")))
+    );
     assert!(flow.confirm().is_some());
 }
 

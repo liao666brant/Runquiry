@@ -5,13 +5,14 @@
 //! 并由 RAII 持有的 `sleep` 子进程；绝不打印环境变量值；不使用 sudo、不
 //! 自动提权。
 #![allow(clippy::print_stdout)] // QA 示例以控制台输出为交付物。
-
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
 #[cfg(not(target_os = "macos"))]
 fn main() {
     println!("macos_qa 仅可在 macOS 上运行；Linux 侧验证见 tests/macos_*.rs。");
-    println!("Linux 侧可执行的验证：cargo test -p runquiry-platform --locked（macos_* 纯解析测试）。");
+    println!(
+        "Linux 侧可执行的验证：cargo test -p runquiry-platform --locked（macos_* 纯解析测试）。"
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -21,8 +22,8 @@ mod macos {
     use std::time::{Duration, Instant};
 
     use runquiry_core::{
-        FileInventory, NetworkInventory, Pid, ProcessAction, ProcessController, ProcessDetailsProvider,
-        ProcessFileLocks, ProcessIdentity, ProcessInventory, Renice,
+        FileInventory, NetworkInventory, Pid, ProcessAction, ProcessController,
+        ProcessDetailsProvider, ProcessFileLocks, ProcessIdentity, ProcessInventory, Renice,
     };
     use runquiry_platform::macos::MacosPlatform;
 
@@ -42,7 +43,10 @@ mod macos {
         }
 
         fn pid(&self) -> QaResult<u32> {
-            self.0.as_ref().map(Child::id).ok_or_else(|| String::from("子进程已回收").into())
+            self.0
+                .as_ref()
+                .map(Child::id)
+                .ok_or_else(|| String::from("子进程已回收").into())
         }
 
         fn alive(&mut self) -> QaResult<bool> {
@@ -116,14 +120,15 @@ mod macos {
         }
 
         // 3) 进程详情（自身）。
-        let own_details = ProcessDetailsProvider::details(&platform, &identity_of(&platform, own.get())?)?;
+        let own_details =
+            ProcessDetailsProvider::details(&platform, &identity_of(&platform, own.get())?)?;
         let details = own_details.data.ok_or("自身详情完全失败")?;
         println!(
             "自身详情: cwd={:?}, fd_count={:?}, 环境变量条数={}",
-            details
-                .working_dir
-                .as_ref()
-                .map_or_else(|| String::from("(不可得)"), |path| path.display().to_string()),
+            details.working_dir.as_ref().map_or_else(
+                || String::from("(不可得)"),
+                |path| path.display().to_string()
+            ),
             details.fd_count,
             details.environment.len()
         );

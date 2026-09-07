@@ -15,12 +15,11 @@ use std::time::Duration;
 
 use runquiry_core::{
     CapabilityStatus, DETAIL_TIMEOUT, DiagnosticCode, DiagnosticIssue, FileInventory,
-    FileInventoryEntry, FileLockEntry, Inspection, LockMetadata, LockType, Pid,
-    ProcessFileLocks,
+    FileInventoryEntry, FileLockEntry, Inspection, LockMetadata, LockType, Pid, ProcessFileLocks,
 };
 
-use super::lsof;
 use super::MacosPlatform;
+use super::lsof;
 
 /// `lsof -l -n -P` 的超时（全系统扫描较慢，取详情级 5s）。
 const FILE_SCAN_TIMEOUT: Duration = DETAIL_TIMEOUT;
@@ -70,11 +69,9 @@ impl FileInventory for MacosPlatform {
                 format!("lsof failed：lsof -F p 退出码 {:?}", holders.exit_code),
             )]);
         }
-        let pids: HashSet<u32> = lsof::parse_holder_pids(&String::from_utf8_lossy(
-            &holders.stdout,
-        ))
-        .into_iter()
-        .collect();
+        let pids: HashSet<u32> = lsof::parse_holder_pids(&String::from_utf8_lossy(&holders.stdout))
+            .into_iter()
+            .collect();
         if pids.is_empty() {
             return Inspection::complete(Vec::new());
         }
@@ -125,14 +122,14 @@ impl ProcessFileLocks for MacosPlatform {
 impl MacosPlatform {
     /// 全系统 `lsof -l -n -P`（非零退出但有 stdout 按抢救语义保留）。
     fn file_rows(&self) -> Result<(Vec<lsof::RawFileRow>, Vec<DiagnosticIssue>), DiagnosticIssue> {
-        let output = self.run_lsof(&["-l", "-n", "-P"], FILE_SCAN_TIMEOUT).map_err(
-            |error| {
+        let output = self
+            .run_lsof(&["-l", "-n", "-P"], FILE_SCAN_TIMEOUT)
+            .map_err(|error| {
                 DiagnosticIssue::new(
                     DiagnosticCode::ExternalToolFailed,
                     format!("lsof 不可用或超时：{error}"),
                 )
-            },
-        )?;
+            })?;
         Ok(self.parse_file_output(output))
     }
 
@@ -160,8 +157,7 @@ impl MacosPlatform {
         if let Some(issue) = super::exit_salvage_issue(&output, "lsof -l -n -P") {
             issues.push(issue);
         }
-        let (rows, parse_issues) =
-            lsof::parse_file_rows(&String::from_utf8_lossy(&output.stdout));
+        let (rows, parse_issues) = lsof::parse_file_rows(&String::from_utf8_lossy(&output.stdout));
         issues.extend(
             parse_issues
                 .into_iter()
@@ -227,8 +223,7 @@ fn absolute_path(path: &Path) -> String {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()
-            .map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
+        std::env::current_dir().map_or_else(|_| path.to_path_buf(), |cwd| cwd.join(path))
     };
     std::fs::canonicalize(&absolute)
         .unwrap_or(absolute)

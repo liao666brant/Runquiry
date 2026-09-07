@@ -130,9 +130,7 @@ impl TableDelegate for ProcessTableDelegate {
             }
             SurfaceState::Error { .. } => (DataState::Error, None),
             SurfaceState::PermissionDenied => (DataState::PermissionDenied, None),
-            SurfaceState::Unsupported { reason } => {
-                (DataState::Unsupported, Some(reason.as_str()))
-            }
+            SurfaceState::Unsupported { reason } => (DataState::Unsupported, Some(reason.as_str())),
             SurfaceState::Unavailable { reason } => (DataState::Unavailable, Some(reason.as_str())),
         };
         let (title, description) = workspace_state_copy(state);

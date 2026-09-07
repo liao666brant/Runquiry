@@ -12,10 +12,10 @@
 
 use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::System::Services::{
-    QUERY_SERVICE_CONFIGW, SC_ENUM_PROCESS_INFO, SC_HANDLE, SC_MANAGER_ENUMERATE_SERVICE,
-    SERVICE_CONFIG_DESCRIPTION, SERVICE_QUERY_CONFIG, SERVICE_STATE_ALL, SERVICE_WIN32,
-    CloseServiceHandle, EnumServicesStatusExW, OpenSCManagerW, OpenServiceW,
-    QueryServiceConfig2W, QueryServiceConfigW,
+    CloseServiceHandle, EnumServicesStatusExW, OpenSCManagerW, OpenServiceW, QUERY_SERVICE_CONFIGW,
+    QueryServiceConfig2W, QueryServiceConfigW, SC_ENUM_PROCESS_INFO, SC_HANDLE,
+    SC_MANAGER_ENUMERATE_SERVICE, SERVICE_CONFIG_DESCRIPTION, SERVICE_QUERY_CONFIG,
+    SERVICE_STATE_ALL, SERVICE_WIN32,
 };
 
 use super::scm_parse::{ServiceConfig, parse_query_service_config, parse_service_description};
@@ -26,7 +26,7 @@ const MAX_ENUM_BYTES: usize = 4 * 1024 * 1024;
 
 /// SCM 采集失败（Win32 错误码或防御上限触发；文案由调用方组装）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScmError {
+pub(super) enum ScmError {
     /// Win32 调用失败（`GetLastError` 原值）。
     Win32(u32),
     /// 枚举缓冲区超出防御上限。
@@ -46,7 +46,10 @@ impl From<Win32Error> for ScmError {
 
 /// 超限错误（`cap` 恒为防御上限的 u32 视图）。
 fn oversize_error(requested: u32) -> ScmError {
-    ScmError::Oversize { requested, cap: u32::try_from(MAX_ENUM_BYTES).unwrap_or(u32::MAX) }
+    ScmError::Oversize {
+        requested,
+        cap: u32::try_from(MAX_ENUM_BYTES).unwrap_or(u32::MAX),
+    }
 }
 
 /// 本机 SCM 数据库句柄的 RAII 守卫（析构时 `CloseServiceHandle`）。
@@ -58,15 +61,22 @@ impl ScManagerGuard {
     /// # Errors
     /// 返回 NULL 句柄（SCM 不可用 / 权限不足）时返回 `GetLastError`。
     fn open_readonly() -> Result<Self, Win32Error> {
-        // SAFETY：机器名与数据库名均传 NULL（API 契约：本机
+        // SAFETY:机器名与数据库名均传 NULL（API 契约：本机
         // SERVICES_ACTIVE_DATABASE）；返回 NULL 表示失败，错误码经
         // GetLastError 取得。句柄所有权立即移入守卫，析构时
         // CloseServiceHandle，不复制、不提前关闭。
         let handle = unsafe {
-            OpenSCManagerW(core::ptr::null(), core::ptr::null(), SC_MANAGER_ENUMERATE_SERVICE)
+            OpenSCManagerW(
+                core::ptr::null(),
+                core::ptr::null(),
+                SC_MANAGER_ENUMERATE_SERVICE,
+            )
         };
         if handle.is_null() {
-            return Err(Win32Error(unsafe { GetLastError() }));
+            // SAFETY:仅读取当前线程错误码；紧随失败的 OpenSCManagerW，无
+            // 中间 FFI 调用。
+            let last_error = unsafe { GetLastError() };
+            return Err(Win32Error(last_error));
         }
         Ok(Self(handle))
     }
@@ -79,7 +89,7 @@ impl ScManagerGuard {
 
 impl Drop for ScManagerGuard {
     fn drop(&mut self) {
-        // SAFETY：self.0 来自 OpenSCManagerW 成功返回且未被复制或提前关闭；
+        // SAFETY:self.0 来自 OpenSCManagerW 成功返回且未被复制或提前关闭；
         // CloseServiceHandle 兼容 SC_MANAGER 与服务两类句柄；Drop 恰好执行一次。
         unsafe {
             CloseServiceHandle(self.0);
@@ -96,12 +106,15 @@ impl ServiceGuard {
     /// # Errors
     /// 返回 NULL 句柄（服务不存在 / 权限不足 / 名称非法）时返回 `GetLastError`。
     fn open_query_config(manager: &ScManagerGuard, wide_name: &[u16]) -> Result<Self, Win32Error> {
-        // SAFETY：manager.raw() 为有效的 SCM 句柄；wide_name 以 NUL 终止且
+        // SAFETY:manager.raw() 为有效的 SCM 句柄；wide_name 以 NUL 终止且
         // 生命周期覆盖本次调用；返回 NULL 表示失败。句柄所有权立即移入守卫。
         let handle =
             unsafe { OpenServiceW(manager.raw(), wide_name.as_ptr(), SERVICE_QUERY_CONFIG) };
         if handle.is_null() {
-            return Err(Win32Error(unsafe { GetLastError() }));
+            // SAFETY:仅读取当前线程错误码；紧随失败的 OpenServiceW，无中间
+            // FFI 调用。
+            let last_error = unsafe { GetLastError() };
+            return Err(Win32Error(last_error));
         }
         Ok(Self(handle))
     }
@@ -114,7 +127,7 @@ impl ServiceGuard {
 
 impl Drop for ServiceGuard {
     fn drop(&mut self) {
-        // SAFETY：self.0 来自 OpenServiceW 成功返回且未被复制或提前关闭；
+        // SAFETY:self.0 来自 OpenServiceW 成功返回且未被复制或提前关闭；
         // Drop 恰好执行一次。
         unsafe {
             CloseServiceHandle(self.0);
@@ -127,12 +140,12 @@ fn wide_service_name(name: &str) -> Option<Vec<u16>> {
     if name.contains('\0') {
         return None;
     }
-    let mut units: Vec<u16> = name.encode_utf16().chain(core::iter::once(0)).collect();
+    let units: Vec<u16> = name.encode_utf16().chain(core::iter::once(0)).collect();
     Some(units)
 }
 
 /// SCM 枚举缓冲区：8 字节对齐分配，条目内的字符串指针指向缓冲区内地址。
-pub struct EnumBuffer {
+pub(super) struct EnumBuffer {
     /// 8 字节对齐分配（`Vec<u64>` 承载；有效字节数由系统填充量决定）。
     aligned: Vec<u64>,
     /// 系统报告的条目数。
@@ -151,9 +164,9 @@ impl EnumBuffer {
     /// 全缓冲区的字节视图（解析时的 `base` 必须取
     /// `self.bytes().as_ptr() as usize`，与字符串指针的绝对地址一致）。
     #[must_use]
-    pub fn bytes(&self) -> &[u8] {
+    pub(super) fn bytes(&self) -> &[u8] {
         let byte_len = self.aligned.len() * size_of::<u64>();
-        // SAFETY：aligned 为本结构持有的已初始化分配（零值起步 + FFI 写入）；
+        // SAFETY:aligned 为本结构持有的已初始化分配（零值起步 + FFI 写入）；
         // 以 u8 视图重建切片长度不超过分配大小，且读取一律按字节拷贝
         //（scm_parse），不通过 u64 引用产生别名。
         unsafe { core::slice::from_raw_parts(self.aligned.as_ptr().cast::<u8>(), byte_len) }
@@ -161,7 +174,7 @@ impl EnumBuffer {
 
     /// 系统报告的条目数。
     #[must_use]
-    pub const fn count(&self) -> u32 {
+    pub(super) const fn count(&self) -> u32 {
         self.count
     }
 }
@@ -180,13 +193,12 @@ fn aligned_buffer(byte_len: usize) -> Option<Vec<u64>> {
 /// SCM 不可用 / 枚举失败 / 缓冲区超限 / 两次读取间条目持续增长时返回
 /// [`ScmError`]；成功返回的缓冲区交 `scm_parse::parse_enum_buffer` 解析
 /// （`base` 取 `bytes().as_ptr()`）。
-#[must_use]
-pub fn enumerate_services() -> Result<EnumBuffer, ScmError> {
+pub(super) fn enumerate_services() -> Result<EnumBuffer, ScmError> {
     let manager = ScManagerGuard::open_readonly()?;
     let mut needed: u32 = 0;
     let mut returned: u32 = 0;
     let mut resume: u32 = 0;
-    // SAFETY：第一阶段以 NULL 缓冲区探询尺寸（API 契约：cbBufSize=0 时把
+    // SAFETY:第一阶段以 NULL 缓冲区探询尺寸（API 契约：cbBufSize=0 时把
     // 所需字节数写入 pcbBytesNeeded 并返回 ERROR_MORE_DATA /
     // ERROR_INSUFFICIENT_BUFFER）；三个出参均为栈上 u32，生命周期覆盖调用。
     let probe = unsafe {
@@ -206,7 +218,10 @@ pub fn enumerate_services() -> Result<EnumBuffer, ScmError> {
     if probe != 0 {
         return Ok(EnumBuffer::empty());
     }
-    let probe_error = Win32Error(unsafe { GetLastError() });
+    // SAFETY:仅读取当前线程错误码；紧随返回 0 的 EnumServicesStatusExW
+    // 探询调用，无中间 FFI 调用。
+    let last_error = unsafe { GetLastError() };
+    let probe_error = Win32Error(last_error);
     if probe_error.0 != ERROR_MORE_DATA && probe_error.0 != ERROR_INSUFFICIENT_BUFFER {
         return Err(probe_error.into());
     }
@@ -226,7 +241,7 @@ pub fn enumerate_services() -> Result<EnumBuffer, ScmError> {
             return Err(oversize_error(requested));
         };
         let capacity = u32::try_from(buffer.len() * size_of::<u64>()).unwrap_or(0);
-        // SAFETY：buffer 为 8 字节对齐分配（ENUM_SERVICE_STATUS_PROCESSW 含
+        // SAFETY:buffer 为 8 字节对齐分配（ENUM_SERVICE_STATUS_PROCESSW 含
         // 指针成员，要求指针宽度对齐），capacity 以字节计且与 cbBufSize
         // 契约一致；lpResumeHandle 承接系统游标（首次为 0，重试续读）；返回
         // 0 视为失败，ERROR_MORE_DATA 表示条目增长、按新尺寸重试。
@@ -250,7 +265,10 @@ pub fn enumerate_services() -> Result<EnumBuffer, ScmError> {
                 count: returned,
             });
         }
-        let error = Win32Error(unsafe { GetLastError() });
+        // SAFETY:仅读取当前线程错误码；紧随返回 0 的 EnumServicesStatusExW
+        // 读取调用，无中间 FFI 调用。
+        let last_error = unsafe { GetLastError() };
+        let error = Win32Error(last_error);
         if (error.0 == ERROR_MORE_DATA || error.0 == ERROR_INSUFFICIENT_BUFFER)
             && needed > requested
         {
@@ -279,10 +297,13 @@ fn query_two_stage<T>(
     parse: impl FnOnce(&[u8], usize) -> Option<T>,
 ) -> Option<T> {
     let mut needed: u32 = 0;
-    // SAFETY：探询尺寸：NULL 缓冲区 + cbBufSize=0，API 把所需字节数写入
+    // SAFETY:探询尺寸：NULL 缓冲区 + cbBufSize=0，API 把所需字节数写入
     // pcbBytesNeeded；needed 为栈上 u32 出参，生命周期覆盖调用。
     if probe(service, &mut needed) == 0 {
-        let error = Win32Error(unsafe { GetLastError() });
+        // SAFETY:仅读取当前线程错误码；紧随返回 0 的探询调用，无中间
+        // FFI 调用。
+        let last_error = unsafe { GetLastError() };
+        let error = Win32Error(last_error);
         if error.0 != ERROR_INSUFFICIENT_BUFFER && error.0 != ERROR_MORE_DATA {
             return None;
         }
@@ -292,10 +313,16 @@ fn query_two_stage<T>(
     }
     let mut buffer = aligned_buffer(needed as usize)?;
     let capacity = u32::try_from(buffer.len() * size_of::<u64>()).ok()?;
-    // SAFETY：buffer 为 8 字节对齐分配（输出结构均含指针成员，要求指针
+    // SAFETY:buffer 为 8 字节对齐分配（输出结构均含指针成员，要求指针
     // 宽度对齐），capacity 以字节计与 cbBufSize 契约一致；成功时系统把
     // 结构与字符串写入缓冲区；needed 复用为实际所需字节数。
-    if read(service, buffer.as_mut_ptr().cast::<u8>(), capacity, &mut needed) == 0 {
+    if read(
+        service,
+        buffer.as_mut_ptr().cast::<u8>(),
+        capacity,
+        &mut needed,
+    ) == 0
+    {
         return None;
     }
     parse(valid_bytes(&buffer, needed), buffer.as_ptr() as usize)
@@ -303,16 +330,16 @@ fn query_two_stage<T>(
 
 /// 单服务的启动配置（服务不存在 / 权限不足 / 查询或解析失败 → `None`）。
 #[must_use]
-pub fn query_service_config(name: &str) -> Option<ServiceConfig> {
+pub(super) fn query_service_config(name: &str) -> Option<ServiceConfig> {
     with_query_target(name, |service| {
         query_two_stage(
             service,
-            // SAFETY：QueryServiceConfigW 以 NULL 缓冲区探询所需字节数；
+            // SAFETY:QueryServiceConfigW 以 NULL 缓冲区探询所需字节数；
             // needed 为栈上 u32 出参。
             |handle, needed| unsafe {
                 QueryServiceConfigW(handle, core::ptr::null_mut(), 0, needed)
             },
-            // SAFETY：buffer 为 8 字节对齐分配（QUERY_SERVICE_CONFIGW 含
+            // SAFETY:buffer 为 8 字节对齐分配（QUERY_SERVICE_CONFIGW 含
             // 指针成员），capacity 以字节计与 cbBufSize 契约一致。
             |handle, buffer, capacity, needed| unsafe {
                 QueryServiceConfigW(
@@ -329,11 +356,11 @@ pub fn query_service_config(name: &str) -> Option<ServiceConfig> {
 
 /// 单服务的描述文本（服务不存在 / 无描述 / 失败 → `None`）。
 #[must_use]
-pub fn query_service_description(name: &str) -> Option<String> {
+pub(super) fn query_service_description(name: &str) -> Option<String> {
     with_query_target(name, |service| {
         query_two_stage(
             service,
-            // SAFETY：QueryServiceConfig2W 以 NULL 缓冲区探询
+            // SAFETY:QueryServiceConfig2W 以 NULL 缓冲区探询
             // SERVICE_CONFIG_DESCRIPTION 所需字节数；无描述的服务可能直接
             // 成功且 needed=0（按无描述处理）；needed 为栈上 u32 出参。
             |handle, needed| unsafe {
@@ -345,7 +372,7 @@ pub fn query_service_description(name: &str) -> Option<String> {
                     needed,
                 )
             },
-            // SAFETY：buffer 为 8 字节对齐分配（SERVICE_DESCRIPTIONW 含
+            // SAFETY:buffer 为 8 字节对齐分配（SERVICE_DESCRIPTIONW 含
             // 指针成员），capacity 以字节计与 cbBufSize 契约一致。
             |handle, buffer, capacity, needed| unsafe {
                 QueryServiceConfig2W(handle, SERVICE_CONFIG_DESCRIPTION, buffer, capacity, needed)
@@ -358,8 +385,10 @@ pub fn query_service_description(name: &str) -> Option<String> {
 /// 成功调用后的有效字节视图（系统报告的所需字节数与缓冲区容量取小；
 /// 解析按该边界校验指针，绝不越出分配）。
 fn valid_bytes(buffer: &[u64], needed: u32) -> &[u8] {
-    let valid = usize::try_from(needed).unwrap_or(0).min(buffer.len() * size_of::<u64>());
-    // SAFETY：以 u8 视图读取 8 字节对齐分配的前 `valid` 字节；长度不超过
+    let valid = usize::try_from(needed)
+        .unwrap_or(0)
+        .min(size_of_val(buffer));
+    // SAFETY:以 u8 视图读取 8 字节对齐分配的前 `valid` 字节；长度不超过
     // 分配容量，且该内存已由 FFI 初始化（失败路径不会到达此处）。
     unsafe { core::slice::from_raw_parts(buffer.as_ptr().cast::<u8>(), valid) }
 }

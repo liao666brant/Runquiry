@@ -6,12 +6,6 @@ mod unsupported;
 
 #[test]
 fn unsupported_module_compiles_and_reasons_are_stable() {
-    assert_eq!(
-        unsupported::file_locks_failed_list().issues.len(),
-        1
-    );
-    assert_eq!(
-        unsupported::control_error().code(),
-        "unsupported"
-    );
+    assert_eq!(unsupported::file_locks_failed_list().issues.len(), 1);
+    assert_eq!(unsupported::control_error().code(), "unsupported");
 }

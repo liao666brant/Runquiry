@@ -109,13 +109,11 @@ impl ShellData {
                 self.process_issues = issues;
                 self.process_table.update(cx, |table, cx| {
                     table.delegate_mut().replace_rows(rows);
-                    table
-                        .delegate_mut()
-                        .set_surface(SurfaceState::from_parts(
-                            &capability,
-                            has_snapshot,
-                            &self.process_issues,
-                        ));
+                    table.delegate_mut().set_surface(SurfaceState::from_parts(
+                        &capability,
+                        has_snapshot,
+                        &self.process_issues,
+                    ));
                     table.refresh(cx);
                 });
             }

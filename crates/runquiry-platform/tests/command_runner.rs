@@ -1,8 +1,8 @@
-#![cfg(unix)]
 //! 生产 [`StdCommandRunner`] 的行为契约测试（真实子进程 + 假脚本，不 mock runner）。
 //!
 //! 覆盖：argv 逐元素原样传递（无 shell 解释痕迹）、程序缺失、非零退出、
 //! 挂起超时终止与回收、stdout/stderr/双流超限失败、僵尸清理。
+#![cfg(unix)]
 
 #[path = "container_support.rs"]
 mod support;

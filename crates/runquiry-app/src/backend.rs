@@ -83,9 +83,10 @@ impl PlatformBackend {
             return InspectError::PermissionDenied { subject };
         }
         InspectError::Unsupported {
-            reason: inspection.issues.first().map_or(fallback, |issue| {
-                format!("{fallback}：{}", issue.message())
-            }),
+            reason: match inspection.issues.first() {
+                Some(issue) => format!("{fallback}：{}", issue.message()),
+                None => fallback,
+            },
         }
     }
 
@@ -108,10 +109,7 @@ impl PlatformBackend {
     /// （parity line 88）；label 非法视为「无服务候选」而非调查失败，其余
     /// 错误（launchctl 缺失/超时）原样上抛。非 macOS 平台恒无回退。
     #[cfg(target_os = "macos")]
-    fn launchd_service_pid(
-        platform: &Platform,
-        query: &str,
-    ) -> Result<Option<Pid>, InspectError> {
+    fn launchd_service_pid(platform: &Platform, query: &str) -> Result<Option<Pid>, InspectError> {
         platform
             .launchd_service_pid(query)
             .or_else(|error| match error {
@@ -236,15 +234,16 @@ impl WorkspaceBackend for PlatformBackend {
             }
             QueryTarget::Port(port) => {
                 let ports_inspection = platform.open_ports();
-                let ports = ports_inspection
-                    .data
-                    .ok_or_else(|| {
-                        Self::failed_collection_error(
+                let ports = match ports_inspection.data {
+                    Some(ports) => ports,
+                    None => {
+                        return Err(Self::failed_collection_error(
                             &ports_inspection,
                             format!("端口 {port}"),
                             format!("端口 {port} 的采集未返回数据"),
-                        )
-                    })?;
+                        ));
+                    }
+                };
                 match resolve_port_owner(&ports, *port) {
                     Ok(resolution) => resolution,
                     Err(InspectError::SocketOwnerUnknown { subject }) => {
@@ -257,13 +256,16 @@ impl WorkspaceBackend for PlatformBackend {
             }
             QueryTarget::File(path) => {
                 let holders_inspection = FileInventory::holders(&platform, path);
-                let holders = holders_inspection.data.ok_or_else(|| {
-                    Self::failed_collection_error(
-                        &holders_inspection,
-                        format!("文件 {}", path.display()),
-                        format!("文件 {} 的采集未返回数据", path.display()),
-                    )
-                })?;
+                let holders = match holders_inspection.data {
+                    Some(holders) => holders,
+                    None => {
+                        return Err(Self::failed_collection_error(
+                            &holders_inspection,
+                            format!("文件 {}", path.display()),
+                            format!("文件 {} 的采集未返回数据", path.display()),
+                        ));
+                    }
+                };
                 resolve_file_holders(&holders, path)?
             }
             QueryTarget::Container { query, exact } => {

@@ -1,0 +1,269 @@
+//! Linux 实机目标解析回归（B7 语义）：依赖 `/proc`、端口与文件占位子进程。
+//!
+//! 仅在 `target_os = "linux"` 编译（Windows 主机无
+//! `runquiry_platform::linux`）；受控子进程经 `--exact` 复用本测试二进制。
+
+use std::ffi::OsString;
+use std::fs::{self, File};
+use std::io::{self, BufRead as _, Read as _, Write as _};
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::process::{Child, ChildStdout, Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use runquiry_core::{
+    FileInventory, NetworkInventory, Pid, Port, ProcessAction, ProcessInventory, QueryTarget,
+    Resolution,
+};
+use runquiry_platform::linux::LinuxPlatform;
+use runquiry_ui::backend::{InvestigationTarget, WorkspaceBackend};
+
+use super::PlatformBackend;
+
+const PORT_READY: &str = "RUNQUIRY_BACKEND_PORT=";
+const FILE_READY: &str = "RUNQUIRY_BACKEND_FILE_READY";
+
+/// 父测试启动的、仅持有一个受控资源的独立测试进程。
+struct TargetHelper {
+    child: Child,
+    stdout: io::BufReader<ChildStdout>,
+    path: PathBuf,
+}
+
+impl TargetHelper {
+    fn port() -> io::Result<(Self, Port)> {
+        let mut helper = Self::spawn(
+            "backend::tests::linux_only::port_target_helper",
+            "RUNQUIRY_BACKEND_PORT",
+            OsString::from("1"),
+        )?;
+        let port = helper.read_port()?;
+        Ok((helper, port))
+    }
+
+    fn file() -> io::Result<(Self, PathBuf)> {
+        let elapsed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(io::Error::other)?;
+        let path = std::env::temp_dir().join(format!(
+            "runquiry-backend-target-{}-{}",
+            std::process::id(),
+            elapsed.as_nanos()
+        ));
+        if path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "临时目标路径已存在",
+            ));
+        }
+        let mut helper = Self::spawn(
+            "backend::tests::linux_only::file_target_helper",
+            "RUNQUIRY_BACKEND_FILE",
+            path.clone().into_os_string(),
+        )?;
+        helper.wait_for(FILE_READY)?;
+        helper.path = path.clone();
+        Ok((helper, path))
+    }
+
+    fn spawn(test: &str, key: &str, value: OsString) -> io::Result<Self> {
+        let binary = std::env::current_exe()?;
+        let mut child = Command::new(binary)
+            .arg("--exact")
+            .arg(test)
+            .arg("--nocapture")
+            .env(key, value)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("受控子进程缺少 stdout"))?;
+        Ok(Self {
+            child,
+            stdout: io::BufReader::new(stdout),
+            path: PathBuf::new(),
+        })
+    }
+
+    fn wait_for(&mut self, expected: &str) -> io::Result<()> {
+        for _ in 0..32 {
+            let mut line = String::new();
+            if self.stdout.read_line(&mut line)? == 0 {
+                return Err(io::Error::other("受控子进程在就绪前退出"));
+            }
+            if line.trim() == expected {
+                return Ok(());
+            }
+        }
+        Err(io::Error::other("受控子进程没有输出就绪标记"))
+    }
+
+    fn read_port(&mut self) -> io::Result<Port> {
+        for _ in 0..32 {
+            let mut line = String::new();
+            if self.stdout.read_line(&mut line)? == 0 {
+                return Err(io::Error::other("端口子进程在就绪前退出"));
+            }
+            if let Some(raw) = line.trim().strip_prefix(PORT_READY) {
+                let value = raw.parse::<u16>().map_err(|error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("端口就绪值无效：{error}"),
+                    )
+                })?;
+                return Port::new(value)
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error));
+            }
+        }
+        Err(io::Error::other("端口子进程没有输出端口标记"))
+    }
+
+    fn pid(&self) -> Result<Pid, runquiry_core::InvalidId> {
+        Pid::new(self.child.id())
+    }
+
+    fn finish(mut self) -> io::Result<()> {
+        self.child.stdin.take();
+        let status = self.child.wait()?;
+        if !status.success() {
+            return Err(io::Error::other("受控子进程未成功退出"));
+        }
+        if !self.path.as_os_str().is_empty() && self.path.exists() {
+            return Err(io::Error::other("受控临时文件未清理"));
+        }
+        Ok(())
+    }
+}
+
+impl Drop for TargetHelper {
+    fn drop(&mut self) {
+        self.child.stdin.take();
+        if matches!(self.child.try_wait(), Ok(None)) {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
+        if !self.path.as_os_str().is_empty() {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn result_contains_process(resolution: Resolution<InvestigationTarget>, pid: Pid) -> bool {
+    resolution.into_candidates().into_iter().any(
+        |target| matches!(target, InvestigationTarget::Process(identity) if identity.pid() == pid),
+    )
+}
+
+#[test]
+fn executes_confirmed_actions_against_a_task_owned_process()
+-> Result<(), Box<dyn std::error::Error>> {
+    let backend = PlatformBackend::new()?;
+    let (mut helper, _) = TargetHelper::port()?;
+    let pid = helper.pid()?;
+    eprintln!("B7 app action test created task-owned PID {pid}");
+    let inventory = ProcessInventory::list(&LinuxPlatform::new()?)
+        .data
+        .ok_or_else(|| io::Error::other("进程清单采集未返回数据"))?;
+    let identity = inventory
+        .iter()
+        .find(|process| process.identity.pid() == pid)
+        .map(|process| process.identity.clone())
+        .ok_or_else(|| io::Error::other("任务自建进程未出现在进程清单中"))?;
+
+    backend.execute_process_action(&identity, ProcessAction::Pause)?;
+    backend.execute_process_action(&identity, ProcessAction::Resume)?;
+    backend.execute_process_action(&identity, ProcessAction::Terminate)?;
+
+    let status = helper.child.wait()?;
+    assert!(!status.success());
+    eprintln!("B7 app action test terminated and reaped task-owned PID {pid}: {status}");
+    Ok(())
+}
+
+#[test]
+fn resolves_post_start_loopback_port_holder() -> Result<(), Box<dyn std::error::Error>> {
+    let stale_platform = LinuxPlatform::new()?;
+    let backend = PlatformBackend::new()?;
+    let (helper, port) = TargetHelper::port()?;
+    let owner = helper.pid()?;
+    let owners = NetworkInventory::open_ports(&LinuxPlatform::new()?)
+        .data
+        .ok_or_else(|| io::Error::other("端口采集未返回数据"))?;
+    assert!(
+        owners
+            .iter()
+            .any(|entry| entry.port == port && entry.pid == Some(owner))
+    );
+    let stale_inventory = ProcessInventory::list(&stale_platform)
+        .data
+        .ok_or_else(|| io::Error::other("旧进程快照未返回数据"))?;
+    assert!(
+        !stale_inventory
+            .iter()
+            .any(|process| process.identity.pid() == owner)
+    );
+    let resolution = backend.resolve(&QueryTarget::Port(port))?;
+
+    assert!(result_contains_process(resolution, owner));
+    helper.finish()?;
+    Ok(())
+}
+
+#[test]
+fn resolves_post_start_open_file_holder() -> Result<(), Box<dyn std::error::Error>> {
+    let stale_platform = LinuxPlatform::new()?;
+    let backend = PlatformBackend::new()?;
+    let (helper, path) = TargetHelper::file()?;
+    let owner = helper.pid()?;
+    let holders = FileInventory::holders(&LinuxPlatform::new()?, &path)
+        .data
+        .ok_or_else(|| io::Error::other("文件采集未返回数据"))?;
+    assert!(holders.iter().any(|entry| entry.pid == owner));
+    let stale_inventory = ProcessInventory::list(&stale_platform)
+        .data
+        .ok_or_else(|| io::Error::other("旧进程快照未返回数据"))?;
+    assert!(
+        !stale_inventory
+            .iter()
+            .any(|process| process.identity.pid() == owner)
+    );
+    let resolution = backend.resolve(&QueryTarget::File(path))?;
+
+    assert!(result_contains_process(resolution, owner));
+    helper.finish()?;
+    Ok(())
+}
+
+#[test]
+fn port_target_helper() -> io::Result<()> {
+    if std::env::var_os("RUNQUIRY_BACKEND_PORT").is_none() {
+        return Ok(());
+    }
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let mut output = io::stdout().lock();
+    writeln!(output, "{PORT_READY}{}", listener.local_addr()?.port())?;
+    output.flush()?;
+    let mut input = Vec::new();
+    io::stdin().read_to_end(&mut input)?;
+    drop(listener);
+    Ok(())
+}
+
+#[test]
+fn file_target_helper() -> io::Result<()> {
+    let Some(path) = std::env::var_os("RUNQUIRY_BACKEND_FILE").map(PathBuf::from) else {
+        return Ok(());
+    };
+    let file = File::create(&path)?;
+    let mut output = io::stdout().lock();
+    writeln!(output, "{FILE_READY}")?;
+    output.flush()?;
+    let mut input = Vec::new();
+    io::stdin().read_to_end(&mut input)?;
+    drop(file);
+    fs::remove_file(path)?;
+    Ok(())
+}

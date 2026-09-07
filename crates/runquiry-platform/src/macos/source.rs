@@ -17,9 +17,9 @@
 
 use runquiry_core::{CommandSpec, Pid, ProcessSummary, SourceEvidence, SourceEvidenceProvider};
 
+use super::MacosPlatform;
 use super::launchctl;
 use super::plist::{self, LaunchdPlistInfo};
-use super::MacosPlatform;
 
 impl SourceEvidenceProvider for MacosPlatform {
     fn evidence(&self, ancestry: &[ProcessSummary]) -> SourceEvidence {
@@ -66,8 +66,8 @@ impl MacosPlatform {
             )
             .ok()?;
         let stdout = String::from_utf8_lossy(&blame.stdout);
-        let (domain, label) = launchctl::parse_blame_service(&stdout)
-            .or_else(|| self.launchd_list_fallback(pid))?;
+        let (domain, label) =
+            launchctl::parse_blame_service(&stdout).or_else(|| self.launchd_list_fallback(pid))?;
         Some(self.launchd_kv(&domain, &label))
     }
 
@@ -80,10 +80,8 @@ impl MacosPlatform {
                 runquiry_core::LIST_TIMEOUT,
             )
             .ok()?;
-        let label = launchctl::parse_list_label(
-            &String::from_utf8_lossy(&output.stdout),
-            pid.get(),
-        )?;
+        let label =
+            launchctl::parse_list_label(&String::from_utf8_lossy(&output.stdout), pid.get())?;
         let domain = if label.starts_with("com.apple.") {
             String::from("system")
         } else {

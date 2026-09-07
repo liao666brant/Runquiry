@@ -21,16 +21,16 @@ use std::path::PathBuf;
 
 use runquiry_core::{
     CapabilityStatus, CommandSpec, DiagnosticCode, DiagnosticIssue, InspectError, Inspection,
-    IoStats, LIST_TIMEOUT, MemoryInfo, ProcessDetails, ProcessDetailsProvider, ProcessIdentity,
-    PROBE_TIMEOUT,
+    IoStats, LIST_TIMEOUT, MemoryInfo, PROBE_TIMEOUT, ProcessDetails, ProcessDetailsProvider,
+    ProcessIdentity,
 };
 use sysinfo::System;
 
+use super::MacosPlatform;
 use super::identity;
 use super::launchctl;
 use super::libproc;
 use super::lsof;
-use super::MacosPlatform;
 
 impl ProcessDetailsProvider for MacosPlatform {
     fn capability(&self) -> CapabilityStatus {
@@ -45,11 +45,12 @@ impl ProcessDetailsProvider for MacosPlatform {
     ) -> Result<Inspection<ProcessDetails>, InspectError> {
         let pid = expected.pid().get();
         let system = self.snapshot();
-        let process = system
-            .process(sysinfo::Pid::from_u32(pid))
-            .ok_or_else(|| InspectError::NotFound {
-                subject: format!("进程 {pid}"),
-            })?;
+        let process =
+            system
+                .process(sysinfo::Pid::from_u32(pid))
+                .ok_or_else(|| InspectError::NotFound {
+                    subject: format!("进程 {pid}"),
+                })?;
         let current_start = identity::start_time_from_unix_seconds(process.start_time());
         // 身份重读：仅比较启动时间（trait 契约；exe 是展示位）。current 为
         // None（秒数 0，不可验证）时不误报变化，也按旧数据不得返回的语义
@@ -60,9 +61,7 @@ impl ProcessDetailsProvider for MacosPlatform {
             (expected.start_time(), current.start_time())
             && expected_start != current_start
         {
-            return Err(InspectError::ProcessChanged {
-                identity: current,
-            });
+            return Err(InspectError::ProcessChanged { identity: current });
         }
 
         let mut partial = PartialDetails::new(pid);
@@ -152,7 +151,10 @@ impl MacosPlatform {
 
     /// `launchctl limit maxfiles` 软上限（0 = unlimited，witr 约定）。
     fn maxfiles_limit(&self) -> Result<Option<u64>, InspectError> {
-        let output = self.run(&CommandSpec::new("launchctl", ["limit", "maxfiles"]), PROBE_TIMEOUT)?;
+        let output = self.run(
+            &CommandSpec::new("launchctl", ["limit", "maxfiles"]),
+            PROBE_TIMEOUT,
+        )?;
         Ok(launchctl::parse_limit_maxfiles(&String::from_utf8_lossy(
             &output.stdout,
         )))
@@ -166,7 +168,8 @@ impl MacosPlatform {
         partial: &mut PartialDetails,
         fd_count: Option<u64>,
     ) -> (Vec<PathBuf>, Option<u64>) {
-        let output = match self.run_lsof(&["-a", "-p", &pid.to_string(), "-F", "fn"], LIST_TIMEOUT) {
+        let output = match self.run_lsof(&["-a", "-p", &pid.to_string(), "-F", "fn"], LIST_TIMEOUT)
+        {
             Ok(output) => output,
             Err(error) => {
                 partial.record(

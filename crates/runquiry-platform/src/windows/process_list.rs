@@ -10,7 +10,7 @@ use runquiry_core::{
 use sysinfo::{ProcessesToUpdate, System, Users};
 
 use super::WindowsPlatform;
-use super::ffi::{self, ToolhelpEntry};
+use super::ffi;
 
 /// sysinfo 一次全量刷新（生产枚举基线；witr 快照缓存的等价物由调用方的
 /// 单次 `list()` 边界承担，不引入 TTL 缓存）。
@@ -22,7 +22,11 @@ pub(super) fn sysinfo_snapshot() -> System {
 
 /// 生产 PID 枚举（构造时基准快照与 `list()` 共用）。
 pub(super) fn sysinfo_pids() -> Vec<u32> {
-    let mut pids: Vec<u32> = sysinfo_snapshot().processes().keys().map(|pid| pid.as_u32()).collect();
+    let mut pids: Vec<u32> = sysinfo_snapshot()
+        .processes()
+        .keys()
+        .map(|pid| pid.as_u32())
+        .collect();
     pids.sort_unstable();
     pids
 }
@@ -47,7 +51,11 @@ fn user_of(uid: Option<&sysinfo::Uid>, users: &Users) -> Option<String> {
 /// 健康标签（witr `windowsHealth` 阈值：累计 CPU > 2h → high-cpu，
 /// RSS > 1 GiB → high-mem；Windows 无 zombie/stopped 等价物）。
 const fn health_of(rss_bytes: u64, cpu_time: Option<Duration>) -> HealthStatus {
-    if cpu_time.is_some_and(|cpu| cpu > Duration::from_secs(2 * 60 * 60)) {
+    // Duration 的 PartialOrd 非 const，const fn 内改用 nanos 数值比较
+    //（2 小时 = 7.2e12 纳秒，语义与 Duration 比较一致）。
+    if let Some(cpu) = cpu_time
+        && cpu.as_nanos() > 2 * 60 * 60 * 1_000_000_000u128
+    {
         return HealthStatus::HighCpu;
     }
     if rss_bytes > 1024 * 1024 * 1024 {
@@ -87,6 +95,8 @@ impl ProcessInventory for WindowsPlatform {
         let snapshot = ffi::toolhelp_snapshot();
         let fallback_names = |pid: u32| -> Option<(u32, String)> {
             snapshot
+                .as_ref()
+                .ok()?
                 .iter()
                 .find(|entry| entry.pid == pid)
                 .map(|entry| (entry.parent_pid, entry.exe_name.clone()))
@@ -117,7 +127,7 @@ impl ProcessInventory for WindowsPlatform {
                     start_time,
                     exe,
                 ),
-                parent_pid: parent_raw.and_then(Pid::new).ok(),
+                parent_pid: parent_raw.and_then(|raw| Pid::new(raw).ok()),
                 command,
                 command_line,
                 user: user_of(process.user_id(), &users),
@@ -154,7 +164,9 @@ impl ProcessInventory for WindowsPlatform {
                     }
                     issues.push(DiagnosticIssue::new(
                         DiagnosticCode::Unknown,
-                        String::from("sysinfo 未枚举到进程，基线退化为 ToolHelp32 快照（无启动时间）"),
+                        String::from(
+                            "sysinfo 未枚举到进程，基线退化为 ToolHelp32 快照（无启动时间）",
+                        ),
                     ));
                 }
                 Err(error) => {
@@ -183,10 +195,35 @@ fn join_cmdline(cmd: &[std::ffi::OsString]) -> Option<String> {
     )
 }
 
-/// 供详情模块复用的快照查询（ToolHelp32 回退：PPID + 可执行名）。
-pub(super) fn snapshot_entry(pid: u32) -> Option<ToolhelpEntry> {
-    ffi::toolhelp_snapshot()
-        .ok()?
-        .into_iter()
-        .find(|entry| entry.pid == pid)
+/// ToolHelp32 快照的真实采集验证（仅 Windows 目标；`#[path]` 纯解析套件
+/// 无法覆盖系统调用路径）。只读断言：真实系统快照非空、条目绝大多数带
+/// 可执行名（UTF-16 定长数组解码路径在真实数据上抽查）。
+#[cfg(all(test, target_os = "windows"))]
+mod snapshot_live {
+    use super::ffi;
+
+    #[test]
+    fn toolhelp_snapshot_enumerates_real_processes() -> Result<(), Box<dyn std::error::Error>> {
+        let entries = match ffi::toolhelp_snapshot() {
+            Ok(entries) => entries,
+            Err(error) => {
+                return Err(format!("ToolHelp32 快照失败：Win32 错误码 {}", error.0).into());
+            }
+        };
+        assert!(
+            entries.len() > 10,
+            "真实系统进程数不应少于 10，实际 {}",
+            entries.len()
+        );
+        let named = entries
+            .iter()
+            .filter(|entry| !entry.exe_name.is_empty())
+            .count();
+        assert!(
+            named * 2 > entries.len(),
+            "绝大多数快照条目应有可执行名（{named}/{}）",
+            entries.len()
+        );
+        Ok(())
+    }
 }

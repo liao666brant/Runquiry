@@ -3,14 +3,16 @@
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
+use windows_sys::Wdk::System::Threading::{
+    NtQueryInformationProcess, PROCESSINFOCLASS, ProcessWow64Information,
+};
 use windows_sys::Win32::Foundation::FILETIME;
-use windows_sys::Win32::System::ProcessStatus::{PROCESS_MEMORY_COUNTERS_EX, GetProcessMemoryInfo};
+use windows_sys::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX};
 use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows_sys::Win32::System::Threading::{
     GetProcessHandleCount, GetProcessIoCounters, GetProcessTimes, IsWow64Process,
     PROCESS_NAME_WIN32, QueryFullProcessImageNameW,
 };
-use windows_sys::Wdk::System::Threading::{NtQueryInformationProcess, ProcessWow64Information};
 
 use super::super::utf16::decode_lossy_units;
 use super::super::winerror::is_ntstatus_failure;
@@ -40,14 +42,19 @@ const _: () = assert!(
 
 impl Default for ProcessBasicInformation {
     fn default() -> Self {
-        // SAFETY：结构体为 Plain-Old-Data 布局的零值（指针零值合法，仅作占位）。
+        // SAFETY:结构体为 Plain-Old-Data 布局的零值（指针零值合法，仅作占位）。
         unsafe { core::mem::zeroed() }
     }
 }
 
+/// `PROCESSINFOCLASS::ProcessBasicInformation` 的类别值（0）。windows-sys
+/// 的同名常量被 `Win32_System_Kernel` feature 门控且与上述镜像结构重名，
+/// 故按公开 ABI 自带类别值。
+const PROCESS_BASIC_INFORMATION_CLASS: PROCESSINFOCLASS = 0;
+
 /// `FILETIME`（100 纳秒刻度，1601-01-01 起）→ `SystemTime`。
 #[must_use]
-pub fn filetime_to_system_time(low: u32, high: u32) -> Option<SystemTime> {
+pub(crate) fn filetime_to_system_time(low: u32, high: u32) -> Option<SystemTime> {
     const UNIX_EPOCH_FILETIME: u64 = 11_644_473_600_000_000_000; // 1601→1970 的 100ns 刻度
     let ticks = (u64::from(high) << 32) | u64::from(low);
     let since_epoch = ticks.checked_sub(UNIX_EPOCH_FILETIME)?;
@@ -60,14 +67,20 @@ pub fn filetime_to_system_time(low: u32, high: u32) -> Option<SystemTime> {
 
 /// `GetProcessTimes`：进程创建时刻与累计 CPU 时间（kernel + user）。
 #[must_use]
-pub fn get_process_times(handle: &HandleGuard) -> Option<(Option<SystemTime>, Duration)> {
+pub(crate) fn get_process_times(handle: &HandleGuard) -> Option<(Option<SystemTime>, Duration)> {
     let mut creation = FILETIME::default();
     let mut exit = FILETIME::default();
     let mut kernel = FILETIME::default();
     let mut user = FILETIME::default();
-    // SAFETY：handle 有效；四个 FILETIME 均为栈上可写内存，生命周期覆盖调用。
+    // SAFETY:handle 有效；四个 FILETIME 均为栈上可写内存，生命周期覆盖调用。
     let ok = unsafe {
-        GetProcessTimes(handle.raw(), &mut creation, &mut exit, &mut kernel, &mut user)
+        GetProcessTimes(
+            handle.raw(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
     };
     if ok == 0 {
         return None;
@@ -85,13 +98,18 @@ pub fn get_process_times(handle: &HandleGuard) -> Option<(Option<SystemTime>, Du
 
 /// `QueryFullProcessImageNameW`：进程可执行文件的完整路径（宽字符）。
 #[must_use]
-pub fn query_full_image_name(handle: &HandleGuard) -> Option<String> {
+pub(crate) fn query_full_image_name(handle: &HandleGuard) -> Option<String> {
     let mut buffer = [0u16; 1024];
     let mut size = u32::try_from(buffer.len()).ok()?;
-    // SAFETY：handle 有效；buffer 为 1024 个 u16 的栈数组；size 进出参，
+    // SAFETY:handle 有效；buffer 为 1024 个 u16 的栈数组；size 进出参，
     // 成功时由系统写入实际写入的字符数（不含终止符）。
     let ok = unsafe {
-        QueryFullProcessImageNameW(handle.raw(), PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut size)
+        QueryFullProcessImageNameW(
+            handle.raw(),
+            PROCESS_NAME_WIN32,
+            buffer.as_mut_ptr(),
+            &mut size,
+        )
     };
     if ok == 0 || size == 0 {
         return None;
@@ -102,25 +120,25 @@ pub fn query_full_image_name(handle: &HandleGuard) -> Option<String> {
 
 /// `IsWow64Process`：目标进程是否为 32 位（WOW64）。
 #[must_use]
-pub fn is_wow64(handle: &HandleGuard) -> Option<bool> {
+pub(crate) fn is_wow64(handle: &HandleGuard) -> Option<bool> {
     let mut wow64: windows_sys::core::BOOL = 0;
-    // SAFETY：handle 有效；wow64 为栈上 i32 出参。
+    // SAFETY:handle 有效；wow64 为栈上 i32 出参。
     let ok = unsafe { IsWow64Process(handle.raw(), &mut wow64) };
     (ok != 0).then_some(wow64 != 0)
 }
 
 /// `NtQueryInformationProcess(ProcessBasicInformation)`：PEB64 基址。
 #[must_use]
-pub fn nt_peb_address(handle: &HandleGuard) -> Option<u64> {
+pub(crate) fn nt_peb_address(handle: &HandleGuard) -> Option<u64> {
     let mut info = ProcessBasicInformation::default();
     let mut return_length: u32 = 0;
-    // SAFETY：handle 有效；info 为 48 字节 repr(C) 栈结构（见类型注释的
+    // SAFETY:handle 有效；info 为 48 字节 repr(C) 栈结构（见类型注释的
     // x64 布局），与内核写入长度匹配；return_length 为 u32 出参。非零返回
     // 值为 NTSTATUS 失败码。
     let status = unsafe {
         NtQueryInformationProcess(
             handle.raw(),
-            ProcessBasicInformation,
+            PROCESS_BASIC_INFORMATION_CLASS,
             core::ptr::addr_of_mut!(info).cast::<core::ffi::c_void>(),
             u32::try_from(size_of::<ProcessBasicInformation>()).ok()?,
             &mut return_length,
@@ -135,10 +153,10 @@ pub fn nt_peb_address(handle: &HandleGuard) -> Option<u64> {
 /// `NtQueryInformationProcess(ProcessWow64Information)`：WOW64 进程的
 /// PEB32 基址（64 位 Runquiry 读 32 位目标进程的入口）。
 #[must_use]
-pub fn nt_wow64_peb_address(handle: &HandleGuard) -> Option<u64> {
+pub(crate) fn nt_wow64_peb_address(handle: &HandleGuard) -> Option<u64> {
     let mut peb32: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut return_length: u32 = 0;
-    // SAFETY：handle 有效；peb32 为 8 字节指针宽度的栈出参，覆盖
+    // SAFETY:handle 有效；peb32 为 8 字节指针宽度的栈出参，覆盖
     // ProcessWow64Information 的写入量（sizeof(PVOID)）。
     let status = unsafe {
         NtQueryInformationProcess(
@@ -157,10 +175,12 @@ pub fn nt_wow64_peb_address(handle: &HandleGuard) -> Option<u64> {
 
 /// PSAPI 内存计数器：`(WorkingSetSize, PrivateUsage)` 字节数。
 #[must_use]
-pub fn memory_counters(handle: &HandleGuard) -> Option<(u64, u64)> {
-    let mut counters = PROCESS_MEMORY_COUNTERS_EX::default();
-    counters.cb = u32::try_from(size_of::<PROCESS_MEMORY_COUNTERS_EX>()).ok()?;
-    // SAFETY：handle 有效；counters 为栈上结构且 cb 已按 sizeof(EX) 设置
+pub(crate) fn memory_counters(handle: &HandleGuard) -> Option<(u64, u64)> {
+    let mut counters = PROCESS_MEMORY_COUNTERS_EX {
+        cb: u32::try_from(size_of::<PROCESS_MEMORY_COUNTERS_EX>()).ok()?,
+        ..Default::default()
+    };
+    // SAFETY:handle 有效；counters 为栈上结构且 cb 已按 sizeof(EX) 设置
     // （Windows 以 cb 区分 EX 变体，witr extended_windows.go 同约定）；
     // API 以 PROCESS_MEMORY_COUNTERS 指针为形参、按 cb 实际写 EX。
     let ok = unsafe {
@@ -174,17 +194,14 @@ pub fn memory_counters(handle: &HandleGuard) -> Option<(u64, u64)> {
     if ok == 0 {
         return None;
     }
-    Some((
-        counters.WorkingSetSize as u64,
-        counters.PrivateUsage as u64,
-    ))
+    Some((counters.WorkingSetSize as u64, counters.PrivateUsage as u64))
 }
 
 /// `GetProcessIoCounters`：读写字节数与操作次数。
 #[must_use]
-pub fn io_counters(handle: &HandleGuard) -> Option<runquiry_core::IoStats> {
+pub(crate) fn io_counters(handle: &HandleGuard) -> Option<runquiry_core::IoStats> {
     let mut counters = windows_sys::Win32::System::Threading::IO_COUNTERS::default();
-    // SAFETY：handle 有效；counters 为 48 字节栈结构，与 API 写入量匹配。
+    // SAFETY:handle 有效；counters 为 48 字节栈结构，与 API 写入量匹配。
     let ok = unsafe { GetProcessIoCounters(handle.raw(), core::ptr::addr_of_mut!(counters)) };
     if ok == 0 {
         return None;
@@ -199,27 +216,25 @@ pub fn io_counters(handle: &HandleGuard) -> Option<runquiry_core::IoStats> {
 
 /// `GetProcessHandleCount`：句柄数（Windows 无 FD 概念，witr 记为 FDCount）。
 #[must_use]
-pub fn handle_count(handle: &HandleGuard) -> Option<u32> {
+pub(crate) fn handle_count(handle: &HandleGuard) -> Option<u32> {
     let mut count: u32 = 0;
-    // SAFETY：handle 有效；count 为栈上 u32 出参。
+    // SAFETY:handle 有效；count 为栈上 u32 出参。
     let ok = unsafe { GetProcessHandleCount(handle.raw(), &mut count) };
     (ok != 0).then_some(count)
 }
 
 /// 系统物理内存总量（进程生命周期内恒定，缓存一次）。
 #[must_use]
-pub fn total_physical_memory() -> u64 {
+pub(crate) fn total_physical_memory() -> u64 {
     static TOTAL: OnceLock<u64> = OnceLock::new();
     *TOTAL.get_or_init(|| {
-        let mut status = MEMORYSTATUSEX::default();
-        status.dwLength = u32::try_from(size_of::<MEMORYSTATUSEX>()).unwrap_or(0);
-        // SAFETY：status 为栈上 MEMORYSTATUSEX，dwLength 已按结构大小设置
+        let mut status = MEMORYSTATUSEX {
+            dwLength: u32::try_from(size_of::<MEMORYSTATUSEX>()).unwrap_or(0),
+            ..Default::default()
+        };
+        // SAFETY:status 为栈上 MEMORYSTATUSEX，dwLength 已按结构大小设置
         // （API 契约），返回 0 时保持零值（调用方按「总量不可得」处理）。
         let ok = unsafe { GlobalMemoryStatusEx(core::ptr::addr_of_mut!(status)) };
-        if ok == 0 {
-            0
-        } else {
-            status.ullTotalPhys
-        }
+        if ok == 0 { 0 } else { status.ullTotalPhys }
     })
 }

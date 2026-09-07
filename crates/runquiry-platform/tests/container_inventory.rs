@@ -1,7 +1,7 @@
-#![cfg(unix)]
 //! 汇总层测试：失败隔离（CLI 缺失 / 超时 / 非零退出时其他运行时结果仍在）、
 //! runtime + id 去重（跨运行时重复短 ID 不合并）、能力状态、Compose 临时键
 //! 不随 [`ContainerInventory`] 快照外泄、未知运行时与超长 ID 的边界。
+#![cfg(unix)]
 
 #[path = "container_inventory/host_pid.rs"]
 mod host_pid;

@@ -1,6 +1,6 @@
 //! IP Helper 表的整表行解析与 socket / 端口条目构造（纯逻辑）。
 
-use runquiry_core::{OpenPortEntry, Pid, SocketEntry, validate_socket_entry};
+use runquiry_core::{Pid, SocketEntry, validate_socket_entry};
 
 use super::wire::{
     SocketRow, TableKind, UDP_STATE, address_v4, address_v6, decode_port, tcp_state_name,
@@ -11,7 +11,7 @@ const MAX_ROWS: u32 = 65_536;
 
 /// 表解析失败（稳定文案由调用方组装，不携带表内容）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IpTableError {
+pub(crate) enum IpTableError {
     /// 表头不足 4 字节（dwNumEntries 读不出）。
     HeaderTooShort,
     /// 行数异常：表长与 `dwNumEntries` 推算长度不一致。
@@ -49,7 +49,7 @@ fn read_u32_le(buf: &[u8], offset: usize) -> Option<u32> {
 ///
 /// # Errors
 /// 表头过短 / 行数与表长不一致 / 条目数超上限时返回 [`IpTableError`]。
-pub fn parse_table(kind: TableKind, buf: &[u8]) -> Result<Vec<SocketRow>, IpTableError> {
+pub(crate) fn parse_table(kind: TableKind, buf: &[u8]) -> Result<Vec<SocketRow>, IpTableError> {
     let count = read_u32_le(buf, 0).ok_or(IpTableError::HeaderTooShort)?;
     if count > MAX_ROWS {
         return Err(IpTableError::RowCountExceedsCap {
@@ -83,14 +83,20 @@ fn parse_row(kind: TableKind, row: &[u8]) -> Option<SocketRow> {
         TableKind::TcpV4 => (
             address_v4(row.get(4..8)?.try_into().ok()?),
             read_u32_le(row, 8)?,
-            Some((address_v4(row.get(12..16)?.try_into().ok()?), read_u32_le(row, 16)?)),
+            Some((
+                address_v4(row.get(12..16)?.try_into().ok()?),
+                read_u32_le(row, 16)?,
+            )),
             read_u32_le(row, 0)?,
             read_u32_le(row, 20)?,
         ),
         TableKind::TcpV6 => (
             address_v6(row.get(0..16)?.try_into().ok()?),
             read_u32_le(row, 20)?,
-            Some((address_v6(row.get(24..40)?.try_into().ok()?), read_u32_le(row, 44)?)),
+            Some((
+                address_v6(row.get(24..40)?.try_into().ok()?),
+                read_u32_le(row, 44)?,
+            )),
             read_u32_le(row, 48)?,
             read_u32_le(row, 52)?,
         ),
@@ -129,7 +135,7 @@ fn parse_row(kind: TableKind, row: &[u8]) -> Option<SocketRow> {
 ///
 /// # Errors
 /// 端口缺失或越界 / 边界规则违规时返回说明性错误。
-pub fn to_socket_entry(
+pub(crate) fn to_socket_entry(
     row: &SocketRow,
     owner_pid: Option<Pid>,
 ) -> Result<Option<SocketEntry>, String> {
@@ -145,35 +151,14 @@ pub fn to_socket_entry(
         inode: None,
         port: Some(port),
         address: row.address.clone(),
-        remote_addr: row.remote.as_ref().and_then(|(addr, raw)| {
-            decode_port(*raw).map(|port| format!("{addr}:{port}"))
-        }),
+        remote_addr: row
+            .remote
+            .as_ref()
+            .and_then(|(addr, raw)| decode_port(*raw).map(|port| format!("{addr}:{port}"))),
         state: row.state.clone(),
         protocol: row.kind.protocol(),
         owner_pid,
     };
     validate_socket_entry(&entry)?;
     Ok(Some(entry))
-}
-
-/// 行 → 开放端口条目（`owner_pid` 由调用方判定：0 / 已退出 → `None`）。
-///
-/// # Errors
-/// 端口非法时返回说明性错误。
-pub fn to_open_port(row: &SocketRow, owner_pid: Option<Pid>) -> Result<OpenPortEntry, String> {
-    let port = decode_port(row.port_raw).ok_or_else(|| {
-        format!(
-            "{:?} 行 {} 端口 DWORD {:#x} 非法",
-            row.kind.protocol(),
-            row.address,
-            row.port_raw
-        )
-    })?;
-    Ok(OpenPortEntry {
-        pid: owner_pid,
-        port,
-        address: row.address.clone(),
-        protocol: row.kind.protocol(),
-        state: row.state.clone(),
-    })
 }

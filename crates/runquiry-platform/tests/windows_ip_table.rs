@@ -7,8 +7,7 @@ mod ip_table;
 fn ip_table_module_compiles_and_smoke_parses() {
     let buf = [0u8, 0, 0, 0];
     assert!(
-        ip_table::parse_table(ip_table::TableKind::TcpV4, &buf)
-            .is_ok_and(|rows| rows.is_empty()),
+        ip_table::parse_table(ip_table::TableKind::TcpV4, &buf).is_ok_and(|rows| rows.is_empty()),
         "空表应成功解析为空行列表"
     );
 }

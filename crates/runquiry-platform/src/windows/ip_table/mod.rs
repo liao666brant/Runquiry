@@ -15,16 +15,18 @@
 mod parse;
 mod wire;
 
-pub use parse::{IpTableError, parse_table, to_open_port, to_socket_entry};
-pub use wire::{
-    SocketRow, TableKind, UDP_STATE, address_v4, address_v6, decode_port, tcp_state_name,
-};
+pub(super) use parse::{IpTableError, parse_table, to_socket_entry};
+pub(super) use wire::{SocketRow, TableKind, decode_port};
+// 仅内部与 `#[path]` 纯解析测试使用的 wire 项：cfg(test) 门控，避免
+// 非 test 构建报未使用导入。
+#[cfg(test)]
+pub(super) use wire::{address_v4, address_v6, tcp_state_name};
 
 #[cfg(test)]
 mod tests {
     use super::{
-        SocketRow, TableKind, address_v4, address_v6, decode_port, parse_table, tcp_state_name,
-        to_open_port, to_socket_entry, IpTableError,
+        IpTableError, SocketRow, TableKind, address_v4, address_v6, decode_port, parse_table,
+        tcp_state_name, to_socket_entry,
     };
 
     use runquiry_core::{Pid, Port, Protocol};
@@ -35,7 +37,10 @@ mod tests {
     }
 
     fn row_bytes(values: [u32; 6]) -> Vec<u8> {
-        values.iter().flat_map(|value| value.to_le_bytes()).collect()
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
     }
 
     /// 测试内错误传播：`IpTableError` 未实现 `std::error::Error`（不为此
@@ -148,10 +153,9 @@ mod tests {
         let row = &rows[0];
         assert_eq!(row.state, "OPEN");
         assert_eq!(row.remote, None);
-        let port_entry = ok("端口条目", to_open_port(row, Pid::new(123).ok()))?;
-        assert_eq!(port_entry.protocol, Protocol::Udp);
-        assert_eq!(port_entry.state, "OPEN");
-        assert_eq!(port_entry.pid, Pid::new(123).ok());
+        let entry =
+            ok("条目构造", to_socket_entry(row, Pid::new(123).ok()))?.ok_or("行被意外丢弃")?;
+        assert_eq!(entry.owner_pid, Pid::new(123).ok());
         Ok(())
     }
 
@@ -174,7 +178,6 @@ mod tests {
             .err()
             .ok_or("端口 0 行应被拒绝而非构造条目")?;
         assert!(error.contains("非法"));
-        assert!(to_open_port(&rows[0], None).is_err());
         Ok(())
     }
 
@@ -204,7 +207,10 @@ mod tests {
 
     #[test]
     fn header_too_short_is_typed_failure() {
-        assert_eq!(parse_table(TableKind::UdpV4, &[0, 0]), Err(IpTableError::HeaderTooShort));
+        assert_eq!(
+            parse_table(TableKind::UdpV4, &[0, 0]),
+            Err(IpTableError::HeaderTooShort)
+        );
     }
 
     #[test]

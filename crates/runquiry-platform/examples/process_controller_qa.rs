@@ -1,20 +1,34 @@
 //! B7 真实进程控制 QA：只操作本程序自建并由 RAII 持有的 sleep 子进程。
-#![cfg(target_os = "linux")]
 #![allow(clippy::print_stdout)] // QA 交付物需记录 PID、状态与清理回执。
 
+// 双 main 模式保证非 Linux 平台 `cargo test --locked` 可编译（与 macos_qa /
+// windows_qa 的门控模式一致）；pidfd/renice 边界为 Linux 行为。
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    println!("process_controller_qa 仅可在 Linux 上运行；Windows 侧验证见 tests/windows_*.rs。");
+}
+
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::process::{Child, Command, Stdio};
+#[cfg(target_os = "linux")]
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "linux")]
 use runquiry_core::{
     InspectError, ProcessAction, ProcessController, ProcessIdentity, ProcessInventory, Renice,
 };
+#[cfg(target_os = "linux")]
 use runquiry_platform::linux::LinuxPlatform;
 
+#[cfg(target_os = "linux")]
 type QaResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
+#[cfg(target_os = "linux")]
 struct OwnedChild(Option<Child>);
 
+#[cfg(target_os = "linux")]
 impl OwnedChild {
     fn spawn() -> Result<Self, std::io::Error> {
         Command::new("sleep")
@@ -63,6 +77,7 @@ impl OwnedChild {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         if let Some(child) = self.0.as_mut() {
@@ -72,6 +87,7 @@ impl Drop for OwnedChild {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn identity(platform: &LinuxPlatform, pid: u32) -> QaResult<ProcessIdentity> {
     ProcessInventory::list(platform)
         .data
@@ -82,6 +98,7 @@ fn identity(platform: &LinuxPlatform, pid: u32) -> QaResult<ProcessIdentity> {
         .ok_or_else(|| format!("基线缺少 QA 子进程 {pid}").into())
 }
 
+#[cfg(target_os = "linux")]
 fn state_and_nice(pid: u32) -> QaResult<(char, i8)> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     let close = stat
@@ -99,6 +116,7 @@ fn state_and_nice(pid: u32) -> QaResult<(char, i8)> {
     Ok((state, nice))
 }
 
+#[cfg(target_os = "linux")]
 fn wait_stopped(pid: u32, expected: bool) -> QaResult<char> {
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {
@@ -111,6 +129,7 @@ fn wait_stopped(pid: u32, expected: bool) -> QaResult<char> {
     Err(format!("PID {pid} 未切换 stopped={expected}").into())
 }
 
+#[cfg(target_os = "linux")]
 fn main() -> QaResult {
     let mut graceful = OwnedChild::spawn()?;
     let graceful_pid = graceful.pid()?;

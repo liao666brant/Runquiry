@@ -52,8 +52,11 @@ unsafe extern "C" {
         buffersize: libc::c_int,
     ) -> libc::c_int;
     /// `libproc.h`：`int proc_pid_rusage(int pid, int flavor, void *buffer)`。
-    fn proc_pid_rusage(pid: libc::c_int, flavor: libc::c_int, buffer: *mut libc::c_void)
-    -> libc::c_int;
+    fn proc_pid_rusage(
+        pid: libc::c_int,
+        flavor: libc::c_int,
+        buffer: *mut libc::c_void,
+    ) -> libc::c_int;
 }
 
 /// `sys/proc_info.h` 的 `struct proc_taskinfo`（字段与顺序逐一对齐；前六个

@@ -14,7 +14,6 @@ use runquiry_core::{
 };
 
 use super::WindowsPlatform;
-use super::ffi;
 use super::ip_table::{self, TableKind};
 use super::winerror::{self, Win32Error};
 
@@ -58,27 +57,34 @@ impl TableFetchError {
 }
 
 /// 一次扩展表抓取：NULL 探询尺寸 → 分配 → 读取，不足时按新尺寸重试一次。
-fn fetch_table(table_class: i32, address_family: u32, udp: bool) -> Result<Vec<u8>, TableFetchError> {
+fn fetch_table(
+    table_class: i32,
+    address_family: u32,
+    udp: bool,
+) -> Result<Vec<u8>, TableFetchError> {
     let mut size: u32 = 0;
-    // SAFETY：第一阶段以空缓冲区探询尺寸（API 契约：pdwsize 出参写入所需
-    // 字节数，返回 ERROR_INSUFFICIENT_BUFFER / ERROR_MORE_DATA）。
-    let probe = unsafe {
-        if udp {
+    let probe = if udp {
+        // SAFETY:第一阶段以空缓冲区探询尺寸（API 契约：pdwsize 出参写入所需
+        // 字节数，返回 ERROR_INSUFFICIENT_BUFFER / ERROR_MORE_DATA）。
+        unsafe {
             windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedUdpTable(
                 core::ptr::null_mut(),
                 &mut size,
                 0,
                 address_family,
-                UDP_TABLE_OWNER_PID,
+                table_class,
                 0,
             )
-        } else {
+        }
+    } else {
+        // SAFETY:同上，仅换用 TCP 表 API，参数契约一致。
+        unsafe {
             windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedTcpTable(
                 core::ptr::null_mut(),
                 &mut size,
                 0,
                 address_family,
-                TCP_TABLE_OWNER_PID_ALL,
+                table_class,
                 0,
             )
         }
@@ -90,7 +96,6 @@ fn fetch_table(table_class: i32, address_family: u32, udp: bool) -> Result<Vec<u
     if size == 0 {
         return Err(TableFetchError::Probe(Win32Error(probe)));
     }
-    let mut size = size;
     let mut attempts = 0;
     while attempts < 2 {
         attempts += 1;
@@ -99,27 +104,30 @@ fn fetch_table(table_class: i32, address_family: u32, udp: bool) -> Result<Vec<u
         // pdwSize 出参必须用可存活的变量承接：ERROR_INSUFFICIENT_BUFFER 时
         // API 会写入实际所需字节数，重试必须按新尺寸分配（临时值会丢失出参）。
         let mut needed = size;
-        // SAFETY：buffer 为本函数分配的可写内存，长度 size 与 API 的
-        // pdwsize 约定一致；MIB 表内字段按 4 字节对齐写入，缓冲区起点由
-        // Rust 分配器保证 ≥ 8 字节对齐（Vec<u8> 实际布局依赖分配器，此处
-        // 读取一律经由缓冲区字节拷贝，不做结构体重解释）。
-        let written = unsafe {
-            if udp {
+        let written = if udp {
+            // SAFETY:buffer 为本函数分配的可写内存，长度 size 与 API 的
+            // pdwsize 约定一致；MIB 表内字段按 4 字节对齐写入，缓冲区起点由
+            // Rust 分配器保证 ≥ 8 字节对齐（Vec<u8> 实际布局依赖分配器，此处
+            // 读取一律经由缓冲区字节拷贝，不做结构体重解释）。
+            unsafe {
                 windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedUdpTable(
                     buffer.as_mut_ptr().cast::<core::ffi::c_void>(),
                     &mut needed,
                     0,
                     address_family,
-                    UDP_TABLE_OWNER_PID,
+                    table_class,
                     0,
                 )
-            } else {
+            }
+        } else {
+            // SAFETY:同上，仅换用 TCP 表 API，参数契约一致。
+            unsafe {
                 windows_sys::Win32::NetworkManagement::IpHelper::GetExtendedTcpTable(
                     buffer.as_mut_ptr().cast::<core::ffi::c_void>(),
                     &mut needed,
                     0,
                     address_family,
-                    TCP_TABLE_OWNER_PID_ALL,
+                    table_class,
                     0,
                 )
             }
@@ -220,10 +228,7 @@ impl WindowsPlatform {
 }
 
 /// 表解析错误 → 诊断（文案稳定，不含表内容）。
-fn parse_error_diagnostic(
-    kind: TableKind,
-    error: ip_table::IpTableError,
-) -> DiagnosticIssue {
+fn parse_error_diagnostic(kind: TableKind, error: ip_table::IpTableError) -> DiagnosticIssue {
     let reason = match error {
         ip_table::IpTableError::HeaderTooShort => String::from("表头不足（dwNumEntries 读不出）"),
         ip_table::IpTableError::RowCountMismatch {
@@ -237,7 +242,10 @@ fn parse_error_diagnostic(
             format!("条目数 {count} 超出防御上限 {cap}")
         }
     };
-    DiagnosticIssue::new(DiagnosticCode::ParseFailed, format!("{kind:?} 表：{reason}"))
+    DiagnosticIssue::new(
+        DiagnosticCode::ParseFailed,
+        format!("{kind:?} 表：{reason}"),
+    )
 }
 
 impl NetworkInventory for WindowsPlatform {

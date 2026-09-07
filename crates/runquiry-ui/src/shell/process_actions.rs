@@ -167,14 +167,11 @@ impl AppShell {
         cx.notify();
     }
 
-    fn confirm_process_action(&mut self, window: &Window, cx: &Context<'_, Self>) {
+    fn confirm_process_action(&mut self, window: &Window, cx: &mut Context<'_, Self>) {
         // 能力可能在确认期间退化（快照刷新取回新能力态）：过期确认不得绕过
         // 禁用状态，撤销请求并给出结构化原因。
         let capability = self.process_action_capability.clone();
-        let Some(request) = self
-            .process_action_flow
-            .confirm_if_usable(&capability)
-        else {
+        let Some(request) = self.process_action_flow.confirm_if_usable(&capability) else {
             cx.notify();
             return;
         };

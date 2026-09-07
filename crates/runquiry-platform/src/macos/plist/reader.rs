@@ -61,8 +61,7 @@ pub(super) fn tokenize(data: &str) -> Vec<Event> {
                     let close = format!("</{name}>");
                     match data[after_tag..].find(&close) {
                         Some(close_at) => {
-                            let text =
-                                decode_entities(&data[after_tag..after_tag + close_at]);
+                            let text = decode_entities(&data[after_tag..after_tag + close_at]);
                             events.push(match name {
                                 "key" => Event::Key(text),
                                 "string" => Event::Str(text),
@@ -104,8 +103,14 @@ fn decode_entities(text: &str) -> String {
             "gt" => Some('>'),
             "quot" => Some('"'),
             "apos" => Some('\''),
-            _ => entity.strip_prefix("#x").and_then(|hex| u32::from_str_radix(hex, 16).ok())
-                .or_else(|| entity.strip_prefix('#').and_then(|dec| dec.parse::<u32>().ok()))
+            _ => entity
+                .strip_prefix("#x")
+                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                .or_else(|| {
+                    entity
+                        .strip_prefix('#')
+                        .and_then(|dec| dec.parse::<u32>().ok())
+                })
                 .and_then(char::from_u32),
         };
         match decoded {

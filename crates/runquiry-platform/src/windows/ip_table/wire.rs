@@ -13,7 +13,7 @@ const UDP_V6_ROW_BYTES: usize = 28;
 
 /// 四类表（协议 = 行解码后的 core `Protocol`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TableKind {
+pub(crate) enum TableKind {
     /// IPv4 TCP（`TCP_TABLE_OWNER_PID_ALL`，含监听行）。
     TcpV4,
     /// IPv6 TCP。
@@ -27,7 +27,7 @@ pub enum TableKind {
 impl TableKind {
     /// 对应的 core 协议。
     #[must_use]
-    pub const fn protocol(self) -> Protocol {
+    pub(crate) const fn protocol(self) -> Protocol {
         match self {
             Self::TcpV4 => Protocol::Tcp,
             Self::TcpV6 => Protocol::Tcp6,
@@ -38,7 +38,7 @@ impl TableKind {
 
     /// 表头后的单行字节数。
     #[must_use]
-    pub const fn row_bytes(self) -> usize {
+    pub(crate) const fn row_bytes(self) -> usize {
         match self {
             Self::TcpV4 => TCP_V4_ROW_BYTES,
             Self::TcpV6 => TCP_V6_ROW_BYTES,
@@ -50,7 +50,7 @@ impl TableKind {
 
 /// 一行解码后的条目（地址为规范字符串，端口保留原始 DWORD 待校验）。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SocketRow {
+pub(crate) struct SocketRow {
     /// 表类型（决定协议与状态语义）。
     pub kind: TableKind,
     /// 本地地址规范字符串（IPv6 为 RFC 5952 压缩形式）。
@@ -68,7 +68,7 @@ pub struct SocketRow {
 /// 将 MIB_TCP_STATE 数值映射为状态名（netstat 风格；`LISTENING` → `LISTEN`，
 /// 与 witr `net_windows.go` 的 `LISTENING` 归一一致）。
 #[must_use]
-pub const fn tcp_state_name(state_raw: u32) -> &'static str {
+pub(crate) const fn tcp_state_name(state_raw: u32) -> &'static str {
     match state_raw {
         1 => "CLOSED",
         2 => "LISTEN",
@@ -88,23 +88,23 @@ pub const fn tcp_state_name(state_raw: u32) -> &'static str {
 }
 
 /// UDP 条目状态名（witr `GetSocketsForPID` 语义：UDP 无状态，记 `OPEN`）。
-pub const UDP_STATE: &str = "OPEN";
+pub(crate) const UDP_STATE: &str = "OPEN";
 
 /// 解码网络字节序的端口 DWORD（低 16 位）；0 视为无端口（调用方跳过该行）。
 #[must_use]
-pub fn decode_port(port_raw: u32) -> Option<Port> {
+pub(crate) fn decode_port(port_raw: u32) -> Option<Port> {
     let value = u16::from_be((port_raw & 0xFFFF) as u16);
     Port::new(value).ok()
 }
 
 /// IPv4 地址：网络字节序 4 字节 → 规范点分十进制。
 #[must_use]
-pub fn address_v4(octets: [u8; 4]) -> String {
+pub(crate) fn address_v4(octets: [u8; 4]) -> String {
     std::net::Ipv4Addr::from(octets).to_string()
 }
 
 /// IPv6 地址：网络字节序 16 字节 → RFC 5952 规范压缩字符串。
 #[must_use]
-pub fn address_v6(octets: [u8; 16]) -> String {
+pub(crate) fn address_v6(octets: [u8; 16]) -> String {
     std::net::Ipv6Addr::from(octets).to_string()
 }

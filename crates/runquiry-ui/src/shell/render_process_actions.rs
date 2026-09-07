@@ -149,10 +149,12 @@ fn process_action_error(error: &InspectError) -> String {
         InspectError::Unsupported { reason } => {
             t!("actions.error.unsupported", reason = reason).to_string()
         }
-        InspectError::ExternalTool { program, detail } => {
-            t!("actions.error.external_tool", program = program, detail = detail)
-                .to_string()
-        }
+        InspectError::ExternalTool { program, detail } => t!(
+            "actions.error.external_tool",
+            program = program,
+            detail = detail
+        )
+        .to_string(),
         InspectError::NotFound { .. }
         | InspectError::Ambiguous { .. }
         | InspectError::SocketOwnerUnknown { .. } => {

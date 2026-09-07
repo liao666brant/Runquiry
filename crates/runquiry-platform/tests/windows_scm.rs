@@ -1,5 +1,7 @@
 //! Windows SCM 缓冲区解析的 Linux 编译入口与行为测试（见
 //! `windows_utf16.rs` 头注释）。
+// utf16 的边界常量由 peb/fields 消费，本目标不含该模块，放行。
+#![allow(dead_code)]
 
 #[path = "../src/windows/utf16.rs"]
 mod utf16;
@@ -8,9 +10,8 @@ mod utf16;
 mod scm_parse;
 
 use scm_parse::{
-    ServiceConfig, RawServiceEntry, ScmParseError, dedup_by_pid, enum_entry_stride,
+    RawServiceEntry, ScmParseError, ServiceConfig, dedup_by_pid, enum_entry_stride,
     parse_enum_buffer, parse_query_service_config, parse_service_description, service_state_name,
-    start_mode_name,
 };
 
 /// 测试内错误传播：`ScmParseError` 未实现 `std::error::Error`（不为此改动
@@ -70,7 +71,10 @@ fn enum_buffer_parses_entries_with_strings() -> Result<(), Box<dyn std::error::E
     fixture.set_pointer(0, size_of::<usize>(), display);
     set_status(&mut fixture, 0, 4, 6260);
 
-    let entries = ok("枚举缓冲区", parse_enum_buffer(&fixture.buf, fixture.base, 1))?;
+    let entries = ok(
+        "枚举缓冲区",
+        parse_enum_buffer(&fixture.buf, fixture.base, 1),
+    )?;
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].name, "fxt-service");
     assert_eq!(entries[0].display_name, "Fixture Service");
@@ -143,15 +147,11 @@ fn dangling_pointer_is_typed_failure() {
 }
 
 #[test]
-fn state_and_start_mode_names_map_stably() {
+fn state_names_map_stably() {
     assert_eq!(service_state_name(4), "Running");
     assert_eq!(service_state_name(1), "Stopped");
     assert_eq!(service_state_name(7), "Paused");
     assert_eq!(service_state_name(0), "Unknown");
-    assert_eq!(start_mode_name(2), "Automatic");
-    assert_eq!(start_mode_name(3), "Manual");
-    assert_eq!(start_mode_name(4), "Disabled");
-    assert_eq!(start_mode_name(9), "Unknown");
 }
 
 /// 构造 `QueryServiceConfigW` 缓冲区：64 字节结构 + 尾部路径字符串。
@@ -177,18 +177,15 @@ fn query_service_config_parses_start_and_binary_path() -> Result<(), Box<dyn std
         config,
         ServiceConfig {
             start_raw: 2,
-            binary_path: Some(String::from(
-                "C:\\opt\\runquiry-fixtures\\fxt-app.exe"
-            )),
+            binary_path: Some(String::from("C:\\opt\\runquiry-fixtures\\fxt-app.exe")),
         }
     );
-    assert_eq!(start_mode_name(config.start_raw), "Automatic");
     Ok(())
 }
 
 #[test]
-fn query_service_config_with_bad_pointer_degrades_binary_path(
-) -> Result<(), Box<dyn std::error::Error>> {
+fn query_service_config_with_bad_pointer_degrades_binary_path()
+-> Result<(), Box<dyn std::error::Error>> {
     let base = 0x1000usize;
     let mut buf = vec![0u8; 64];
     buf[4..8].copy_from_slice(&3u32.to_le_bytes());

@@ -6,7 +6,7 @@ use super::layout::{PebLayout, extract_pointer};
 /// 已校验的远程字符串引用：`buffer` 非零、`length_bytes` 有界且不超过
 /// `MaximumLength`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RemoteString {
+pub(crate) struct RemoteString {
     /// 远端 Buffer 地址。
     pub buffer: u64,
     /// 字节长度（偶数化前的原始值，读取时截断到完整单元）。
@@ -15,7 +15,7 @@ pub struct RemoteString {
 
 /// UNICODE_STRING 校验失败（文案稳定；`field` 为字段名，不携带数据）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnicodeStringError {
+pub(crate) enum UnicodeStringError {
     /// `Length` 为 0 或 Buffer 为空。
     Empty,
     /// `Length` 超过 `MaximumLength`（读取中 PEB 被改写的典型痕迹）。
@@ -32,7 +32,7 @@ pub enum UnicodeStringError {
 ///
 /// # Errors
 /// 违反任一规则时返回 [`UnicodeStringError`]。
-pub const fn validate_unicode_string(
+pub(crate) const fn validate_unicode_string(
     length_bytes: u16,
     max_length: u16,
 ) -> Result<u16, UnicodeStringError> {
@@ -55,7 +55,7 @@ pub const fn validate_unicode_string(
 ///
 /// # Errors
 /// 缓冲区不足以覆盖该字段时返回 [`PebFieldError::ParamsTooShort`]。
-pub fn remote_string_field(
+pub(crate) fn remote_string_field(
     params: &[u8],
     layout: &PebLayout,
     field_offset: usize,
@@ -88,7 +88,7 @@ pub fn remote_string_field(
 
 /// 单字段提取失败（文案由调用方组装）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PebFieldError {
+pub(crate) enum PebFieldError {
     /// ProcessParameters 缓冲区不足以覆盖该字段（读取中进程退出 / PEB 变化）。
     ParamsTooShort {
         /// 需要的字节数。
@@ -104,7 +104,7 @@ pub enum PebFieldError {
 
 /// 从已读 ProcessParameters 缓冲区提取 Environment 块指针；缺省为 0。
 #[must_use]
-pub fn environment_pointer(params: &[u8], layout: &PebLayout) -> Option<u64> {
+pub(crate) fn environment_pointer(params: &[u8], layout: &PebLayout) -> Option<u64> {
     let end = layout.env_offset + layout.pointer_bytes;
     if params.len() < end {
         return None;
@@ -114,7 +114,7 @@ pub fn environment_pointer(params: &[u8], layout: &PebLayout) -> Option<u64> {
 
 /// 环境块读取上限（暴露给读取器：总量与单块字节数来自 utf16 常量）。
 #[must_use]
-pub const fn env_block_limits() -> (usize, usize) {
+pub(crate) const fn env_block_limits() -> (usize, usize) {
     (MAX_ENV_BLOCK_BYTES, ENV_CHUNK_BYTES)
 }
 
@@ -124,8 +124,8 @@ mod tests {
     // 私有导入（子模块可见），避免三重 `super::` 在 `#[path]` 测试上下文越界。
     use super::{
         ENV_CHUNK_BYTES, MAX_ENV_BLOCK_BYTES, MAX_STRING_BYTES, PebFieldError, PebLayout,
-        RemoteString, UnicodeStringError, environment_pointer, env_block_limits,
-        remote_string_field, validate_unicode_string,
+        RemoteString, UnicodeStringError, environment_pointer, remote_string_field,
+        validate_unicode_string,
     };
 
     fn us64(length: u16, max: u16, buffer: u64) -> Vec<u8> {
@@ -139,11 +139,7 @@ mod tests {
 
     /// 单字段提取的取值助手：`PebFieldError` 未实现 `std::error::Error`
     /// （不为此改动生产公共 API），Result/None 均映射为可传播的 String。
-    fn remote_of(
-        params: &[u8],
-        layout: &PebLayout,
-        offset: usize,
-    ) -> Result<RemoteString, String> {
+    fn remote_of(params: &[u8], layout: &PebLayout, offset: usize) -> Result<RemoteString, String> {
         match remote_string_field(params, layout, offset) {
             Ok(Some(remote)) => Ok(remote),
             Ok(None) => Err(String::from("合成数据应产生非空字段")),
@@ -152,8 +148,8 @@ mod tests {
     }
 
     #[test]
-    fn remote_string_field_validates_64_bit_unicode_string(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn remote_string_field_validates_64_bit_unicode_string()
+    -> Result<(), Box<dyn std::error::Error>> {
         let layout = PebLayout::win64();
         let mut params = vec![0u8; 136];
         let us = us64(26, 32, 0x0000_7FF6_ABCD_0000);
@@ -187,12 +183,18 @@ mod tests {
         );
         // Buffer 为 0 → 字段不可得（None，非错误）。
         params[0x70..0x80].copy_from_slice(&us64(26, 32, 0));
-        assert_eq!(remote_string_field(&params, &layout, layout.cmdline_offset), Ok(None));
+        assert_eq!(
+            remote_string_field(&params, &layout, layout.cmdline_offset),
+            Ok(None)
+        );
     }
 
     #[test]
     fn validate_unicode_string_rules() {
-        assert_eq!(validate_unicode_string(0, 10), Err(UnicodeStringError::Empty));
+        assert_eq!(
+            validate_unicode_string(0, 10),
+            Err(UnicodeStringError::Empty)
+        );
         assert_eq!(
             validate_unicode_string(u16::MAX, u16::MAX),
             Err(UnicodeStringError::Oversize)
@@ -202,7 +204,8 @@ mod tests {
             Err(UnicodeStringError::LengthExceedsMaximum)
         );
         assert_eq!(validate_unicode_string(26, 32), Ok(26));
-        assert!(MAX_STRING_BYTES >= 32_768);
+        // 编译期常量断言（改用 const 上下文以满足 lint 基线）。
+        const _: () = assert!(MAX_STRING_BYTES >= 32_768);
     }
 
     #[test]

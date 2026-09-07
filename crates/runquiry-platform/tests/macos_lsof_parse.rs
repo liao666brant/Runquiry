@@ -7,14 +7,14 @@
 //!
 //! 覆盖场景（C1 必测）：空格路径、中文路径、换行路径、字段缺失、非零退出
 //! 带部分 stdout 的抢救语义。全部数据为合成值（fxt- 前缀、fixture-user）。
-
-#![allow(missing_docs)]
+// lsof 的 plist / 网络归集辅助仅被 cfg(macos) 生产模块消费，本目标不含。
+#![allow(missing_docs, dead_code)]
 
 #[path = "../src/macos/lsof.rs"]
 mod lsof;
 
-use runquiry_core::{LockMode, Protocol};
 use lsof::{parse_cwd_txt, parse_file_rows, parse_holder_pids, parse_open_ports};
+use runquiry_core::{LockMode, Protocol};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -23,9 +23,9 @@ fn open_ports_parses_witr_column_format_and_salvages() -> TestResult {
     // 列格式：COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME [STATE]；
     // 首行表头跳过；UDP 无状态列按 witr 记 OPEN。
     let stdout = "COMMAND   PID  USER   FD   TYPE DEVICE SIZE/OFF NODE NAME\n\
-                  fxt-app   5150 fixture-user   12u  IPv4  0x100        TCP 127.0.0.1:8443 (LISTEN)\n\
-                  fxt-app   5150 fixture-user   13u  IPv6  0x101        UDP *:5353\n\
-                  fxt-app   5150 fixture-user   14u  IPv4  0x102        TCP *:9090\n";
+                  fxt-app   5150 fixture-user   12u  IPv4  0x100   0  TCP 127.0.0.1:8443 (LISTEN)\n\
+                  fxt-app   5150 fixture-user   13u  IPv6  0x101   0  UDP *:5353\n\
+                  fxt-app   5150 fixture-user   14u  IPv4  0x102   0  TCP *:9090\n";
     let (rows, issues) = parse_open_ports(stdout);
     assert!(issues.is_empty());
     assert_eq!(rows.len(), 3);
@@ -37,7 +37,7 @@ fn open_ports_parses_witr_column_format_and_salvages() -> TestResult {
     assert_eq!(rows[1].protocol, Protocol::Udp6);
     assert_eq!(rows[1].state, "OPEN");
     assert_eq!(rows[2].address, "0.0.0.0");
-    assert_eq!(rows[2].protocol, Protocol::Tcp6);
+    assert_eq!(rows[2].protocol, Protocol::Tcp);
     Ok(())
 }
 
@@ -46,7 +46,7 @@ fn open_ports_unknown_owner_kept_with_pid_none() -> TestResult {
     // PID 不可解析的行：条目保留为 pid: None + 诊断（core 端口后置条件；
     // witr 静默跳过，为满足 NetworkInventory 契约而保留——已披露偏差）。
     let stdout = "COMMAND   PID  USER   FD   TYPE DEVICE SIZE/OFF NODE NAME\n\
-                  fxt-app  nopriv fixture-user  12u  IPv4  0x100        TCP 127.0.0.1:8443 (LISTEN)\n";
+                  fxt-app  nopriv fixture-user  12u  IPv4  0x100   0  TCP 127.0.0.1:8443 (LISTEN)\n";
     let (rows, issues) = parse_open_ports(stdout);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].pid, None);
@@ -58,8 +58,8 @@ fn open_ports_unknown_owner_kept_with_pid_none() -> TestResult {
 fn open_ports_rejects_unformable_rows_with_diagnostics() -> TestResult {
     // 协议既非 TCP 也非 UDP（模型无法承载 UNKNOWN）与端口 0：跳过 + 诊断。
     let stdout = "COMMAND   PID  USER   FD   TYPE DEVICE SIZE/OFF NODE NAME\n\
-                  fxt-app   5150 fixture-user   12u  KQUEUE  0x100        NODE? no-colon\n\
-                  fxt-app   5150 fixture-user   14u  IPv4  0x102        TCP 127.0.0.1:0\n";
+                  fxt-app   5150 fixture-user   12u  KQUEUE  0x100   0  KQUEUE 1.2.3.4:123\n\
+                  fxt-app   5150 fixture-user   14u  IPv4  0x102   0  TCP 127.0.0.1:0\n";
     let (rows, issues) = parse_open_ports(stdout);
     assert!(rows.is_empty());
     assert_eq!(issues.len(), 2);
@@ -80,7 +80,10 @@ fn file_rows_recover_paths_with_spaces_and_cjk() -> TestResult {
     );
     assert_eq!(rows[0].fd, None); // cwd 非数字 FD。
     assert_eq!(rows[0].lock_mode, None);
-    assert_eq!(rows[1].path, "/Users/fixture-user/Library/RunquiryFixtures/锁 文件.lock");
+    assert_eq!(
+        rows[1].path,
+        "/Users/fixture-user/Library/RunquiryFixtures/锁 文件.lock"
+    );
     assert_eq!(rows[1].fd, Some(5));
     assert_eq!(rows[1].lock_mode, Some(LockMode::Write));
     Ok(())
@@ -96,7 +99,10 @@ fn file_rows_newline_paths_are_split_by_lines() -> TestResult {
     let (rows, issues) = parse_file_rows(stdout);
     // 第二段「行」字段不足 9 列：记诊断并跳过。
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].path, "/Users/fixture-user/Library/RunquiryFixtures/broken");
+    assert_eq!(
+        rows[0].path,
+        "/Users/fixture-user/Library/RunquiryFixtures/broken"
+    );
     assert_eq!(issues.len(), 1);
     Ok(())
 }
@@ -136,8 +142,14 @@ fn cwd_txt_salvage_semantics_match_witr() -> TestResult {
     // lsof -F fn：f 行定义当前 FD，n 行为路径；cwd 与 txt 分别归位。
     let stdout = "p5150\nfcwd\nn/Users/fixture-user/Library/RunquiryFixtures/c w d\nftxt\nn/Users/fixture-user/Library/RunquiryFixtures/bin/fxt-app\n";
     let (cwd, txt) = parse_cwd_txt(stdout);
-    assert_eq!(cwd, Some("/Users/fixture-user/Library/RunquiryFixtures/c w d".into()));
-    assert_eq!(txt, Some("/Users/fixture-user/Library/RunquiryFixtures/bin/fxt-app".into()));
+    assert_eq!(
+        cwd,
+        Some("/Users/fixture-user/Library/RunquiryFixtures/c w d".into())
+    );
+    assert_eq!(
+        txt,
+        Some("/Users/fixture-user/Library/RunquiryFixtures/bin/fxt-app".into())
+    );
     // 空输出（进程无 cwd 可读）：均为 None，不报错。
     assert_eq!(parse_cwd_txt(""), (None, None));
     Ok(())
@@ -154,7 +166,9 @@ fn holder_pids_parse_p_prefixed_lines() -> TestResult {
 
 #[test]
 fn open_ports_without_header_still_parses() -> TestResult {
-    let (rows, issues) = parse_open_ports("fxt-app   5150 fixture-user   12u  IPv4  0x100        TCP 127.0.0.1:8443 (LISTEN)\n");
+    let (rows, issues) = parse_open_ports(
+        "fxt-app   5150 fixture-user   12u  IPv4  0x100   0  TCP 127.0.0.1:8443 (LISTEN)\n",
+    );
     assert!(issues.is_empty());
     assert_eq!(rows.len(), 1);
     Ok(())

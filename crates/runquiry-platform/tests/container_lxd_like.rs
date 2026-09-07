@@ -1,6 +1,6 @@
-#![cfg(unix)]
 //! Incus / LXD（lxd-like 家族）测试：共享 REST JSON 解析、`list <name>` 的
 //! state.pid 主机 PID、LXD 双二进制探测约束与跨运行时不合并。
+#![cfg(unix)]
 
 #[path = "container_support.rs"]
 mod support;

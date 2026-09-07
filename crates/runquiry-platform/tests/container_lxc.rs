@@ -1,6 +1,6 @@
-#![cfg(unix)]
 //! 经典 LXC 测试：`lxc-ls --fancy --format json` 列表解析与
 //! `lxc-info -n <name> -p -H` 主机 PID。
+#![cfg(unix)]
 
 #[path = "container_support.rs"]
 mod support;

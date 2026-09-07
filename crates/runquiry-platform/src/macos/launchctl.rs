@@ -35,12 +35,11 @@ pub(crate) fn candidate_labels(name: &str) -> Vec<String> {
 pub(crate) fn parse_print_pid(output: &str) -> Option<u32> {
     for line in output.lines() {
         let trimmed = line.trim();
-        if let Some(raw) = trimmed.strip_prefix("pid = ") {
-            if let Ok(pid) = raw.trim().parse::<u32>() {
-                if pid > 0 {
-                    return Some(pid);
-                }
-            }
+        if let Some(raw) = trimmed.strip_prefix("pid = ")
+            && let Ok(pid) = raw.trim().parse::<u32>()
+            && pid > 0
+        {
+            return Some(pid);
         }
     }
     None
@@ -143,20 +142,15 @@ pub(crate) fn parse_env_from_ps_command(output: &str) -> Vec<(String, String)> {
         .filter(|token| token.contains('=') && !token.starts_with('-'))
         .filter_map(|token| {
             let (name, value) = token.split_once('=')?;
-            (!name.is_empty() && is_env_var_name(name)).then(|| {
-                (
-                    name.to_string(),
-                    token[name.len() + 1..].to_string(),
-                )
-            })
+            (!name.is_empty() && is_env_var_name(name))
+                .then(|| (name.to_string(), value.to_string()))
         })
         .collect()
 }
 
 /// 环境变量名形态校验（witr `isEnvVarName`：仅字母数字与 `_`）。
 fn is_env_var_name(name: &str) -> bool {
-    name.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 #[cfg(test)]
@@ -195,8 +189,14 @@ mod tests {
 
     #[test]
     fn limit_maxfiles_parses_soft_limit() {
-        assert_eq!(parse_limit_maxfiles("maxfiles    256            unlimited"), Some(256));
-        assert_eq!(parse_limit_maxfiles("maxfiles    unlimited      unlimited"), Some(0));
+        assert_eq!(
+            parse_limit_maxfiles("maxfiles    256            unlimited"),
+            Some(256)
+        );
+        assert_eq!(
+            parse_limit_maxfiles("maxfiles    unlimited      unlimited"),
+            Some(0)
+        );
         assert_eq!(parse_limit_maxfiles(""), None);
     }
 

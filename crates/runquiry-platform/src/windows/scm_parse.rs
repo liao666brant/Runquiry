@@ -10,11 +10,11 @@
 //! 合成基址）。语义对齐 witr `services_windows.go`：PID 0（服务已停止）
 //! 跳过、空服务名跳过、共享宿主（svchost）按 PID 首写者胜。
 
-use super::utf16::{self, Utf16Error, NUL_STRING_MAX_UNITS};
+use super::utf16::{self, NUL_STRING_MAX_UNITS, Utf16Error};
 
 /// 服务条目（枚举缓冲区中的一行；`pid_raw == 0` 表示服务未运行）。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawServiceEntry {
+pub(super) struct RawServiceEntry {
     /// SCM 服务名（写入 core 证据的 `service` 键）。
     pub name: String,
     /// 显示名（`display_name` 键）。
@@ -27,7 +27,7 @@ pub struct RawServiceEntry {
 
 /// SCM 缓冲区解析错误（文案稳定，不携带缓冲区内容）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScmParseError {
+pub(super) enum ScmParseError {
     /// 缓冲区不足以容纳 `count` 个条目（枚举被截断或计数损坏）。
     BufferTooShort {
         /// 声明的条目数。
@@ -52,7 +52,7 @@ impl From<Utf16Error> for ScmParseError {
 /// 单个条目的字节跨度：名称 / 显示名指针 + 9 × u32 的 SERVICE_STATUS_PROCESS，
 /// 按指针宽度对齐。
 #[must_use]
-pub fn enum_entry_stride() -> usize {
+pub(super) fn enum_entry_stride() -> usize {
     let ptr = size_of::<usize>();
     let status_bytes = 9 * 4;
     let unaligned = ptr * 2 + status_bytes;
@@ -64,7 +64,11 @@ pub fn enum_entry_stride() -> usize {
 ///
 /// # Errors
 /// 缓冲区与计数不一致 / 指针越界 / 字符串无终止符时返回 [`ScmParseError`]。
-pub fn parse_enum_buffer(buf: &[u8], base: usize, count: u32) -> Result<Vec<RawServiceEntry>, ScmParseError> {
+pub(super) fn parse_enum_buffer(
+    buf: &[u8],
+    base: usize,
+    count: u32,
+) -> Result<Vec<RawServiceEntry>, ScmParseError> {
     let stride = enum_entry_stride();
     let needed = count as usize * stride;
     if buf.len() < needed {
@@ -79,13 +83,14 @@ pub fn parse_enum_buffer(buf: &[u8], base: usize, count: u32) -> Result<Vec<RawS
         let base_offset = index * stride;
         // SERVICE_STATUS_PROCESS 起始偏移 = 2 × 指针宽度；状态 @ +4，PID @ +28。
         let status_offset = base_offset + size_of::<usize>() * 2;
-        let state_raw = read_u32_le(buf, status_offset + 4).ok_or(ScmParseError::BufferTooShort {
-            count,
-            needed,
-            actual: buf.len(),
-        })?;
-        let pid_raw = read_u32_le(buf, status_offset + 28)
-            .ok_or(ScmParseError::BufferTooShort {
+        let state_raw =
+            read_u32_le(buf, status_offset + 4).ok_or(ScmParseError::BufferTooShort {
+                count,
+                needed,
+                actual: buf.len(),
+            })?;
+        let pid_raw =
+            read_u32_le(buf, status_offset + 28).ok_or(ScmParseError::BufferTooShort {
                 count,
                 needed,
                 actual: buf.len(),
@@ -105,7 +110,7 @@ pub fn parse_enum_buffer(buf: &[u8], base: usize, count: u32) -> Result<Vec<RawS
 /// 按 PID 首写者胜出去重（witr `serviceMapForPIDs`：共享宿主 svchost.exe
 /// 保持跨调用稳定的服务名；PID 0 与空服务名跳过）。
 #[must_use]
-pub fn dedup_by_pid(entries: Vec<RawServiceEntry>) -> Vec<(u32, RawServiceEntry)> {
+pub(super) fn dedup_by_pid(entries: Vec<RawServiceEntry>) -> Vec<(u32, RawServiceEntry)> {
     let mut seen = std::collections::HashSet::new();
     let mut result = Vec::new();
     for entry in entries {
@@ -125,7 +130,7 @@ pub fn dedup_by_pid(entries: Vec<RawServiceEntry>) -> Vec<(u32, RawServiceEntry)
 
 /// `dwCurrentState` → 状态名（PowerShell `Get-Service` 风格，与 SCM 常量对应）。
 #[must_use]
-pub const fn service_state_name(state_raw: u32) -> &'static str {
+pub(super) const fn service_state_name(state_raw: u32) -> &'static str {
     match state_raw {
         1 => "Stopped",
         2 => "Start Pending",
@@ -138,23 +143,10 @@ pub const fn service_state_name(state_raw: u32) -> &'static str {
     }
 }
 
-/// `dwStartType` → 启动模式名（PowerShell `StartType` 风格）。
-#[must_use]
-pub const fn start_mode_name(start_raw: u32) -> &'static str {
-    match start_raw {
-        0 => "Boot",
-        1 => "System",
-        2 => "Automatic",
-        3 => "Manual",
-        4 => "Disabled",
-        _ => "Unknown",
-    }
-}
-
 /// `QueryServiceConfigW` 的解析结果（账户字段不采集：core 键契约不含账户，
 /// 敏感账户名不进入证据）。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ServiceConfig {
+pub(super) struct ServiceConfig {
     /// `dwStartType` 原值。
     pub start_raw: u32,
     /// 二进制路径（`binary_path` 键）。
@@ -166,7 +158,10 @@ pub struct ServiceConfig {
 ///
 /// # Errors
 /// 缓冲区过短 / 指针越界 / 字符串无终止符时返回 [`ScmParseError`]。
-pub fn parse_query_service_config(buf: &[u8], base: usize) -> Result<ServiceConfig, ScmParseError> {
+pub(super) fn parse_query_service_config(
+    buf: &[u8],
+    base: usize,
+) -> Result<ServiceConfig, ScmParseError> {
     let start_raw = read_u32_le(buf, 4).ok_or(ScmParseError::PointerOutOfRange)?;
     let binary_path = pointer_string_at(buf, base, offset_of_binary_path());
     Ok(ServiceConfig {
@@ -177,7 +172,7 @@ pub fn parse_query_service_config(buf: &[u8], base: usize) -> Result<ServiceConf
 
 /// `lpBinaryPathName` 在 `QUERY_SERVICE_CONFIGW` 内的字节偏移。
 #[must_use]
-pub const fn offset_of_binary_path() -> usize {
+pub(super) const fn offset_of_binary_path() -> usize {
     // type(4) + start(4) + error(4) + 对齐填充(4) → 第一个指针位于 16。
     16
 }
@@ -187,7 +182,7 @@ pub const fn offset_of_binary_path() -> usize {
 ///
 /// # Errors
 /// 指针越界 / 字符串无终止符时返回 [`ScmParseError`]。
-pub fn parse_service_description(buf: &[u8], base: usize) -> Result<String, ScmParseError> {
+pub(super) fn parse_service_description(buf: &[u8], base: usize) -> Result<String, ScmParseError> {
     pointer_string_at(buf, base, 0).ok_or(ScmParseError::PointerOutOfRange)
 }
 
@@ -219,8 +214,7 @@ fn read_pointer(buf: &[u8], offset: usize) -> Option<usize> {
 
 /// 把缓冲区内指针字段解析为字符串（指针绝对地址 → 相对偏移）。
 fn read_pointer_string(buf: &[u8], base: usize, offset: usize) -> Result<String, ScmParseError> {
-    pointer_string_at(buf, base, offset)
-        .ok_or(ScmParseError::PointerOutOfRange)
+    pointer_string_at(buf, base, offset).ok_or(ScmParseError::PointerOutOfRange)
 }
 
 /// 偏移处的指针 → 缓冲区内 NUL 终止 UTF-16 字符串；越界返回 `None`。

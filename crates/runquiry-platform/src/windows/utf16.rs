@@ -8,27 +8,27 @@
 
 /// 单个远程 UNICODE_STRING 缓冲区的字节上限（32 KiB；命令行 / 路径的实际
 /// 上限远低于此，超出按损坏数据处理）。
-pub const MAX_STRING_BYTES: u32 = 32_768;
+pub(super) const MAX_STRING_BYTES: u32 = 32_768;
 /// 远程环境块的总读取上限（witr `readEnvironmentBlock` 同值：128 KiB）。
-pub const MAX_ENV_BLOCK_BYTES: usize = 128 * 1024;
+pub(super) const MAX_ENV_BLOCK_BYTES: usize = 128 * 1024;
 /// 环境块单次远程读取块长（witr 同值：4 KiB）。
-pub const ENV_CHUNK_BYTES: usize = 4096;
+pub(super) const ENV_CHUNK_BYTES: usize = 4096;
 /// 解析以 NUL 终止的指针字符串时的扫描上限（UTF-16 单元数；SCM 名称实际
 /// 上限 256 字符，超出即视为缓冲区损坏）。
-pub const NUL_STRING_MAX_UNITS: usize = 4096;
+pub(super) const NUL_STRING_MAX_UNITS: usize = 4096;
 
 /// 将 UTF-16LE 字节序列无损解码为字符串。
 ///
 /// 尾部奇数字节（PEB 读取中字符串被改短的典型痕迹）被丢弃；成对代理项
 /// 正常解码，孤立代理项由 `String::from_utf16_lossy` 替换为 U+FFFD。
 #[must_use]
-pub fn decode_lossy(bytes: &[u8]) -> String {
+pub(super) fn decode_lossy(bytes: &[u8]) -> String {
     decode_lossy_units(&le_units(bytes))
 }
 
 /// 将 UTF-16 单元序列解码为字符串（孤立代理项 → U+FFFD）。
 #[must_use]
-pub fn decode_lossy_units(units: &[u16]) -> String {
+pub(super) fn decode_lossy_units(units: &[u16]) -> String {
     String::from_utf16_lossy(units)
 }
 
@@ -43,8 +43,11 @@ fn le_units(bytes: &[u8]) -> Vec<u16> {
 /// 在固定长度 UTF-16 数组（如 `PROCESSENTRY32W.szExeFile`）内读取首个
 /// NUL 之前的字符串（缺失终止符时取全数组，调用方数组本身有界）。
 #[must_use]
-pub fn decode_fixed_array(units: &[u16]) -> String {
-    let end = units.iter().position(|unit| *unit == 0).unwrap_or(units.len());
+pub(super) fn decode_fixed_array(units: &[u16]) -> String {
+    let end = units
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(units.len());
     decode_lossy_units(&units[..end])
 }
 
@@ -52,7 +55,7 @@ pub fn decode_fixed_array(units: &[u16]) -> String {
 ///
 /// # Errors
 /// 在 `cap` 内未找到终止符时返回 [`Utf16Error::NoTerminator`]。
-pub fn nul_terminated_bounded(units: &[u16], cap: usize) -> Result<String, Utf16Error> {
+pub(super) fn nul_terminated_bounded(units: &[u16], cap: usize) -> Result<String, Utf16Error> {
     let end = units
         .iter()
         .take(cap)
@@ -63,14 +66,14 @@ pub fn nul_terminated_bounded(units: &[u16], cap: usize) -> Result<String, Utf16
 
 /// UTF-16 解析错误（稳定文案，不携带任何进程数据）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Utf16Error {
+pub(super) enum Utf16Error {
     /// 在扫描上限内未找到 NUL 终止符（缓冲区越界或损坏）。
     NoTerminator,
 }
 
 /// 返回环境块内 `KEY=VALUE\0\0` 双 NUL 终止符的起始单元下标；未读到为 `None`。
 #[must_use]
-pub fn scan_env_block_end(block: &[u16]) -> Option<usize> {
+pub(super) fn scan_env_block_end(block: &[u16]) -> Option<usize> {
     (0..block.len().saturating_sub(1)).find(|&index| block[index] == 0 && block[index + 1] == 0)
 }
 
@@ -79,7 +82,7 @@ pub fn scan_env_block_end(block: &[u16]) -> Option<usize> {
 /// `terminated == false` 表示读取在达到块长上限或读取失败时截断——按已读
 /// 长度解析已有内容，不伪造完整块（parity：无终止符按已读长度截断）。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ParsedEnv {
+pub(super) struct ParsedEnv {
     /// `KEY=VALUE` 键值对；无 `=` 的损坏条目被跳过。
     pub pairs: Vec<(String, String)>,
     /// 是否读取到空条目终止符。
@@ -88,7 +91,7 @@ pub struct ParsedEnv {
 
 /// 解析环境块单元序列（witr `parseEnvBlock` 的键值对化）。
 #[must_use]
-pub fn parse_env_block(block: &[u16]) -> ParsedEnv {
+pub(super) fn parse_env_block(block: &[u16]) -> ParsedEnv {
     let terminated = scan_env_block_end(block).is_some();
     let usable = match scan_env_block_end(block) {
         Some(end) => &block[..end],
@@ -103,17 +106,14 @@ pub fn parse_env_block(block: &[u16]) -> ParsedEnv {
             (!key.is_empty()).then(|| (String::from(key), String::from(value)))
         })
         .collect();
-    ParsedEnv {
-        pairs,
-        terminated,
-    }
+    ParsedEnv { pairs, terminated }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ParsedEnv, decode_fixed_array, decode_lossy, decode_lossy_units, nul_terminated_bounded,
-        parse_env_block, scan_env_block_end, Utf16Error, NUL_STRING_MAX_UNITS,
+        NUL_STRING_MAX_UNITS, ParsedEnv, Utf16Error, decode_fixed_array, decode_lossy,
+        decode_lossy_units, nul_terminated_bounded, parse_env_block, scan_env_block_end,
     };
 
     #[test]
@@ -122,7 +122,10 @@ mod tests {
             .encode_utf16()
             .flat_map(|unit| unit.to_le_bytes())
             .collect();
-        assert_eq!(decode_lossy(&bytes), "C:\\opt\\runquiry-fixtures\\fxt-app.exe");
+        assert_eq!(
+            decode_lossy(&bytes),
+            "C:\\opt\\runquiry-fixtures\\fxt-app.exe"
+        );
     }
 
     #[test]
@@ -178,9 +181,7 @@ mod tests {
 
     #[test]
     fn env_block_end_finds_double_nul() {
-        let block: Vec<u16> = "A=V\0\0\x4141"
-            .encode_utf16()
-            .collect();
+        let block: Vec<u16> = "A=V\0\0\x4141".encode_utf16().collect();
         assert_eq!(scan_env_block_end(&block), Some(3));
         assert_eq!(scan_env_block_end(&[0, 0]), Some(0));
         assert_eq!(scan_env_block_end(&[0]), None);
@@ -188,9 +189,7 @@ mod tests {
 
     #[test]
     fn env_block_parses_pairs_and_stops_at_terminator() {
-        let mut block = "FXT_VAR=fixture-value"
-            .encode_utf16()
-            .collect::<Vec<_>>();
+        let mut block = "FXT_VAR=fixture-value".encode_utf16().collect::<Vec<_>>();
         block.push(0);
         block.extend("FXT_NEXT=1".encode_utf16());
         block.push(0);
@@ -215,7 +214,7 @@ mod tests {
         block.push(0);
         block.extend("FXT_HALF".encode_utf16());
         let parsed = parse_env_block(&block);
-        assert_eq!(parsed.terminated, false);
+        assert!(!parsed.terminated);
         assert_eq!(parsed.pairs.len(), 1);
     }
 

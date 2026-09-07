@@ -15,7 +15,7 @@ use super::winerror::{Win32Error, diagnostic_for};
 
 /// 一次远程 PEB 读取的结果：字段按可得性填充，单字段失败只加诊断。
 #[derive(Debug, Default)]
-pub struct PebRead {
+pub(super) struct PebRead {
     /// 完整命令行。
     pub command_line: Option<String>,
     /// PEB 内的镜像路径（注意：可能与 QueryFullProcessImageNameW 的
@@ -29,20 +29,9 @@ pub struct PebRead {
     pub issues: Vec<DiagnosticIssue>,
 }
 
-impl PebRead {
-    /// 是否所有字段都不可得（调用方据此判断 PEB 通道整体不可用）。
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.command_line.is_none()
-            && self.image_path.is_none()
-            && self.working_dir.is_none()
-            && self.environment.is_none()
-    }
-}
-
 /// 以已打开的进程句柄读取 PEB 字符串（64 位与 WOW64 目标进程）。
 #[must_use]
-pub fn read_remote_strings(handle: &HandleGuard) -> PebRead {
+pub(super) fn read_remote_strings(handle: &HandleGuard) -> PebRead {
     let mut read = PebRead::default();
     // WOW64 判定失败（罕见）按 64 位目标处理并记诊断。
     let is_wow64 = match ffi::is_wow64(handle) {
@@ -55,11 +44,11 @@ pub fn read_remote_strings(handle: &HandleGuard) -> PebRead {
             false
         }
     };
-    let Some(peb_address) = if is_wow64 {
+    let Some(peb_address) = (if is_wow64 {
         ffi::nt_wow64_peb_address(handle)
     } else {
         ffi::nt_peb_address(handle)
-    } else {
+    }) else {
         read.issues.push(DiagnosticIssue::new(
             DiagnosticCode::Unknown,
             String::from("NtQueryInformationProcess 未返回 PEB 地址（受保护进程或读取失败）"),
@@ -75,7 +64,8 @@ pub fn read_remote_strings(handle: &HandleGuard) -> PebRead {
         plan.params_ptr.0,
         &mut pointer_buffer[..pointer_bytes],
     ) {
-        read.issues.push(diagnostic_for(error, "PEB ProcessParameters 指针"));
+        read.issues
+            .push(diagnostic_for(error, "PEB ProcessParameters 指针"));
         return read;
     }
     let Some(params_address) = peb::extract_pointer(&pointer_buffer, pointer_bytes) else {
@@ -88,7 +78,8 @@ pub fn read_remote_strings(handle: &HandleGuard) -> PebRead {
     let mut params = vec![0u8; layout.params_bytes];
     if let Err(error) = ffi::read_remote_memory(handle, params_address, &mut params) {
         // 进程在读取中退出：已读部分不足以解释任何字段 → 整体不可得。
-        read.issues.push(diagnostic_for(error, "PEB ProcessParameters 结构"));
+        read.issues
+            .push(diagnostic_for(error, "PEB ProcessParameters 结构"));
         return read;
     }
     for (field, target) in [

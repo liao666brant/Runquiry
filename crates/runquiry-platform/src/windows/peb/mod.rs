@@ -14,11 +14,17 @@
 mod fields;
 mod layout;
 
-pub use fields::{
-    PebFieldError, RemoteString, UnicodeStringError, environment_pointer, env_block_limits,
-    remote_string_field, validate_unicode_string,
+// 重导出供生产消费方（peb_reader）与测试按需取用；不同消费方使用的子集
+// 不同，统一放行未使用导入，避免逐目标告警。
+#[allow(unused_imports)]
+pub(super) use fields::{
+    PebFieldError, RemoteString, env_block_limits, environment_pointer, remote_string_field,
 };
-pub use layout::{
-    PEB32_PARAMS_PTR_OFFSET, PEB64_PARAMS_PTR_OFFSET, PebLayout, ReadPlan, build_plan,
-    extract_pointer, layout_for,
-};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(super) use fields::{UnicodeStringError, validate_unicode_string};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(super) use layout::{PEB32_PARAMS_PTR_OFFSET, PEB64_PARAMS_PTR_OFFSET, PebLayout, ReadPlan};
+#[allow(unused_imports)]
+pub(super) use layout::{build_plan, extract_pointer, layout_for};

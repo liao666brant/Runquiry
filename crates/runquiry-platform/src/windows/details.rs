@@ -17,7 +17,6 @@ use super::WindowsPlatform;
 use super::ffi::{self, HandleGuard};
 use super::peb_reader;
 use super::process_list::sysinfo_snapshot;
-use super::winerror::diagnostic_for;
 
 /// 逐字段部分成功采集器。
 struct PartialDetails {
@@ -49,11 +48,12 @@ impl PartialDetails {
     }
 }
 
-/// 仅刷新单个 PID 的 sysinfo 快照。
+/// 仅刷新单个 PID 的 sysinfo 快照（目标进程必须存在）。
 fn fresh_process(pid: u32) -> Option<System> {
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]));
-    system.process(sysinfo::Pid::from_u32(pid)).map(|_| system)
+    let found = system.process(sysinfo::Pid::from_u32(pid)).is_some();
+    found.then_some(system)
 }
 
 /// 从 sysinfo 取当前身份的启动时间与可执行路径（PID 复用比较与回退共用）。
@@ -62,13 +62,6 @@ fn current_identity(pid: u32) -> Option<(Option<SystemTime>, Option<std::path::P
     let process = system.process(sysinfo::Pid::from_u32(pid))?;
     let start = super::process_list::start_time_from_sysinfo(process.start_time());
     Some((start, process.exe().map(std::path::Path::to_path_buf)))
-}
-
-/// 仅刷新单个 PID 的 sysinfo 快照。
-fn fresh_process(pid: u32) -> Option<System> {
-    let mut system = System::new();
-    system.refresh_processes(ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]));
-    system.process(sysinfo::Pid::from_u32(pid)).map(|_| system)
 }
 
 impl ProcessDetailsProvider for WindowsPlatform {
@@ -97,8 +90,13 @@ impl ProcessDetailsProvider for WindowsPlatform {
         let mut partial = PartialDetails::new(pid);
         match ffi::open_process_graded(pid) {
             Ok(handle) => {
-                let details =
-                    self.collect_with_handle(pid, &handle, current_start, sysinfo_exe, &mut partial);
+                let details = self.collect_with_handle(
+                    pid,
+                    &handle,
+                    current_start,
+                    sysinfo_exe,
+                    &mut partial,
+                );
                 Ok(partial.finish(details))
             }
             Err(error) => {
@@ -197,7 +195,11 @@ impl WindowsPlatform {
         // extended_windows.go 的 FDCount = handle count 语义）。
         let fd_count = ffi::handle_count(handle).map(u64::from);
         ProcessDetails {
-            identity: ProcessIdentity::new(Pid::new(pid).unwrap_or(Pid::MIN), current_start, exe_path),
+            identity: ProcessIdentity::new(
+                Pid::new(pid).unwrap_or(Pid::MIN),
+                current_start,
+                exe_path,
+            ),
             cpu_percent,
             memory_rss_bytes,
             memory_percent: memory_percent_of(memory_rss_bytes),

@@ -29,8 +29,8 @@ impl AppShell {
         let backend = Arc::clone(&self.backend);
         let work = cx.background_spawn(async move {
             let snapshot = backend.load(workspace);
-            let control_capability = (workspace == WorkspaceId::Processes)
-                .then(|| backend.process_control_capability());
+            let control_capability =
+                (workspace == WorkspaceId::Processes).then(|| backend.process_control_capability());
             RefreshOutput {
                 snapshot,
                 control_capability,

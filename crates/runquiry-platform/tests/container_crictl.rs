@@ -1,6 +1,6 @@
-#![cfg(unix)]
 //! crictl 运行时（runtime 名 `k8s`）测试：列表解析、inspect 双解析
 //! （老版本 info 为 JSON 字符串包装）、主机 PID 为零/缺失语义。
+#![cfg(unix)]
 
 #[path = "container_support.rs"]
 mod support;

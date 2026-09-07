@@ -75,7 +75,8 @@ pub(crate) fn parse_open_ports(stdout: &str) -> (Vec<RawOpenPort>, Vec<String>) 
             issues.push(format!("lsof -i 行字段少于 9 列，跳过：{line}"));
             continue;
         }
-        // NODE 列（fields[7]）为 TCP/UDP；行内兜底嗅探（witr 同语义）。
+        // NODE 列（fields[7]）应为 TCP/UDP；非 TCP/UDP 的行模型无法承载
+        //（witr 记 UNKNOWN，此处按已披露偏差跳过并记诊断）。
         let node = fields[7];
         let name = fields[8];
         let pid = match fields[1].parse::<u32>() {
@@ -99,7 +100,12 @@ pub(crate) fn parse_open_ports(stdout: &str) -> (Vec<RawOpenPort>, Vec<String>) 
             issues.push(format!("lsof -i 行地址无法解析，跳过：{line}"));
             continue;
         };
-        let Some(protocol) = protocol_of(node, &address) else {
+        // TYPE 列（fields[4]）是套接字族的权威来源：witr 的 Protocol 为
+        // TCP/UDP 字符串，Runquiry 模型区分 v4/v6，通配地址文本无法判定族。
+        let is_v6 = fields
+            .get(4)
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("IPv6"));
+        let Some(protocol) = protocol_of(node, is_v6) else {
             issues.push(format!("lsof -i 行协议既非 TCP 也非 UDP，跳过：{line}"));
             continue;
         };
@@ -138,16 +144,16 @@ pub(crate) fn parse_netstat_addr(name: &str) -> Option<(String, u16)> {
         return Some((String::from("0.0.0.0"), port));
     }
     // 标准冒号形式：`127.0.0.1:8080`。
-    if let Some(idx) = name.rfind(':') {
-        if let Ok(port) = name[idx + 1..].parse::<u16>() {
-            return Some((name[..idx].to_string(), port));
-        }
+    if let Some(idx) = name.rfind(':')
+        && let Ok(port) = name[idx + 1..].parse::<u16>()
+    {
+        return Some((name[..idx].to_string(), port));
     }
     // macOS netstat 点分形式：`127.0.0.1.8080`。
-    if let Some(idx) = name.rfind('.') {
-        if let Ok(port) = name[idx + 1..].parse::<u16>() {
-            return Some((name[..idx].to_string(), port));
-        }
+    if let Some(idx) = name.rfind('.')
+        && let Ok(port) = name[idx + 1..].parse::<u16>()
+    {
+        return Some((name[..idx].to_string(), port));
     }
     None
 }
@@ -156,12 +162,11 @@ pub(crate) fn parse_netstat_addr(name: &str) -> Option<(String, u16)> {
 ///
 /// witr 原样保留 `TCP`/`UDP` 字符串；core 模型区分 v4/v6，这里按地址形状
 /// 归类（属平台适配，见交付报告披露）。
-fn protocol_of(node: &str, address: &str) -> Option<Protocol> {
-    let v6 = address.starts_with('[') || address.contains(':');
+fn protocol_of(node: &str, is_v6: bool) -> Option<Protocol> {
     match node {
-        "TCP" if !v6 => Some(Protocol::Tcp),
+        "TCP" if !is_v6 => Some(Protocol::Tcp),
         "TCP" => Some(Protocol::Tcp6),
-        "UDP" if !v6 => Some(Protocol::Udp),
+        "UDP" if !is_v6 => Some(Protocol::Udp),
         "UDP" => Some(Protocol::Udp6),
         _ => None,
     }
@@ -290,7 +295,10 @@ mod tests {
             parse_netstat_addr("*.8080"),
             Some((String::from("0.0.0.0"), 8080))
         );
-        assert_eq!(parse_netstat_addr("[::1]:8080"), Some((String::from("::1"), 8080)));
+        assert_eq!(
+            parse_netstat_addr("[::1]:8080"),
+            Some((String::from("::1"), 8080))
+        );
         assert_eq!(
             parse_netstat_addr("127.0.0.1:8080"),
             Some((String::from("127.0.0.1"), 8080))

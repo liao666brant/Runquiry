@@ -45,7 +45,9 @@ impl SourceEvidenceProvider for WindowsPlatform {
             let Ok(pid) = Pid::new(pid_raw) else {
                 continue;
             };
-            evidence.windows_service_by_pid.push((pid, service_kv(&entry)));
+            evidence
+                .windows_service_by_pid
+                .push((pid, service_kv(&entry)));
         }
         evidence
     }

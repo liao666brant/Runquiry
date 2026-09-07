@@ -7,14 +7,28 @@
 //! 不读其他进程的环境值；不使用 sudo，不自动提权。
 #![allow(clippy::print_stdout, clippy::print_stderr)] // QA 示例以控制台输出为交付物
 
+// 双 main 模式保证非 Linux 平台 `cargo test --locked` 可编译（与 macos_qa /
+// windows_qa 的门控模式一致）。
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    println!("linux_qa 仅可在 Linux 上运行；Windows 侧验证见 tests/windows_*.rs。");
+    println!(
+        "本机可执行的验证：cargo test -p runquiry-platform --locked（windows_*/macos_* 纯解析测试）。"
+    );
+}
+
+#[cfg(target_os = "linux")]
 use std::process::Command;
 
+#[cfg(target_os = "linux")]
 use runquiry_core::{
     FileInventory, NetworkInventory, Pid, ProcessDetailsProvider, ProcessFileLocks,
     ProcessIdentity, ProcessInventory,
 };
+#[cfg(target_os = "linux")]
 use runquiry_platform::linux::LinuxPlatform;
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let platform = LinuxPlatform::new()?;
     println!("== Runquiry B2 Linux QA（真实采集） ==");
@@ -108,6 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// 文件清单只输出分类计数，不暴露全量路径或进程信息。可选首个参数指向
 /// 调用方自行创建的受控目标；默认查询自身可执行文件。
+#[cfg(target_os = "linux")]
 fn print_file_inventory_qa(platform: &LinuxPlatform) -> Result<(), Box<dyn std::error::Error>> {
     let inventory = FileInventory::list(platform);
     let inventory_entries = inventory.data.as_deref().unwrap_or_default();
@@ -161,6 +176,7 @@ fn print_file_inventory_qa(platform: &LinuxPlatform) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn print_child_details(
     platform: &LinuxPlatform,
     child_pid: Pid,

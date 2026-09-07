@@ -1,7 +1,7 @@
-#![cfg(unix)]
 //! docker-like 家族（docker / podman / nerdctl）解析与行为测试：假 CLI 伪造
 //! 机器格式输出，覆盖正常/空/损坏/截断/字段类型错误、host PID、富集与
 //! Compose 临时键的解析阶段边界。
+#![cfg(unix)]
 
 #[path = "container_docker_like/details.rs"]
 mod details;

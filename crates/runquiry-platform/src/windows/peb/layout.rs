@@ -1,9 +1,9 @@
 //! PEB 布局常量与有界读取计划（纯逻辑：只产出「读什么、读多长」）。
 
 /// 64 位 PEB 内 ProcessParameters 指针的字节偏移。
-pub const PEB64_PARAMS_PTR_OFFSET: usize = 0x20;
+pub(crate) const PEB64_PARAMS_PTR_OFFSET: usize = 0x20;
 /// 32 位（WOW64）PEB 内 ProcessParameters32 指针的字节偏移。
-pub const PEB32_PARAMS_PTR_OFFSET: usize = 0x10;
+pub(crate) const PEB32_PARAMS_PTR_OFFSET: usize = 0x10;
 
 /// UNICODE_STRING64：`Length/MaximumLength` u16 + 填充 + Buffer 指针 @8。
 const US64_BYTES: usize = 16;
@@ -12,7 +12,7 @@ const US32_BYTES: usize = 8;
 
 /// 平台布局：一次远程读取的偏移、宽度与步长全部由此驱动。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PebLayout {
+pub(crate) struct PebLayout {
     /// 是否为 WOW64（64 位 Runquiry 读 32 位进程）。
     pub is_wow64: bool,
     /// PEB → ProcessParameters 指针的字节偏移。
@@ -38,7 +38,7 @@ pub struct PebLayout {
 impl PebLayout {
     /// 64 位目标进程的布局（witr x64 分支偏移）。
     #[must_use]
-    pub const fn win64() -> Self {
+    pub(crate) const fn win64() -> Self {
         Self {
             is_wow64: false,
             params_ptr_offset: PEB64_PARAMS_PTR_OFFSET,
@@ -55,7 +55,7 @@ impl PebLayout {
 
     /// 32 位（WOW64）目标进程的布局（witr 32 位分支偏移）。
     #[must_use]
-    pub const fn wow64() -> Self {
+    pub(crate) const fn wow64() -> Self {
         Self {
             is_wow64: true,
             params_ptr_offset: PEB32_PARAMS_PTR_OFFSET,
@@ -73,7 +73,7 @@ impl PebLayout {
 
 /// 按 WOW64 判定选取布局。
 #[must_use]
-pub const fn layout_for(is_wow64: bool) -> PebLayout {
+pub(crate) const fn layout_for(is_wow64: bool) -> PebLayout {
     if is_wow64 {
         PebLayout::wow64()
     } else {
@@ -83,7 +83,7 @@ pub const fn layout_for(is_wow64: bool) -> PebLayout {
 
 /// 远程读取计划：按序执行的 (远端地址, 本地读取字节数) 步骤。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReadPlan {
+pub(crate) struct ReadPlan {
     /// 第一步：读 ProcessParameters 指针（PEB 内）。
     pub params_ptr: (u64, usize),
     /// 第二步：读 ProcessParameters 结构（覆盖到 Environment 指针）。
@@ -92,7 +92,7 @@ pub struct ReadPlan {
 
 /// 以 PEB 基址构造有界读取计划（地址来自 NtQueryInformationProcess）。
 #[must_use]
-pub const fn build_plan(layout: &PebLayout, peb_address: u64) -> ReadPlan {
+pub(crate) const fn build_plan(layout: &PebLayout, peb_address: u64) -> ReadPlan {
     let (offset, bytes) = (layout.params_ptr_offset as u64, layout.pointer_bytes as u64);
     ReadPlan {
         params_ptr: (peb_address + offset, bytes as usize),
@@ -102,7 +102,7 @@ pub const fn build_plan(layout: &PebLayout, peb_address: u64) -> ReadPlan {
 
 /// 从本地已读缓冲区按宽度提取指针（LE；32 位零扩展）。
 #[must_use]
-pub fn extract_pointer(buf: &[u8], width: usize) -> Option<u64> {
+pub(crate) fn extract_pointer(buf: &[u8], width: usize) -> Option<u64> {
     if width != 4 && width != 8 {
         return None;
     }

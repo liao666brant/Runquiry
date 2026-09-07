@@ -8,8 +8,9 @@
 //! 路径解析、label 校验与候选、maxfiles 软上限；plist 缺失字段、嵌套
 //! dict（KeepAlive dict 按 false）、实体转义、StartCalendarInterval 的
 //! dict / 数组两种形态。全部数据为合成值。
-
-#![allow(missing_docs)]
+// launchctl 的 plist 候选路径与 ps -E 环境提取仅被 cfg(macos) 生产模块
+// 消费，本目标不含。
+#![allow(missing_docs, dead_code)]
 
 #[path = "../src/macos/launchctl.rs"]
 mod launchctl;
@@ -18,9 +19,9 @@ mod plist;
 
 use launchctl::{
     candidate_labels, domain_description, is_valid_service_label, parse_blame_service,
-    parse_list_label, parse_limit_maxfiles, parse_print_pid,
+    parse_limit_maxfiles, parse_list_label, parse_print_pid,
 };
-use plist::{format_triggers, parse_plist_xml, LaunchdPlistInfo};
+use plist::{LaunchdPlistInfo, format_triggers, parse_plist_xml};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -73,8 +74,14 @@ fn list_label_and_candidates_follow_witr() -> TestResult {
 
 #[test]
 fn limit_maxfiles_and_domain_descriptions() -> TestResult {
-    assert_eq!(parse_limit_maxfiles("maxfiles    256            unlimited"), Some(256));
-    assert_eq!(parse_limit_maxfiles("maxfiles    unlimited      unlimited"), Some(0));
+    assert_eq!(
+        parse_limit_maxfiles("maxfiles    256            unlimited"),
+        Some(256)
+    );
+    assert_eq!(
+        parse_limit_maxfiles("maxfiles    unlimited      unlimited"),
+        Some(0)
+    );
     assert_eq!(domain_description("system"), "Launch Daemon");
     assert_eq!(domain_description("gui/501"), "Launch Agent");
     assert_eq!(domain_description("user"), "Launch Agent");
@@ -123,7 +130,10 @@ fn plist_extracts_witr_consumed_fields() -> TestResult {
     assert!(info.run_at_load);
     assert!(info.keep_alive);
     assert_eq!(info.start_interval, 7200);
-    assert_eq!(info.watch_paths, vec!["/Users/fixture-user/Library/RunquiryFixtures/watch"]);
+    assert_eq!(
+        info.watch_paths,
+        vec!["/Users/fixture-user/Library/RunquiryFixtures/watch"]
+    );
     assert_eq!(format_triggers(&info).len(), 4);
     Ok(())
 }
@@ -136,7 +146,10 @@ fn plist_calendar_interval_dict_and_array() -> TestResult {
         </dict></plist>";
     let info = parse_plist_xml(dict_xml);
     assert_eq!(info.start_calendar_interval, "Mon at 09:30");
-    assert_eq!(format_triggers(&info), vec!["StartCalendarInterval (Mon at 09:30)"]);
+    assert_eq!(
+        format_triggers(&info),
+        vec!["StartCalendarInterval (Mon at 09:30)"]
+    );
 
     let array_xml = "<plist><dict><key>Label</key><string>fxt</string>\
         <key>StartCalendarInterval</key><array>\
@@ -165,6 +178,9 @@ fn plist_nested_dict_and_missing_fields_are_tolerated() -> TestResult {
     assert_eq!(info.comment, "");
     // 空输入 / 截断输入：返回空结果（调用方记诊断），不 panic。
     assert_eq!(parse_plist_xml(""), LaunchdPlistInfo::default());
-    assert_eq!(parse_plist_xml("<plist><dict><key>Label</key><str"), LaunchdPlistInfo::default());
+    assert_eq!(
+        parse_plist_xml("<plist><dict><key>Label</key><str"),
+        LaunchdPlistInfo::default()
+    );
     Ok(())
 }
