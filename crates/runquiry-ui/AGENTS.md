@@ -20,7 +20,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 - `session`：AppSession/WorkspaceId/WorkspaceSession——四工作区隔离的 LoadState/generation/选择/排序/筛选；手工与自动刷新共用 `try_refresh` 一条通道，in-flight 拒绝重入；刷新完成/中止与结果均绑定 generation，过期信号不改变当前请求。
 - `debounce`：DetailDebounce 500ms 详情防抖（注入毫秒时钟，纯逻辑）。
 - `backend`：`WorkspaceBackend` 是 UI 与装配层的采集/解析/分析及进程控制边界；`WorkspaceSnapshot` 将四类采集结果按工作区路由，`WorkspaceResultGate` 同时校验工作区与 generation，容器无已验证宿主 PID 时保留容器详情而不误报未找到；动作 seam 默认明确返回 `Unsupported`。
-- `processes` / `workspaces`：进程表及 Ports、Containers、File Locks 的行模型、筛选/排序、查询结果和详情映射；`ProcessCommand` 集中声明刷新、查询、工作区与动作菜单快捷键，`ProcessActionFlow` 冻结确认时的身份、拦截重复提交并门控过期结果，具体平台操作始终由后端能力态安全禁用；C3 起能力退化经 `revoke_confirmation_if_unusable` 撤销确认，清单工作区经 `LoadPresentation::boundary_reason` 保留 Unsupported/Unavailable 平台原因并以 `workspaces::interactions_enabled` 禁用边界状态下的模式/筛选交互；Processes 页表面状态由 `SurfaceState::from_parts` 推导，与清单工作区 `map_state` 共用同一套边界/失败语义（`state_from_inspection` 为单一事实源）。
+- `processes` / `workspaces`：进程表及 Ports、Containers、File Locks 的行模型、筛选/排序、查询结果和详情映射；`ProcessCommand` 集中声明刷新、查询、工作区与动作菜单快捷键，`ProcessActionFlow` 冻结确认时的身份、拦截重复提交并门控过期结果，具体平台操作始终由后端能力态安全禁用；C3 起能力退化经 `revoke_confirmation_if_unusable` 撤销确认、确认提交前经 `confirm_if_usable` 按当前能力再门禁（不可用时撤销并记录结构化 Unsupported 原因），清单工作区经 `LoadPresentation::boundary_reason` 保留 Unsupported/Unavailable 平台原因并以 `workspaces::interactions_enabled` 禁用边界状态下的模式/筛选交互；Processes 页表面状态由 `SurfaceState::from_parts` 推导，与清单工作区 `map_state` 共用同一套边界/失败语义（`state_from_inspection` 为单一事实源）。
 - `shell`：AppShell 产品壳层（侧栏四工作区/工具栏/主数据区/详情区/StatusBar）；宽度 ≥1100px 使用真实 `h_resizable` 初始 65/35 主从分栏，960–1099px 保留完整主区并以选择后的 Sheet 呈现详情。进程动作区支持 TERM/KILL/STOP/CONT/renice 的 AlertDialog 二次确认、取消/关闭与结构化错误文案；动作成功按类型返回列表或保留详情并强制新代际刷新。语言切换保留会话实体，并同步既有 query/filter `InputState` placeholder；`ShellStartup` 启动设置一次到位，`ShellEvent`（主题/语言/工作区变化）交装配层持久化。真实 X11 QA 已验证五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。
 
 ## 关键依赖与配置
@@ -30,7 +30,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 ## 测试与质量
 
-- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57，确认态修复随后以 `cargo test -p runquiry-ui processes::action_tests::confirm_freezes_identity_and_rejects_duplicate_submission --locked` 定向执行 1/1。不要将其表述为 58 个 UI 测试全跑。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）。Batch 7A C3 新增 `capability_contract_tests`（7 个三平台假后端契约测试）**已编写、未运行**，运行后以实际数字更新本段。
+- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57，确认态修复随后以 `cargo test -p runquiry-ui processes::action_tests::confirm_freezes_identity_and_rejects_duplicate_submission --locked` 定向执行 1/1。不要将其表述为 58 个 UI 测试全跑。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）。Batch 7A C3 新增 `capability_contract_tests`（7 个三平台假后端契约测试）、Batch 7B C4 新增确认门禁测试 2 个（`confirm_gate_*`）**均已编写、未运行**，运行后以实际数字更新本段。
 - clippy 注意：锁定依赖树的 77 条 `multiple-crate-versions` 为基线既有问题，`-D warnings` 验证时豁免该项（见模块 05 计划 A4 实施记录）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束。
 
@@ -62,4 +62,5 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 - 2026-09-03：Batch 2 评审修复——刷新完成/中止绑定 generation；1099/1100px 断点落实；无采集器壳层改用 Unsupported 语义；窗口尺寸改由 app 层平台 bounds 事件维护。
 - 2026-09-04（未提交工作区）：Batch 4A B5/B6/I1——新增只读 `WorkspaceBackend` 边界、Processes/Ports/Containers/File Locks 四工作区的真实快照与详情呈现；app 负责注入平台实现。宽窗详情改为可拖拽 `h_resizable`，窄窗使用 Sheet；长证据值允许换行。语言切换更新已创建的 query/filter InputState 占位符而不重建会话。ui 测试增至 48 个。
 - 2026-09-07（未提交工作区）：Batch 4B B7——新增进程动作能力 seam、二次确认与键盘契约，确认时冻结身份并以请求/代际门控异步结果；TERM/KILL 返回列表，STOP/CONT/renice 强制刷新详情；UI 完整套件 57/57，确认态定向测试 1/1。真实 X11 QA 已覆盖五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。
+- 2026-09-07（未提交工作区）：Batch 7B C4（套件准备，验证阻断）——提交前再门禁提取为 `ProcessActionFlow::confirm_if_usable`（与撤销门禁同源、复用 cancel/report 原语），壳层 `confirm_process_action` 瘦身；`action_tests.rs` 新增 2 个门禁测试。三平台契约覆盖矩阵与差异复核见 `.omo/evidence/batch7b-c4-matrix.md`；全部新代码未经编译/测试验证，C4 保持未完成、v1 契约未冻结。
 - 2026-09-07（未提交工作区）：Batch 7A C3（验证阻断）——`DataState` 新增 `Unavailable` 环境边界态（DESIGN §6 六种呈现状态、图标 `info`），产品工作区状态文案统一走 `locale::workspace_state_copy`；`LoadPresentation` 保留 Unsupported/Unavailable 平台原因并在 StateView 透出，能力边界下模式/筛选/排序禁用；进程控制能力随 Processes 刷新动态取回、能力退化撤销确认并在提交前再门禁；动作错误补 `actions.error.unsupported`/`actions.error.external_tool` 专用键，删除死键 `main.collector_unavailable.*`。新增 7 个三平台假后端契约测试与 `gallery.unavailable` 相关键；全部新代码未经编译/测试/GUI 验证。code-review 修复：Processes 页失败采集不再伪装成空集合（`SurfaceState::from_parts` 与清单 `map_state` 同语义，`state_from_inspection` 改为部件签名共享单一事实源），交互门控与边界判定同源。

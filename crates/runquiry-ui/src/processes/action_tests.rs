@@ -166,3 +166,37 @@ fn action_shortcuts_never_consume_text_input() {
     assert!(!accepts_action_shortcut(true, true));
     assert!(!accepts_action_shortcut(false, false));
 }
+
+#[test]
+fn confirm_gate_rejects_degraded_capability_without_background_request() {
+    let mut flow = ProcessActionFlow::new();
+    assert!(flow.request(
+        &CapabilityStatus::Supported,
+        identity(7, 10),
+        ProcessAction::Terminate,
+    ));
+    let capability = CapabilityStatus::Unavailable(String::from("collector unavailable"));
+    assert!(flow.confirm_if_usable(&capability).is_none());
+    assert!(!flow.is_confirming());
+    assert!(!flow.is_executing());
+    assert!(matches!(
+        flow.last_error(),
+        Some(InspectError::Unsupported { reason }) if reason.as_str() == "collector unavailable"
+    ));
+}
+
+#[test]
+fn confirm_gate_with_usable_capability_produces_the_request() {
+    let mut flow = ProcessActionFlow::new();
+    assert!(flow.request(
+        &CapabilityStatus::Partial(String::from("limited")),
+        identity(7, 10),
+        ProcessAction::Pause,
+    ));
+    let request = flow.confirm_if_usable(&CapabilityStatus::Partial(String::from("limited")));
+    assert!(request.is_some());
+    let Some(request) = request else { return };
+    assert!(flow.is_executing());
+    assert!(!flow.is_confirming());
+    assert_eq!(request.action(), ProcessAction::Pause);
+}

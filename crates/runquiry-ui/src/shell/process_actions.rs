@@ -171,16 +171,11 @@ impl AppShell {
         // 能力可能在确认期间退化（快照刷新取回新能力态）：过期确认不得绕过
         // 禁用状态，撤销请求并给出结构化原因。
         let capability = self.process_action_capability.clone();
-        if !capability.is_usable() {
-            self.process_action_flow.cancel_confirmation();
-            self.process_action_flow
-                .report_error(InspectError::Unsupported {
-                    reason: capability.reason().unwrap_or_default().to_owned(),
-                });
+        let Some(request) = self
+            .process_action_flow
+            .confirm_if_usable(&capability)
+        else {
             cx.notify();
-            return;
-        }
-        let Some(request) = self.process_action_flow.confirm() else {
             return;
         };
         let backend = std::sync::Arc::clone(&self.backend);

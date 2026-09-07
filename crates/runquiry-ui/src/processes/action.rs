@@ -152,6 +152,22 @@ impl ProcessActionFlow {
         self.pending.take().is_some()
     }
 
+    /// 确认提交前按当前能力再门禁：确认期间能力退化时，过期确认不得绕过
+    /// 禁用状态产生后台请求。
+    ///
+    /// 能力不可用时撤销未确认请求并记录结构化原因（与
+    /// `revoke_confirmation_if_unusable` 同源）；可用时等同 `confirm`。
+    pub fn confirm_if_usable(&mut self, capability: &CapabilityStatus) -> Option<ActionRequest> {
+        if !capability.is_usable() {
+            self.cancel_confirmation();
+            self.report_error(InspectError::Unsupported {
+                reason: capability.reason().unwrap_or_default().to_owned(),
+            });
+            return None;
+        }
+        self.confirm()
+    }
+
     /// 确认并冻结请求；第二次确认不会产生重复执行。
     pub fn confirm(&mut self) -> Option<ActionRequest> {
         if self.in_flight.is_some() {

@@ -28,6 +28,7 @@
 ## TODOs
 
 - [ ] **C4 三平台契约回归**
+  - 进度（2026-09-07，Batch 7B；**套件准备完成，验证阻断**）：三平台契约覆盖矩阵、差异复核与缺口清单落地（`.omo/evidence/batch7b-c4-matrix.md`）；确认提交前再门禁提取为 `ProcessActionFlow::confirm_if_usable` 并补 2 个门禁测试（闭合 H 类唯一本轮缺口）。环境盘点：无 macOS 主机；WSL 后发现 Windows 主机（rustup 1.98.0-msvc）待授权；交叉目标装在 1.98.0 而项目锁 1.95.0。C1/C2 编译与实机证据仍为零，C3/C4 新测试未运行——C4 保持未完成，v1 契约未冻结，不开始 D1/D2。
   - 依赖：C1-C3。
   - 在 Linux、macOS、Windows 运行同一 adapter contract suite。
   - 对比排序、过滤、五类目标、来源、告警、脱敏、刷新、设置和能力状态。
