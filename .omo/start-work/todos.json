@@ -1,0 +1,59 @@
+{
+  "work_id": "runquiry-batch4a-20260904",
+  "active_plan": ".omo/plans/runquiry-gpui-desktop/05-desktop-ui.md",
+  "phases": [
+    {
+      "id": "batch4a-implementation",
+      "status": "completed",
+      "tasks": [
+        {
+          "id": "S1",
+          "title": "建立 Batch 4A UI 模块边界",
+          "status": "completed"
+        },
+        {
+          "id": "P1",
+          "title": "补齐 File Locks 全量清单公共契约",
+          "status": "completed",
+          "decision": "新增 FileInventoryEntry + LockMetadata；普通 FD 与真实锁分离；Linux list/holders 提供真实全量快照"
+        },
+        {
+          "id": "B5",
+          "title": "Processes 与调查工作区",
+          "status": "completed"
+        },
+        {
+          "id": "B6",
+          "title": "Ports、Containers、File Locks 工作区",
+          "status": "completed"
+        },
+        {
+          "id": "I1",
+          "title": "接通真实 backend、AppShell、四工作区与调查交互",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "batch4a-verification",
+      "status": "completed",
+      "tasks": [
+        {
+          "id": "V1",
+          "title": "独立代码与契约验证",
+          "status": "completed"
+        },
+        {
+          "id": "V2",
+          "title": "真实 Linux GPUI 视觉与交互 QA",
+          "status": "completed"
+        },
+        {
+          "id": "V3",
+          "title": "Batch 4A 集成门与证据收口",
+          "status": "completed"
+        }
+      ]
+    }
+  ]
+}

@@ -8,23 +8,23 @@ use rust_i18n::t;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
-    Styled as _, Window, div,
+    Styled as _, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme as _, Disableable as _, Root, Selectable as _, Sizable as _,
     button::{Button, ButtonVariants as _},
-    h_flex,
+    h_flex, h_resizable, resizable_panel,
     sidebar::{Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem},
     status_bar::StatusBar,
     v_flex,
 };
 
-use super::actions::RefreshWorkspace;
-use super::{AppShell, DETAIL_RATIO, KEY_CONTEXT, MAIN_RATIO};
+use super::actions::{
+    FocusQuery, RefreshWorkspace, Workspace1, Workspace2, Workspace3, Workspace4,
+};
+use super::{AppShell, KEY_CONTEXT};
 use crate::locale::Lang;
 use crate::session::WorkspaceId;
-use crate::state::DataState;
-use crate::state_view::StateView;
 
 /// 工具栏控件的稳定元素 ID 与 tab 顺序号（与视觉顺序一致，见 gallery 的做法）。
 const TAB_REFRESH: isize = 1;
@@ -32,16 +32,25 @@ const TAB_THEME_LIGHT: isize = 2;
 const TAB_THEME_DARK: isize = 3;
 const TAB_LANG_EN: isize = 4;
 const TAB_LANG_ZH_CN: isize = 5;
-const INLINE_DETAIL_MIN_WIDTH: u32 = 1_100;
+const MAIN_PANEL_SHARE: f32 = 0.65;
 
 /// 宽窗口内联显示详情；窄窗口为后续按选择打开 Sheet 保留主区宽度。
-const fn shows_inline_detail(width: u32) -> bool {
-    width >= INLINE_DETAIL_MIN_WIDTH
+fn shows_inline_detail(width: gpui::Pixels) -> bool {
+    width >= px(1_100.)
+}
+
+/// 宽窗口的初始列表宽度。分隔条实际拖拽后的值由 `ResizableState` 保留。
+fn initial_main_panel_width(window_width: gpui::Pixels) -> gpui::Pixels {
+    let sidebar_width = px(224.);
+    let main_minimum = px(360.);
+    let detail_minimum = px(280.);
+    let available = (window_width - sidebar_width).max(main_minimum + detail_minimum);
+    (available * MAIN_PANEL_SHARE).clamp(main_minimum, available - detail_minimum)
 }
 
 impl Render for AppShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let shows_inline_detail = shows_inline_detail(u32::from(window.bounds().size.width));
+        let shows_inline_detail = shows_inline_detail(window.bounds().size.width);
 
         // 覆盖层由内容视图负责绘制（DESIGN.md §5），顺序即层级。
         let sheet_layer = Root::render_sheet_layer(window, cx);
@@ -54,6 +63,19 @@ impl Render for AppShell {
             .on_action(cx.listener(|this, _: &RefreshWorkspace, _, cx| {
                 this.refresh_active(cx);
             }))
+            .on_action(cx.listener(|this, _: &FocusQuery, window, cx| this.focus_query(window, cx)))
+            .on_action(cx.listener(|this, _: &Workspace1, _, cx| {
+                this.switch_workspace(WorkspaceId::Processes, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Workspace2, _, cx| {
+                this.switch_workspace(WorkspaceId::Ports, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Workspace3, _, cx| {
+                this.switch_workspace(WorkspaceId::Containers, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Workspace4, _, cx| {
+                this.switch_workspace(WorkspaceId::FileLocks, cx);
+            }))
             .text_color(cx.theme().foreground)
             .bg(cx.theme().background)
             .child(self.render_toolbar(cx))
@@ -62,9 +84,34 @@ impl Render for AppShell {
                     .flex_1()
                     .min_h_0()
                     .child(self.render_sidebar(cx))
-                    .child(self.render_main_area(shows_inline_detail, cx))
                     .when(shows_inline_detail, |layout| {
-                        layout.child(self.render_detail_area(cx))
+                        layout.child(
+                            div()
+                                .id("workspace-detail-split-container")
+                                .flex_1()
+                                .h_full()
+                                .min_w_0()
+                                .min_h_0()
+                                .child(
+                                    h_resizable("workspace-detail-split")
+                                        .child(
+                                            resizable_panel()
+                                                .size(initial_main_panel_width(
+                                                    window.bounds().size.width,
+                                                ))
+                                                .size_range(px(360.)..gpui::Pixels::MAX)
+                                                .child(self.render_main_area(true, cx)),
+                                        )
+                                        .child(
+                                            resizable_panel()
+                                                .size_range(px(280.)..gpui::Pixels::MAX)
+                                                .child(self.render_detail_area(cx)),
+                                        ),
+                                ),
+                        )
+                    })
+                    .when(!shows_inline_detail, |layout| {
+                        layout.child(self.render_main_area(false, cx))
                     }),
             )
             .child(self.render_status_bar(cx))
@@ -136,8 +183,8 @@ impl AppShell {
             .label(t!("toolbar.language.en").to_string())
             .tab_index(TAB_LANG_EN)
             .selected(self.lang == Lang::En)
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.set_language(Lang::En, cx);
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.set_language(Lang::En, window, cx);
             }));
         let zh_cn = Button::new("lang-zh-cn")
             .small()
@@ -145,8 +192,8 @@ impl AppShell {
             .label(t!("toolbar.language.zh_cn").to_string())
             .tab_index(TAB_LANG_ZH_CN)
             .selected(self.lang == Lang::ZhCn)
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.set_language(Lang::ZhCn, cx);
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.set_language(Lang::ZhCn, window, cx);
             }));
 
         h_flex().items_center().gap_1().child(en).child(zh_cn)
@@ -174,45 +221,6 @@ impl AppShell {
                             })),
                         ),
                     ),
-            )
-    }
-
-    /// 主数据区：平台采集端口尚未接入，各工作区展示诚实的能力边界态
-    /// （`StateView` 语义，不注入演示数据）。
-    fn render_main_area(
-        &self,
-        shows_inline_detail: bool,
-        cx: &Context<'_, Self>,
-    ) -> impl IntoElement {
-        div()
-            .id("main-panel")
-            .track_focus(&self.main_focus)
-            .flex_grow(MAIN_RATIO)
-            .min_w_0()
-            .min_h_0()
-            .when(shows_inline_detail, |panel| {
-                panel.border_r_1().border_color(cx.theme().border)
-            })
-            .child(
-                StateView::new(
-                    DataState::Unsupported,
-                    t!("main.collector_unavailable.title").to_string(),
-                )
-                .description(t!("main.collector_unavailable.description").to_string()),
-            )
-    }
-
-    /// 详情区：占位提示；真实详情由 B5/B6 随选择与平台端口接入。
-    fn render_detail_area(&self, _cx: &Context<'_, Self>) -> impl IntoElement {
-        div()
-            .id("detail-panel")
-            .track_focus(&self.detail_focus)
-            .flex_grow(DETAIL_RATIO)
-            .min_w_0()
-            .min_h_0()
-            .child(
-                StateView::new(DataState::Empty, t!("detail.placeholder.title").to_string())
-                    .description(t!("detail.placeholder.description").to_string()),
             )
     }
 
@@ -249,12 +257,13 @@ fn workspace_title(workspace: WorkspaceId) -> SharedString {
 
 #[cfg(test)]
 mod tests {
-    use super::shows_inline_detail;
+    use super::{MAIN_PANEL_SHARE, initial_main_panel_width, shows_inline_detail};
+    use gpui::px;
 
     #[test]
     fn hides_inline_detail_when_window_is_1099_pixels_wide() {
         // Given: the widest window in the compact layout range.
-        let width = 1_099;
+        let width = px(1_099.);
 
         // When: the master-detail presentation is selected.
         let shows_detail = shows_inline_detail(width);
@@ -266,12 +275,23 @@ mod tests {
     #[test]
     fn shows_inline_detail_when_window_is_1100_pixels_wide() {
         // Given: the first width in the wide layout range.
-        let width = 1_100;
+        let width = px(1_100.);
 
         // When: the master-detail presentation is selected.
         let shows_detail = shows_inline_detail(width);
 
         // Then: detail is rendered alongside the main workspace.
         assert!(shows_detail);
+    }
+
+    #[test]
+    fn wide_layout_starts_with_a_65_35_split_after_the_sidebar() {
+        for width in [px(1_100.), px(1_280.)] {
+            let available = width - px(224.);
+            let main = initial_main_panel_width(width);
+
+            assert!((main.as_f32() / available.as_f32() - MAIN_PANEL_SHARE).abs() < f32::EPSILON);
+            assert!(available - main >= px(280.));
+        }
     }
 }

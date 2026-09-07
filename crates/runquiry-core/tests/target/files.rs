@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use runquiry_core::{FileLockEntry, LockMode, LockType, Pid, Resolution, resolve_file_holders};
+use runquiry_core::{FileInventoryEntry, Pid, Resolution, resolve_file_holders};
 
 use super::TestResult;
 
@@ -14,12 +14,12 @@ fn pid_value(value: u32) -> Pid {
 #[test]
 fn target_file_resolution_delegates_to_holders_results() -> TestResult {
     let path = PathBuf::from("/opt/runquiry-fixtures/var/fxt.log");
-    let entry = |pid: u32| FileLockEntry {
+    let entry = |pid: u32| FileInventoryEntry {
         pid: pid_value(pid),
         process: String::from("fxt-daemon"),
         path: path.clone(),
-        lock_type: LockType::Flock,
-        mode: LockMode::Write,
+        fd: Some(7),
+        lock: None,
     };
     let err = resolve_file_holders(&[], &path)
         .err()

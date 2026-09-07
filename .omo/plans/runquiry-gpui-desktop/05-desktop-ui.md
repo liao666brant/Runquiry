@@ -66,7 +66,7 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
     - 快捷键归属（模块验收「布局与交互验收」的剩余项）：Ctrl+R 已在 B4 落地；Ctrl+1..4（工作区切换，壳层范围）与 Ctrl/Cmd+K（调查入口）待 B5 随调查面板落地；方向键/Enter/Escape 已由组件库行为覆盖（gallery QA 验证）。
     - 已知限制（随当前锁定 gpui rev f66ed399 成立，升级后必须复验）：X11 的 `xdotool windowclose` 仍未触发 on_window_should_close / App::on_window_closed，窗口销毁后进程残留；窗口尺寸已改由 observe_window_bounds 在 resize 时立即持久化，不再依赖关闭链路，QA 收尾停止本次进程。WSLg 输入注入间歇性失效属环境观察事项。
 
-- [ ] **B5 Processes 与调查工作区**
+- [x] **B5 Processes 与调查工作区**
   - 依赖：B1、B2、B4。
   - 实现进程虚拟表格、显式目标类型调查栏、候选结果和详情面板。
   - 详情覆盖概览、祖先树、来源证据、告警、资源、Socket、文件、环境变量和操作入口。
@@ -75,8 +75,14 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
   - 敏感环境变量和命令参数默认脱敏；揭示仅在当前详情会话有效。
   - 验证：五类目标、多结果、无结果、PID 复用、进程消失、长数据和键盘流程。
   - 完成证据：GPUI 测试、真实 Linux 截图、脱敏检查。
+  - 实施记录（2026-09-04，Batch 4A）：
+    - `runquiry-ui/src/processes/` 落地稳定 `ProcessIdentity` 行模型、筛选/排序、CPU 首样本、stale selection、五类显式查询的 zero/unique/ambiguous 状态，以及概览、祖先、来源、告警、资源、Socket、文件和环境详情；异步详情同时校验 identity 与 generation。
+    - 命令参数和敏感环境变量默认脱敏，揭示只存在于当前详情会话；切换选择、刷新或身份变化即清除。B7 操作未提前实现，当前入口按能力安全禁用。
+    - app 装配后，Name/PID/Port/File 的受控真实 Linux 目标均命中；Port 属主未知时保留 published-container fallback，平台每次 load/resolve/analyze 使用 fresh `LinuxPlatform`，共享 `AnalysisGate` 保持跨请求分析互斥。
+    - 自动门：core 107、platform 97、ui 48、app 21；check、fmt、diff-check 和既定两项 Clippy 例外下的 `-D warnings` 全部通过。最终代码、运行与视觉证据分别见 `batch4a-final-code-review.md`、`batch4a-final-runtime-qa.md`、`batch4a-final-visual-review.md`。
+    - 100k 行仅完成 `Arc`/索引/可见切片逻辑验证，未声称真实 GPUI 100k 行视觉性能通过；保留为后续性能验收 residual。
 
-- [ ] **B6 Ports、Containers、File Locks 工作区**
+- [x] **B6 Ports、Containers、File Locks 工作区**
   - 依赖：B2、B3、B4。
   - Ports 支持仅监听/全部 Socket，显示协议、地址、端口、状态、PID、进程和公开监听。
   - Containers 显示运行时、名称、ID、状态、健康、镜像、主机 PID、启动时间。
@@ -85,6 +91,11 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
   - 每个页面分别实现成功、空、部分、权限失败、工具失败和 Unsupported。
   - 验证：GPUI 交互测试和真实 Linux 数据流程。
   - 完成证据：各页面状态矩阵、测试结果、截图。
+  - 实施记录（2026-09-04，Batch 4A）：
+    - `runquiry-ui/src/workspaces/` 完成 Ports 的监听/全部模式、Containers 的运行时与 host PID/fallback 语义、File Locks 的仅锁/全部打开文件模式；三页均以稳定领域键保存选择，支持筛选、排序、generation、详情和 partial/permission/tool/unsupported 状态。
+    - P1 新增 `FileInventoryEntry`/`LockMetadata` 及 `FileInventory::list/holders`；Linux 合并 `/proc/PID/fd` 与 `/proc/locks`，普通 FD 不伪装成锁，同 PID/path 的真实锁优先，局部失败聚合为有界诊断。真实受控 FD/锁 QA 与 core/platform 复审通过。
+    - 宽窗使用 gpui-component `h_resizable`，初始为侧栏后 65/35 且拖拽状态跨主题/语言重绘保持；1099px 为紧凑主区，960px 以真实 Sheet 展示详情并由 Escape 关闭。切换中英文同步既有 query/filter `InputState` placeholder，不重建会话。
+    - 当前环境无可列出的容器运行时，真实窗口验证诚实的 unavailable/error 状态；无 verified host PID 的容器详情由生产转换回归覆盖，不伪造容器截图。最终 gate 见 `runquiry-batch4a-20260904-gate-review.md`。
 
 - [ ] **C3 能力矩阵与条件 UI**
   - 依赖：C1、C2。

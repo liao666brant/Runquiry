@@ -12,9 +12,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 use runquiry_core::{
-    ContainerKey, ContainerProcessVerifier, DiagnosticCode, FileInventory, HealthStatus, LockMode,
-    LockType, NetworkInventory, Pid, ProcessDetailsProvider, ProcessFileLocks, ProcessIdentity,
-    ProcessInventory, SourceEvidenceProvider,
+    ContainerKey, ContainerProcessVerifier, DiagnosticCode, FileInventory, HealthStatus,
+    LockMetadata, LockMode, LockType, NetworkInventory, Pid, ProcessDetailsProvider,
+    ProcessFileLocks, ProcessIdentity, ProcessInventory, SourceEvidenceProvider,
 };
 use runquiry_platform::linux::LinuxPlatform;
 

@@ -47,7 +47,10 @@ pub use port::container::{
     ContainerHealthcheckProbe, ContainerInventory, ContainerProcessVerifier, ContainerSummary,
     verified_host_pid,
 };
-pub use port::file::{FileInventory, FileLockEntry, LockMode, LockType, ProcessFileLocks};
+pub use port::file::{
+    FileInventory, FileInventoryEntry, FileLockEntry, LockMetadata, LockMode, LockType,
+    ProcessFileLocks,
+};
 pub use port::network::{
     NetworkInventory, OpenPortEntry, Protocol, SocketEntry, validate_socket_entries,
     validate_socket_entry,

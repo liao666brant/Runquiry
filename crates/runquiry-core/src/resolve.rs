@@ -10,7 +10,7 @@ use crate::model::error::InspectError;
 use crate::model::ids::{ContainerKey, Pid, Port};
 use crate::model::process::ProcessSummary;
 use crate::port::container::ContainerSummary;
-use crate::port::file::FileLockEntry;
+use crate::port::file::FileInventoryEntry;
 use crate::port::network::{OpenPortEntry, Protocol, SocketEntry};
 use crate::resolution::{Resolution, matches_exact_token};
 
@@ -262,7 +262,7 @@ pub fn resolve_containers(
 /// # Errors
 /// 无持有者时返回 [`InspectError::NotFound`]。
 pub fn resolve_file_holders(
-    holders: &[FileLockEntry],
+    holders: &[FileInventoryEntry],
     path: &Path,
 ) -> Result<Resolution<Pid>, InspectError> {
     let mut pids: Vec<Pid> = holders.iter().map(|entry| entry.pid).collect();

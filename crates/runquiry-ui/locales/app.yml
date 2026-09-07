@@ -51,12 +51,222 @@ detail.placeholder.title:
 detail.placeholder.description:
   en: Select a row to inspect its details.
   zh-CN: 选择一行后查看详情。
+detail.loading.title:
+  en: Loading analysis
+  zh-CN: 正在加载分析
+detail.loading.description:
+  en: Collecting current process details.
+  zh-CN: 正在采集当前进程的详细信息。
+detail.stale.title:
+  en: Selection is stale
+  zh-CN: 选择已过期
+detail.stale.description:
+  en: The selected item is no longer present in the latest snapshot.
+  zh-CN: 最新快照中已不存在所选对象，请重新选择。
 status.workspace:
   en: Workspace
   zh-CN: 工作区
 status.interval:
   en: Refresh interval
   zh-CN: 刷新间隔
+status.partial_issues:
+  en: Limited items
+  zh-CN: 受限项
+status.more_issues:
+  en: "%{count} more issues"
+  zh-CN: "另有 %{count} 项问题"
+workspace_state.loading.title:
+  en: Loading workspace data
+  zh-CN: 正在加载工作区数据
+workspace_state.loading.description:
+  en: Collecting the latest local snapshot.
+  zh-CN: 正在采集最新的本地快照。
+workspace_state.empty.title:
+  en: No items found
+  zh-CN: 未找到项目
+workspace_state.empty.description:
+  en: The collector completed successfully without matching items.
+  zh-CN: 采集已成功完成，但没有匹配项目。
+workspace_state.error.title:
+  en: Couldn't load this workspace
+  zh-CN: 无法加载此工作区
+workspace_state.error.description:
+  en: The local collector returned an error. Refresh to try again.
+  zh-CN: 本地采集器返回错误，请刷新后重试。
+workspace_state.unsupported.title:
+  en: Unsupported on this platform
+  zh-CN: 当前平台不支持
+workspace_state.unsupported.description:
+  en: This collector is not available on the current platform.
+  zh-CN: 当前平台不提供此采集能力。
+workspace_state.permission_denied.title:
+  en: Permission required
+  zh-CN: 需要权限
+workspace_state.permission_denied.description:
+  en: Run with sufficient local permissions and refresh.
+  zh-CN: 请使用足够的本地权限运行后刷新。
+query.placeholder:
+  en: Enter a name, PID, port, file, or container
+  zh-CN: 输入名称、PID、端口、文件或容器
+query.submit:
+  en: Investigate
+  zh-CN: 调查
+query.failed:
+  en: Investigation failed
+  zh-CN: 调查失败
+query.ambiguous:
+  en: "%{count} candidates found. Choose one."
+  zh-CN: "找到 %{count} 个候选，请明确选择。"
+query.no_results.title:
+  en: No matching process
+  zh-CN: 未找到匹配进程
+query.no_results.description:
+  en: No running process matched this target.
+  zh-CN: 当前没有运行中的进程匹配此目标。
+query.kind.name:
+  en: Name
+  zh-CN: 名称
+query.kind.pid:
+  en: PID
+  zh-CN: PID
+query.kind.port:
+  en: Port
+  zh-CN: 端口
+query.kind.file:
+  en: File
+  zh-CN: 文件
+query.kind.container:
+  en: Container
+  zh-CN: 容器
+filter.placeholder:
+  en: Filter current table
+  zh-CN: 筛选当前表格
+detail.overview:
+  en: Overview
+  zh-CN: 概览
+detail.ancestry:
+  en: Ancestry and children
+  zh-CN: 祖先与子进程
+detail.source:
+  en: Source
+  zh-CN: 启动来源
+detail.warnings:
+  en: Warnings
+  zh-CN: 告警
+detail.resources:
+  en: Resources
+  zh-CN: 资源
+detail.sockets:
+  en: Sockets
+  zh-CN: Socket
+detail.files:
+  en: File locks
+  zh-CN: 文件锁
+detail.environment:
+  en: Environment variables
+  zh-CN: 环境变量
+detail.available:
+  en: Available
+  zh-CN: 可用
+detail.sampling:
+  en: Sampling or unavailable
+  zh-CN: 采样中或不可用
+detail.actions_disabled:
+  en: Process actions arrive in B7 and are disabled in this build.
+  zh-CN: 进程操作将在 B7 提供，本版本保持禁用。
+detail.reveal_sensitive:
+  en: Reveal sensitive values for this detail
+  zh-CN: 仅在当前详情显示敏感值
+detail.partial_issues:
+  en: "%{count} detail issues"
+  zh-CN: "%{count} 项详情受限"
+ports.listening:
+  en: Listening only
+  zh-CN: 仅监听
+ports.all:
+  en: All sockets
+  zh-CN: 全部 Socket
+files.locked:
+  en: Locked only
+  zh-CN: 仅锁
+files.all_open:
+  en: All open files
+  zh-CN: 全部打开文件
+processes.sort_pid:
+  en: Sort by PID
+  zh-CN: 按 PID 排序
+column.command:
+  en: Command
+  zh-CN: 命令
+column.pid:
+  en: PID
+  zh-CN: PID
+column.user:
+  en: User
+  zh-CN: 用户
+column.health:
+  en: Health
+  zh-CN: 健康
+column.protocol:
+  en: Protocol
+  zh-CN: 协议
+column.address:
+  en: Address
+  zh-CN: 地址
+column.port:
+  en: Port
+  zh-CN: 端口
+column.state:
+  en: State
+  zh-CN: 状态
+column.process:
+  en: Process
+  zh-CN: 进程
+column.public:
+  en: Public
+  zh-CN: 公开绑定
+column.runtime:
+  en: Runtime
+  zh-CN: 运行时
+column.name:
+  en: Name
+  zh-CN: 名称
+column.id:
+  en: ID
+  zh-CN: ID
+column.image:
+  en: Image
+  zh-CN: 镜像
+column.host_pid:
+  en: Host PID
+  zh-CN: 宿主 PID
+column.started_at:
+  en: Started At
+  zh-CN: 启动时间
+column.path:
+  en: Path
+  zh-CN: 路径
+column.type:
+  en: Type
+  zh-CN: 类型
+column.mode:
+  en: Mode
+  zh-CN: 模式
+column.fd:
+  en: FD
+  zh-CN: FD
+value.unknown_owner:
+  en: Unknown owner
+  zh-CN: 未知属主
+value.yes:
+  en: "Yes"
+  zh-CN: 是
+value.no:
+  en: "No"
+  zh-CN: 否
+value.unavailable:
+  en: Unavailable
+  zh-CN: 不可用
 # —— 以下为 A4 组件实验台（gallery）文案；产品界面文案在上方命名空间。 ——
 gallery.title:
   en: Component gallery

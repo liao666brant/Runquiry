@@ -10,7 +10,8 @@
 use std::process::Command;
 
 use runquiry_core::{
-    FileInventory, NetworkInventory, Pid, ProcessDetailsProvider, ProcessIdentity, ProcessInventory,
+    FileInventory, NetworkInventory, Pid, ProcessDetailsProvider, ProcessFileLocks,
+    ProcessIdentity, ProcessInventory,
 };
 use runquiry_platform::linux::LinuxPlatform;
 
@@ -100,16 +101,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  诊断 [{}] {}", issue.code().code(), issue.message());
     }
 
-    // 5) 文件锁（以自身可执行文件为查询目标，通常无锁命中属正常）。
-    let exe = std::env::current_exe()?;
-    let holders = FileInventory::holders(&platform, &exe);
+    print_file_inventory_qa(&platform)?;
+    println!("== QA 结束（普通用户权限；未打印任何环境变量值） ==");
+    Ok(())
+}
+
+/// 文件清单只输出分类计数，不暴露全量路径或进程信息。可选首个参数指向
+/// 调用方自行创建的受控目标；默认查询自身可执行文件。
+fn print_file_inventory_qa(platform: &LinuxPlatform) -> Result<(), Box<dyn std::error::Error>> {
+    let inventory = FileInventory::list(platform);
+    let inventory_entries = inventory.data.as_deref().unwrap_or_default();
+    let plain_count = inventory_entries
+        .iter()
+        .filter(|entry| entry.lock.is_none())
+        .count();
+    let lock_count = inventory_entries
+        .iter()
+        .filter(|entry| entry.lock.is_some())
+        .count();
     println!(
-        "文件锁 {}: {} 条, 诊断 {} 条",
-        exe.display(),
-        holders.data.as_ref().map_or(0, Vec::len),
+        "文件清单: 普通 FD {plain_count} 条, 真实锁 {lock_count} 条, 诊断 {} 条",
+        inventory.issues.len()
+    );
+
+    let target = std::env::args_os()
+        .nth(1)
+        .map(std::path::PathBuf::from)
+        .map_or_else(std::env::current_exe, Ok)?;
+    let holders = FileInventory::holders(platform, &target);
+    let target_label = target.file_name().map_or_else(
+        || String::from("<受控目标>"),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let target_entries = holders.data.as_deref().unwrap_or_default();
+    let target_plain = target_entries
+        .iter()
+        .filter(|entry| entry.lock.is_none())
+        .count();
+    let target_locks = target_entries
+        .iter()
+        .filter(|entry| entry.lock.is_some())
+        .count();
+    println!(
+        "受控目标 {target_label}: 普通 FD {target_plain} 条, 真实锁 {target_locks} 条, 诊断 {} 条",
         holders.issues.len()
     );
-    println!("== QA 结束（普通用户权限；未打印任何环境变量值） ==");
+    if let Some(lock_pid) = target_entries
+        .iter()
+        .find(|entry| entry.lock.is_some())
+        .map(|entry| entry.pid)
+    {
+        let owned = ProcessFileLocks::locks_of(platform, lock_pid);
+        println!(
+            "受控锁进程: locks_of {} 条, 诊断 {} 条",
+            owned.data.as_ref().map_or(0, Vec::len),
+            owned.issues.len()
+        );
+    }
     Ok(())
 }
 

@@ -164,6 +164,11 @@ impl WorkspaceSession {
         self.generation.next()
     }
 
+    /// 记录不属于文本筛选/排序的展示模式变化，并使旧快照失效。
+    pub const fn invalidate_context(&mut self) -> Generation {
+        self.generation.next()
+    }
+
     /// 更新数据状态（由真实采集结果或能力结论驱动）。
     pub const fn set_data_state(&mut self, data_state: DataState) {
         self.data_state = data_state;

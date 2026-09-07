@@ -3,10 +3,13 @@
 //! 职责：把设计系统与产品壳层（runquiry-ui）装配进真实窗口——初始化
 //! gpui-component（Root 为窗口第一级视图）、应用启动设置、绑定快捷键，
 //! 并把壳层的设置变化事件持久化到 allowlist 白名单内的设置文件
-//! （见 [`settings`]）。数据采集端口尚未接入（B2/B3），壳层以诚实的
-//! 等待态呈现，不注入演示数据。
+//! （见 [`settings`]）。平台端口由 [`backend`] 在应用边界装配，UI 不直接
+//! 访问操作系统或容器 CLI。
 
+pub mod backend;
 mod settings;
+
+use std::sync::Arc;
 
 use gpui::{
     App, AppContext as _, Bounds, Entity, Focusable as _, Global, KeyBinding, Window, WindowBounds,
@@ -15,7 +18,13 @@ use gpui::{
 use gpui_component::{Root, ThemeMode};
 use gpui_component_assets::Assets;
 
-use runquiry_ui::shell::{ShellEvent, ShellStartup, actions::RefreshWorkspace};
+use backend::{PlatformBackend, UnavailableBackend};
+use runquiry_ui::backend::WorkspaceBackend;
+use runquiry_ui::processes::ProcessCommand;
+use runquiry_ui::shell::{
+    ShellEvent, ShellStartup,
+    actions::{FocusQuery, RefreshWorkspace, Workspace1, Workspace2, Workspace3, Workspace4},
+};
 use runquiry_ui::{AppShell, set_language};
 use settings::{Settings, WindowSize, default_settings_path, load_settings, save_settings};
 
@@ -44,11 +53,18 @@ fn main() {
         runquiry_ui::locale::extend_component_translations();
         gpui_component::init(cx);
         runquiry_ui::theme::install(cx);
-        cx.bind_keys([KeyBinding::new(
-            "ctrl-r",
-            RefreshWorkspace,
-            Some(KEY_CONTEXT),
-        )]);
+        cx.bind_keys(
+            ProcessCommand::bindings().map(|(key, command)| match command {
+                ProcessCommand::Refresh => {
+                    KeyBinding::new(key, RefreshWorkspace, Some(KEY_CONTEXT))
+                }
+                ProcessCommand::FocusQuery => KeyBinding::new(key, FocusQuery, Some(KEY_CONTEXT)),
+                ProcessCommand::Workspace(1) => KeyBinding::new(key, Workspace1, Some(KEY_CONTEXT)),
+                ProcessCommand::Workspace(2) => KeyBinding::new(key, Workspace2, Some(KEY_CONTEXT)),
+                ProcessCommand::Workspace(3) => KeyBinding::new(key, Workspace3, Some(KEY_CONTEXT)),
+                ProcessCommand::Workspace(_) => KeyBinding::new(key, Workspace4, Some(KEY_CONTEXT)),
+            }),
+        );
         cx.activate(true);
 
         cx.set_global(SettingsStore {
@@ -84,10 +100,14 @@ fn main() {
             language: settings.language(),
             workspace: settings.last_workspace(),
         };
+        let backend: Arc<dyn WorkspaceBackend> = match PlatformBackend::new() {
+            Ok(backend) => Arc::new(backend),
+            Err(error) => Arc::new(UnavailableBackend::new(error.to_string())),
+        };
         let mut shell_entity = None;
         let opened = cx.open_window(options, |window, cx| {
             window.set_window_title(WINDOW_TITLE);
-            let shell = cx.new(|cx| AppShell::new(startup, cx));
+            let shell = cx.new(|cx| AppShell::new(startup, Arc::clone(&backend), window, cx));
             shell_entity = Some(shell.clone());
             cx.new(|cx| Root::new(shell, window, cx))
         });
@@ -96,7 +116,10 @@ fn main() {
             Ok(window) => {
                 let _ = window.update(cx, |_, window, cx| {
                     window.activate_window();
-                    wire_settings(shell_entity, window, cx);
+                    wire_settings(shell_entity.clone(), window, cx);
+                    if let Some(shell) = shell_entity {
+                        shell.update(cx, AppShell::refresh_active);
+                    }
                 });
             }
             Err(err) => {

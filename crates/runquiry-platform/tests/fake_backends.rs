@@ -271,7 +271,7 @@ impl FakePlatform {
     fn lock_holders(
         &self,
         path: &Path,
-    ) -> runquiry_core::Inspection<Vec<runquiry_core::FileLockEntry>> {
+    ) -> runquiry_core::Inspection<Vec<runquiry_core::FileInventoryEntry>> {
         FileInventory::holders(self, path)
     }
 }

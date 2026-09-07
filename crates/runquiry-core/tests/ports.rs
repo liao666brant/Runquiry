@@ -9,10 +9,10 @@ use std::time::Duration;
 use runquiry_core::{
     CapabilityStatus, CommandOutput, CommandRunner, CommandSpec, ContainerInventory, ContainerKey,
     ContainerSummary, DETAIL_TIMEOUT, DiagnosticCode, DiagnosticIssue, FileInventory,
-    FileLockEntry, HealthStatus, InspectError, Inspection, LIST_TIMEOUT, LockMode, LockType,
-    NetworkInventory, OpenPortEntry, Pid, Port, ProcessAction, ProcessController, ProcessDetails,
-    ProcessDetailsProvider, ProcessIdentity, ProcessInventory, ProcessSummary, Protocol,
-    SocketEntry,
+    FileInventoryEntry, HealthStatus, InspectError, Inspection, LIST_TIMEOUT, LockMetadata,
+    LockMode, LockType, NetworkInventory, OpenPortEntry, Pid, Port, ProcessAction,
+    ProcessController, ProcessDetails, ProcessDetailsProvider, ProcessIdentity, ProcessInventory,
+    ProcessSummary, Protocol, SocketEntry,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -143,13 +143,20 @@ impl FileInventory for FakeFiles {
         CapabilityStatus::Supported
     }
 
-    fn holders(&self, path: &Path) -> Inspection<Vec<FileLockEntry>> {
-        Inspection::complete(vec![FileLockEntry {
+    fn list(&self) -> Inspection<Vec<FileInventoryEntry>> {
+        self.holders(Path::new("/var/log/app.log"))
+    }
+
+    fn holders(&self, path: &Path) -> Inspection<Vec<FileInventoryEntry>> {
+        Inspection::complete(vec![FileInventoryEntry {
             pid: self.pid,
             process: String::from("nginx"),
             path: path.to_path_buf(),
-            lock_type: LockType::Flock,
-            mode: LockMode::Write,
+            fd: None,
+            lock: Some(LockMetadata {
+                lock_type: LockType::Flock,
+                mode: LockMode::Write,
+            }),
         }])
     }
 }
@@ -254,7 +261,8 @@ fn all_seven_ports_are_implementable_and_callable() -> TestResult {
             .data
             .as_ref()
             .and_then(|l| l.first())
-            .map(|e| e.lock_type),
+            .and_then(|e| e.lock)
+            .map(|lock| lock.lock_type),
         Some(LockType::Flock)
     );
 
