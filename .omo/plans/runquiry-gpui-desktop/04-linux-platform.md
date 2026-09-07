@@ -67,7 +67,7 @@
   - 实施记录（2026-09-07）：LinuxPlatform 实现 ProcessController，四类信号使用 pidfd；控制边界重验 PID、启动时间与 executable。renice 使用范围受限 setpriority，无自动提权；数字 PID 接口仍存在极窄 TOCTOU，详见平台证据。UI/App 完成二次确认、输入焦点安全键盘操作、权限/身份错误和动作后即时刷新。
   - 验收：platform 定向 6/6；UI 完整套件 57/57 与后续确认态定向测试；App 24/24；相关 Clippy、格式、locked build 通过。真实 X11 五类动作、取消、非法输入、权限错误及 Sheet/Dialog Escape 分层已验证，任务自建进程与窗口已清理。本地证据汇总：`.omo/evidence/batch4b-final-gate.md`；本地产物记录：`batch4b-qa-final-smoke.md`（不纳入 Git）。不替代 B8。
 
-- [ ] **B8 Linux 纵向验收门**
+- [x] **B8 Linux 纵向验收门**
   - 依赖：B1-B7。
   - 在 Ubuntu 22.04+ 分别使用 X11 与 Wayland 启动完整应用。
   - 验证四个工作区、五类调查、排序、过滤、详情、主题、中英切换和自适应刷新。
@@ -77,6 +77,8 @@
   - 用大 fixture 验证 100k 行虚拟滚动与持续刷新。
   - 验证结束后关闭应用、临时进程、容器和显示会话。
   - 完成证据：X11/Wayland 截图、场景结果、性能观察、清理回执。
+  - 验收记录（2026-09-07，完成）：X11 已覆盖四工作区、五类调查、详情、主题/语言/尺寸、权限及临时进程确认操作；真实 Docker 空主机、隔离无 CLI 与获授权临时容器正向调查均已验证。修复成功空容器列表误报失败；开发专用 `crates/runquiry-app/examples/scale_qa/` 提供四工作区各 100k 行，已验证过滤/清除、双向排序、约 53k 深滚动与持续刷新。UI 59/59、scale 3/3 等既有同版本结果复用，不宣称本轮全仓重跑。
+  - Wayland 原生启动与完整窗口截图通过，Ports 切换由用户协助操作并核对真实数据；自动输入未通过安全守卫，不计通过。自适应间隔升降、四表逐一深滚动和帧率不属于本次已实测范围，不替代 D1 性能验收。任务窗口、临时进程与容器均已清理；独立门禁 CONFIRMED，C1/C2 前置门已解除但本轮未启动。本地报告：`.omo/evidence/batch5-result.md`、`batch5-close-final-gate.md`（不纳入 Git）。
 
 ## 模块退出条件
 
