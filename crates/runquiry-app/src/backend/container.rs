@@ -14,7 +14,7 @@ impl PlatformBackend {
         port: Port,
         subject: String,
         inventory: &[runquiry_core::ProcessSummary],
-        platform: &runquiry_platform::linux::LinuxPlatform,
+        platform: &super::Platform,
     ) -> Result<Resolution<InvestigationTarget>, InspectError> {
         let published = self.containers.published_on(port);
         let Some(summaries) = published.data else {
@@ -31,7 +31,7 @@ impl PlatformBackend {
         &self,
         query: &str,
         exact: bool,
-        platform: &runquiry_platform::linux::LinuxPlatform,
+        platform: &super::Platform,
     ) -> Result<Resolution<InvestigationTarget>, InspectError> {
         let resolved = self.containers.resolve(query, exact)?;
         let mut issues = resolved.issues;
@@ -64,7 +64,7 @@ impl PlatformBackend {
         summary: ContainerSummary,
         inventory: &[runquiry_core::ProcessSummary],
         inherited_issues: &[DiagnosticIssue],
-        platform: &runquiry_platform::linux::LinuxPlatform,
+        platform: &super::Platform,
     ) -> InvestigationTarget {
         let mut issues = inherited_issues.to_vec();
         let verified = match self.containers.verified_host_pid(&summary.key, platform) {

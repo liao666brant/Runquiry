@@ -219,3 +219,153 @@ fn pipeline_source_detection_systemd_supervisor_cron_init_unknown() -> TestResul
     assert_eq!(src.source_type(), SourceType::Unknown);
     Ok(())
 }
+
+#[test]
+fn pipeline_source_detection_launchd_matches_witr_semantics() -> TestResult {
+    // launchd 前提：祖先链根为 PID 1 且命令为 launchd；证据缺失回退基础来源
+    // （parity `detectLaunchd` 的 GetLaunchdInfo 失败分支）。
+    let ancestry = vec![
+        summary(1, Some(0), "launchd", None),
+        summary(5, Some(1), "fxt-daemon", None),
+    ];
+    let src = detect_for(&ancestry, &SourceEvidence::default());
+    assert_eq!(src.source_type(), SourceType::Launchd);
+    assert_eq!(src.name(), Some("launchd"));
+
+    // 平台提供 label / comment / plist / type / schedule / keepalive 时，
+    // core 组装 Name / Description / UnitFile 与 details（parity 富化字段）。
+    let mut evidence = SourceEvidence::default();
+    evidence.launchd_by_pid.push((
+        Pid::new(5)?,
+        vec![
+            (String::from("label"), String::from("com.fxt.daemon")),
+            (String::from("comment"), String::from("fxt 注释")),
+            (
+                String::from("plist"),
+                String::from("/Users/fixture-user/Library/LaunchAgents/fxt.plist"),
+            ),
+            (String::from("type"), String::from("Launch Agent")),
+            (String::from("schedule"), String::from("StartInterval: 60")),
+            (
+                String::from("keepalive"),
+                String::from("Yes (restarts if killed)"),
+            ),
+        ],
+    ));
+    let src = detect_for(&ancestry, &evidence);
+    assert_eq!(src.source_type(), SourceType::Launchd);
+    assert_eq!(src.name(), Some("com.fxt.daemon"));
+    assert_eq!(src.description(), Some("fxt 注释"));
+    assert_eq!(
+        src.unit_file(),
+        Some("/Users/fixture-user/Library/LaunchAgents/fxt.plist")
+    );
+    let details = src.details();
+    assert!(details.contains(&(
+        String::from("plist"),
+        String::from("/Users/fixture-user/Library/LaunchAgents/fxt.plist")
+    )));
+    assert!(details.contains(&(String::from("type"), String::from("Launch Agent"))));
+    assert!(details.contains(&(
+        String::from("keepalive"),
+        String::from("Yes (restarts if killed)")
+    )));
+
+    // 根不是 PID 1 launchd → launchd 分支不命中（Linux 根 systemd 不受影响）。
+    let ancestry = vec![
+        summary(1, Some(0), "systemd", None),
+        summary(5, Some(1), "fxt-daemon", None),
+    ];
+    let mut evidence = SourceEvidence::default();
+    evidence.launchd_by_pid.push((
+        Pid::new(5)?,
+        vec![(String::from("label"), String::from("com.fxt.daemon"))],
+    ));
+    let src = detect_for(&ancestry, &evidence);
+    assert_ne!(src.source_type(), SourceType::Launchd);
+    Ok(())
+}
+
+#[test]
+fn pipeline_source_detection_windows_service_matches_witr_levels() -> TestResult {
+    // 第一级：祖先链自目标向根第一个携带 SCM 证据的 PID（目标优先）。
+    let mut evidence = SourceEvidence::default();
+    evidence.windows_service_by_pid.push((
+        Pid::new(9)?,
+        vec![
+            (String::from("service"), String::from("fxt-svc")),
+            (String::from("description"), String::from("fxt 服务显示名")),
+        ],
+    ));
+    evidence.windows_service_by_pid.push((
+        Pid::new(7)?,
+        vec![(String::from("service"), String::from("fxt-other"))],
+    ));
+    let ancestry = vec![
+        summary(4, Some(0), "System", None),
+        summary(7, Some(4), "services.exe", None),
+        summary(9, Some(7), "fxt-worker", None),
+    ];
+    let src = detect_for(&ancestry, &evidence);
+    assert_eq!(src.source_type(), SourceType::WindowsService);
+    assert_eq!(src.name(), Some("fxt-svc"));
+    assert_eq!(src.description(), Some("fxt 服务显示名"));
+    assert_eq!(
+        src.unit_file(),
+        Some("HKLM\\SYSTEM\\CurrentControlSet\\Services\\fxt-svc")
+    );
+    assert!(
+        src.details()
+            .contains(&(String::from("manager"), String::from("services.exe")))
+    );
+
+    // 第二级：祖先链含 services.exe 但无显式服务名。
+    let ancestry = vec![
+        summary(4, Some(0), "System", None),
+        summary(7, Some(4), "services.exe", None),
+        summary(9, Some(7), "fxt-worker", None),
+    ];
+    let src = detect_for(&ancestry, &SourceEvidence::default());
+    assert_eq!(src.source_type(), SourceType::WindowsService);
+    assert_eq!(src.name(), Some("Service Control Manager"));
+
+    // 第三级（parity `detectWindowsService` 第三段）：父进程为 services.exe
+    // 且无有效服务名 → 目标命令去 .exe 推断服务名。注意第二级遍历整条祖先链，
+    // 父进程必然在链内，故只要父命令名恰为 services.exe，第二级总是先命中；
+    // 第三级是 parity 结构保留的防御分支，witr 中同样不可达。
+    let ancestry = vec![
+        summary(4, Some(0), "System", None),
+        summary(7, Some(4), "services.exe", None),
+        summary(9, Some(7), "fxtsvc.exe", None),
+    ];
+    let src = detect_for(&ancestry, &SourceEvidence::default());
+    assert_eq!(src.source_type(), SourceType::WindowsService);
+    assert_eq!(src.name(), Some("Service Control Manager"));
+    Ok(())
+}
+
+#[test]
+fn pipeline_source_detection_init_windows_kernel() {
+    // Windows 内核兜底：根 PID 4 "System"（大小写不敏感）且链中无 shell。
+    let ancestry = vec![
+        summary(4, Some(0), "System", None),
+        summary(9, Some(4), "fxtsvc.exe", None),
+    ];
+    let src = detect_for(&ancestry, &SourceEvidence::default());
+    assert_eq!(src.source_type(), SourceType::Init);
+    assert_eq!(src.name(), Some("System"));
+    assert_eq!(src.description(), Some("Windows kernel (System process)"));
+    assert!(
+        src.details()
+            .contains(&(String::from("pid"), String::from("4")))
+    );
+
+    // 链中有 shell 时不判为 init（与 Unix 分支同一规则）。
+    let ancestry = vec![
+        summary(4, Some(0), "System", None),
+        summary(8, Some(4), "cmd.exe", None),
+        summary(9, Some(8), "fxt.exe", None),
+    ];
+    let src = detect_for(&ancestry, &SourceEvidence::default());
+    assert_ne!(src.source_type(), SourceType::Init);
+}

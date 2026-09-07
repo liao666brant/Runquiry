@@ -5,7 +5,9 @@
 //!
 //! 模块编译范围：
 //! * [`command`] / [`container`]：跨平台（经 `CommandRunner` 的外部命令边界）；
-//! * [`linux`]：仅 `target_os = "linux"`。
+//! * [`linux`]：仅 `target_os = "linux"`；
+//! * [`macos`]：仅 `target_os = "macos"`（C1，模块 06）；
+//! * [`windows`]：仅 `target_os = "windows"`（C2，模块 07）。
 //!
 // 锁定依赖树既有的 syn 2.0.119 / 3.0.4 双版本（GPUI 传递依赖引入，Cargo.lock
 // 未变）在本 crate 作为叶子时触发该 cargo 警告；传递依赖版本不受本 crate
@@ -16,3 +18,7 @@ pub mod command;
 pub mod container;
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "macos")]
+pub mod macos;
+#[cfg(target_os = "windows")]
+pub mod windows;

@@ -2,9 +2,12 @@
 //!
 //! 判定顺序：container → ssh → shell → systemd → launchd → BSD rc →
 //! supervisor → cron → Windows service → init，命中即返回；全部未命中返回
-//! [`Source::unknown`]（来源识别永不返回空）。core 只做纯判定：launchd、
-//! BSD rc 与 Windows service 的平台探测（D-Bus / launchctl / SCM）属平台
-//! 职责，core 保留链位置但不判定（恒未命中，与 witr 各平台 stub 行为一致）。
+//! [`Source::unknown`]（来源识别永不返回空）。core 只做纯判定：launchd 与
+//! Windows service 的平台探测（launchctl / SCM）属平台职责——平台只经
+//! [`SourceEvidence::launchd_by_pid`] / [`SourceEvidence::windows_service_by_pid`]
+//! 采集原始键值，链位置与判定规则（含 witr `detectWindowsService` 三级判定）
+//! 在 core 完成；BSD rc（FreeBSD）不在本轮范围，恒未命中（与 witr 平台
+//! stub 行为一致）。
 
 use crate::model::ids::Pid;
 use crate::model::process::ProcessSummary;
@@ -56,10 +59,10 @@ pub fn detect_source(ancestry: &[ProcessSummary], evidence: &SourceEvidence) -> 
         .or_else(|| detect_ssh(ancestry, evidence))
         .or_else(|| detect_shell(ancestry, evidence))
         .or_else(|| detect_systemd(ancestry, evidence))
-        // launchd（macOS）/ BSD rc（FreeBSD）的平台探测属平台职责，core 恒未命中。
+        .or_else(|| detect_launchd(ancestry, evidence))
         .or_else(|| detect_supervisor(ancestry))
         .or_else(|| detect_cron(ancestry))
-        // Windows service（SCM 三级判定）属平台职责，core 恒未命中。
+        .or_else(|| detect_windows_service(ancestry, evidence))
         .or_else(|| detect_init(ancestry))
         .unwrap_or_else(Source::unknown)
 }
@@ -259,13 +262,15 @@ fn detect_cron(ancestry: &[ProcessSummary]) -> Option<Source> {
     None
 }
 
-/// init 来源兜底：根进程为 PID 1 且根与目标之间无 shell（有 shell 视为用户
-/// 手工运行，不判为 init；witr 的 Windows PID 4 "System" 分支不在 core 判定，
-/// 由 Windows 平台证据扩展）。名字取 PID 1 的实际命令名（openrc-init /
-/// runit-init / init / systemd 等，parity `detectInit`）。
+/// init 来源兜底：根进程为 PID 1（Unix init/systemd/openrc-init 等）或
+/// Windows 内核进程 PID 4 "System"，且根与目标之间无 shell（有 shell 视为
+/// 用户手工运行，不判为 init；parity `detectInit`）。名字取根进程的实际
+/// 命令名；Windows 内核分支附带固定描述。
 fn detect_init(ancestry: &[ProcessSummary]) -> Option<Source> {
     let root = ancestry.first()?;
-    if root.identity.pid() != Pid::MIN {
+    let is_windows_kernel =
+        root.identity.pid().get() == 4 && root.command.eq_ignore_ascii_case("System");
+    if root.identity.pid() != Pid::MIN && !is_windows_kernel {
         return None;
     }
     let has_shell = ancestry
@@ -284,12 +289,142 @@ fn detect_init(ancestry: &[ProcessSummary]) -> Option<Source> {
     } else {
         root.command.clone()
     };
-    Some(
-        Source::new(SourceType::Init)
-            .with_name(init_name)
-            .with_detail(String::from("pid"), root.identity.pid().get().to_string())
-            .with_detail(String::from("comm"), root.command.clone()),
-    )
+    let source = Source::new(SourceType::Init)
+        .with_name(init_name)
+        .with_detail(String::from("pid"), root.identity.pid().get().to_string())
+        .with_detail(String::from("comm"), root.command.clone());
+    Some(if is_windows_kernel {
+        source.with_description(String::from("Windows kernel (System process)"))
+    } else {
+        source
+    })
+}
+
+/// launchd 来源（parity `detectLaunchd`，仅 macOS）：祖先链根为 PID 1 且
+/// 命令为 `launchd` 是前提；平台证据缺失（launchctl 查询失败等）时回退
+/// 基础 `launchd` 来源。`label` / `comment` / `plist` 分别写入 `Name` /
+/// `Description` / `UnitFile`，`plist` 与 `type` / `schedule` / `triggers` /
+/// `keepalive` 原样透传进 details。
+fn detect_launchd(ancestry: &[ProcessSummary], evidence: &SourceEvidence) -> Option<Source> {
+    let has_launchd = ancestry
+        .iter()
+        .any(|p| p.identity.pid() == Pid::MIN && p.command == "launchd");
+    if !has_launchd {
+        return None;
+    }
+    let target = ancestry.last()?;
+    let Some(kv) = evidence
+        .launchd_by_pid
+        .iter()
+        .find(|(pid, _)| *pid == target.identity.pid())
+        .map(|(_, kv)| kv)
+    else {
+        // 平台未能取得 launchd 详情时回退基础来源（parity：GetLaunchdInfo 失败分支）。
+        return Some(Source::new(SourceType::Launchd).with_name(String::from("launchd")));
+    };
+    let mut source = Source::new(SourceType::Launchd)
+        .with_name(field_of(kv, "label").unwrap_or_else(|| String::from("launchd")));
+    if let Some(comment) = field_of(kv, "comment") {
+        source = source.with_description(comment);
+    }
+    if let Some(plist) = field_of(kv, "plist") {
+        source = source
+            .with_unit_file(plist.clone())
+            .with_detail(String::from("plist"), plist);
+    }
+    for key in ["type", "schedule", "triggers", "keepalive"] {
+        if let Some(value) = field_of(kv, key) {
+            source = source.with_detail(String::from(key), value);
+        }
+    }
+    Some(source)
+}
+
+/// Windows service 来源（parity `detectWindowsService`，三级判定）：
+/// 1. 祖先链自目标向根第一个携带 SCM 服务证据（`service` 键）的 PID；
+/// 2. 祖先链含 `services.exe` 但无显式服务名 → "Service Control Manager"；
+/// 3. 目标父进程为 `services.exe` → 以目标命令名（去 `.exe`）推断服务名。
+///    Description 取平台 SCM 采集的 `description` 键（witr 经
+///    `sc GetDisplayName` 解析，本实现改经 SCM API 采集）；`UnitFile`
+///    固定为 SCM 注册表键。
+fn detect_windows_service(
+    ancestry: &[ProcessSummary],
+    evidence: &SourceEvidence,
+) -> Option<Source> {
+    // 1. 显式服务名：目标优先（parity `detectWindowsService` 第一段）。
+    for process in ancestry.iter().rev() {
+        let Some(kv) = evidence
+            .windows_service_by_pid
+            .iter()
+            .find(|(pid, _)| *pid == process.identity.pid())
+            .map(|(_, kv)| kv)
+        else {
+            continue;
+        };
+        let Some(service) = field_of(kv, "service").filter(|name| !name.is_empty()) else {
+            continue;
+        };
+        let mut source = Source::new(SourceType::WindowsService)
+            .with_name(service.clone())
+            .with_detail(String::from("manager"), String::from("services.exe"))
+            .with_detail(String::from("service"), service.clone());
+        if let Some(description) = field_of(kv, "description") {
+            source = source.with_description(description);
+        }
+        return Some(source.with_unit_file(service_registry_key(&service)));
+    }
+    // 2. 祖先链含 services.exe（parity 第二段）。
+    if ancestry
+        .iter()
+        .any(|p| command_base(&p.command).eq_ignore_ascii_case("services.exe"))
+    {
+        return Some(
+            Source::new(SourceType::WindowsService)
+                .with_name(String::from("Service Control Manager"))
+                .with_detail(String::from("manager"), String::from("services.exe")),
+        );
+    }
+    // 3. 父进程为 services.exe 且无有效服务名（parity 第三段）。第二级遍历
+    // 整条祖先链且父进程必然在链内，故该分支仅在父命令名不等于
+    // services.exe 时可达（witr 中同样为结构保留的防御分支）。
+    if ancestry.len() >= 2 {
+        let parent = &ancestry[ancestry.len() - 2];
+        let target = ancestry.last()?;
+        if command_base(&parent.command).eq_ignore_ascii_case("services.exe") {
+            let name = target
+                .command
+                .strip_suffix(".exe")
+                .unwrap_or(&target.command);
+            let mut source = Source::new(SourceType::WindowsService)
+                .with_name(String::from(name))
+                .with_detail(String::from("manager"), String::from("services.exe"))
+                .with_unit_file(service_registry_key(name));
+            if let Some(kv) = evidence
+                .windows_service_by_pid
+                .iter()
+                .find(|(pid, _)| *pid == target.identity.pid())
+                .map(|(_, kv)| kv)
+                && let Some(description) = field_of(kv, "description")
+            {
+                source = source.with_description(description);
+            }
+            return Some(source);
+        }
+    }
+    None
+}
+
+/// SCM 服务注册表键（parity：`HKLM\SYSTEM\CurrentControlSet\Services\<name>`）。
+fn service_registry_key(service: &str) -> String {
+    format!("HKLM\\SYSTEM\\CurrentControlSet\\Services\\{service}")
+}
+
+/// 读取证据键值中的单个键（空值视为未取得）。
+fn field_of(kv: &[(String, String)], key: &str) -> Option<String> {
+    kv.iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, value)| value.clone())
+        .filter(|value| !value.is_empty())
 }
 
 /// 读取某祖先进程的 cgroup 原文（证据缺失时 `None`）。

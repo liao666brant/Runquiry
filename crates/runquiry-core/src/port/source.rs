@@ -30,6 +30,21 @@ pub struct SourceEvidence {
     /// `NRestarts` / 定时器 schedule 等，best-effort）；core 不解释语义，
     /// 原样透传进 `Source.details`。
     pub systemd_details: Vec<(String, String)>,
+    /// launchd 托管证据（仅 macOS）：launchd 管理的 PID → 原始键值。
+    /// 键契约（core 按这些键组装 [`crate::model::source::Source`]，未取得的
+    /// 键省略）：`label`（launchd label，写入 `Source.name`）、`comment`
+    /// （写入 `Source.description`）、`plist`（plist 路径，写入
+    /// `Source.unit_file` 与 details）、`type`（Launch Agent/Daemon 域描述）、
+    /// `schedule` / `triggers`（触发器文本，core 原样透传）、`keepalive`
+    /// （`KeepAlive` 状态文本）。判定本身（祖先链含 PID 1 `launchd` 等）由 core
+    /// 完成，平台不判定来源类型。
+    pub launchd_by_pid: Vec<(Pid, Vec<(String, String)>)>,
+    /// Windows SCM 服务证据（仅 Windows）：PID → 原始键值。键契约：
+    /// `service`（SCM 服务名，写入 `Source.name`）、`description`
+    /// （写入 `Source.description`）、`display_name` / `start_mode` /
+    /// `binary_path` / `state`（core 原样透传）。core 依据 witr `detectWindowsService`
+    /// 的三级判定解释这些键值，平台不判定来源类型。
+    pub windows_service_by_pid: Vec<(Pid, Vec<(String, String)>)>,
 }
 
 /// 来源证据采集端口（同步）。

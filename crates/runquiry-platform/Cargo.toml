@@ -22,5 +22,23 @@ zbus = "5.19.0"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.189"
 
+# Batch 6 C2 依赖申请（主 Agent 依赖守门，2026-09-07，用户已授权）：windows-sys
+# 在 Cargo.lock 中既有（GPUI 传递依赖），本次零新增包、版本取锁内 0.61.2；
+# 验证必须 --locked，并复核 GPUI source 未漂移。feature 清单与 src/windows/mod.rs
+# 头注释同步维护。
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Wdk_System_Threading",
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
+
 [lints]
 workspace = true

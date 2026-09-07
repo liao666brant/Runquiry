@@ -26,6 +26,7 @@ Windows 专用依赖和 feature 由 A1 负责人集中维护。
 ## TODOs
 
 - [ ] **C2 Windows 适配器**
+  - 进度（2026-09-07，Batch 6）：`src/windows/` 已落地 sysinfo 基线、ffi 安全包装（进程/PSAPI/PEB/ToolHelp）+ ffi_scm（SCM 枚举与配置查询）、IP Helper 表解析（IPv4/IPv6 TCP/UDP + PID 归属）、PEB/PEB32 有界读取与 UTF-16 环境块解码、SCM 来源证据、File Locks 与进程控制 Unsupported（原因键稳定）、windows_qa 示例；超 250 行文件已拆分（ip_table/peb/ffi/plist）。独立 FFI 审查判定 FFI 层无已知内存安全缺陷，ToolHelp 首条目错误吞掉、环境块截断无诊断、PBI 32 位门控三项已修复；静态评审后已修复 IP Helper 重试丢尺寸、Windows start_time 0 → `None` 语义（对齐 core/macOS）、25 处测试 unwrap 基线违规。**未完成**：任何编译/测试均未运行（本机 WSL 编译卡死，用户叫停）；windows-sys 签名（`EnumServicesStatusExW` lpServices、`QueryServiceConfig2W` lpBuffer、`BOOLEAN` 参数）待交叉 check 确认；Windows 10 22H2+ 实机验证、受保护进程/权限受限部分结果、32 位进程读取、Unsupported 边界 UI 呈现全部未验收；ToolHelp 快照真实错误从「退化成功」变为「无名字回退」的行为变化未经实机验收。
   - 依赖：B8。
   - 使用 sysinfo 提供基线进程列表。
   - 通过 windows crate 与 PEB 安全包装读取 exe、cmdline、cwd、环境、父进程和启动时间。

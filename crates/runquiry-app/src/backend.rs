@@ -16,15 +16,25 @@ use runquiry_core::{
     ProcessInventory, ProcessSummary, QueryTarget, Resolution, analyze, resolve_file_holders,
     resolve_name, resolve_port_owner,
 };
-use runquiry_platform::{container::ContainerRuntimes, linux::LinuxPlatform};
 use runquiry_ui::WorkspaceId;
 use runquiry_ui::backend::{
     ContainerSnapshotRow, InvestigationTarget, PortSnapshotRow, WorkspaceBackend, WorkspaceSnapshot,
 };
 
+// 目标平台选择（Batch 6 最小装配）：app 边界按 target_os 绑定单一平台结构体，
+// 各平台结构体实现同一组 core 端口且构造签名一致（`new() -> io::Result<Self>`）。
+// container 运行时为跨平台模块，不随平台 cfg。
+use runquiry_platform::container::ContainerRuntimes;
+#[cfg(target_os = "linux")]
+use runquiry_platform::linux::LinuxPlatform as Platform;
+#[cfg(target_os = "macos")]
+use runquiry_platform::macos::MacosPlatform as Platform;
+#[cfg(target_os = "windows")]
+use runquiry_platform::windows::WindowsPlatform as Platform;
+
 pub use self::unavailable::UnavailableBackend;
 
-/// Linux 平台的共享只读后端。
+/// 目标平台（按 target_os 选择 Linux/macOS/Windows）的共享只读后端。
 #[derive(Debug)]
 pub struct PlatformBackend {
     analysis_gate: analysis_gate::AnalysisGate,
@@ -32,9 +42,9 @@ pub struct PlatformBackend {
 }
 
 impl PlatformBackend {
-    /// 构造共享的容器运行时与分析门控；Linux 平台按操作重建。
+    /// 构造共享的容器运行时与分析门控；目标平台按操作重建。
     pub(super) fn new() -> std::io::Result<Self> {
-        let _ = LinuxPlatform::new()?;
+        let _ = Platform::new()?;
         let containers = Arc::new(ContainerRuntimes::new());
         Ok(Self {
             analysis_gate: analysis_gate::AnalysisGate::new(),
@@ -42,13 +52,13 @@ impl PlatformBackend {
         })
     }
 
-    fn fresh_platform() -> Result<LinuxPlatform, InspectError> {
-        LinuxPlatform::new().map_err(|error| InspectError::Unsupported {
-            reason: format!("Linux 平台采集器不可用：{error}"),
+    fn fresh_platform() -> Result<Platform, InspectError> {
+        Platform::new().map_err(|error| InspectError::Unsupported {
+            reason: format!("平台采集器不可用：{error}"),
         })
     }
 
-    fn identities(platform: &LinuxPlatform) -> Result<Vec<ProcessSummary>, InspectError> {
+    fn identities(platform: &Platform) -> Result<Vec<ProcessSummary>, InspectError> {
         ProcessInventory::list(platform)
             .data
             .ok_or_else(|| InspectError::Unsupported {
@@ -61,6 +71,30 @@ impl PlatformBackend {
             .iter()
             .find(|process| process.identity.pid() == pid)
             .map(|process| process.identity.clone())
+    }
+
+    /// 名称解析零命中后的平台服务回退：仅 macOS 经 launchd 解析 label
+    /// （parity line 88）；label 非法视为「无服务候选」而非调查失败，其余
+    /// 错误（launchctl 缺失/超时）原样上抛。非 macOS 平台恒无回退。
+    #[cfg(target_os = "macos")]
+    fn launchd_service_pid(
+        platform: &Platform,
+        query: &str,
+    ) -> Result<Option<Pid>, InspectError> {
+        platform
+            .launchd_service_pid(query)
+            .or_else(|error| match error {
+                InspectError::InvalidTarget { .. } => Ok(None),
+                other => Err(other),
+            })
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn launchd_service_pid(
+        _platform: &Platform,
+        _query: &str,
+    ) -> Result<Option<Pid>, InspectError> {
+        Ok(None)
     }
 
     fn map_pids(
@@ -84,7 +118,7 @@ impl PlatformBackend {
 
 impl WorkspaceBackend for PlatformBackend {
     fn load(&self, workspace: WorkspaceId) -> WorkspaceSnapshot {
-        let platform = match LinuxPlatform::new() {
+        let platform = match Platform::new() {
             Ok(platform) => platform,
             Err(error) => return UnavailableBackend::new(error.to_string()).load(workspace),
         };
@@ -158,7 +192,16 @@ impl WorkspaceBackend for PlatformBackend {
         let pids = match target {
             QueryTarget::Pid(pid) => Resolution::Unique(*pid),
             QueryTarget::ProcessName { query, exact } => {
-                resolve_name(&inventory, query, *exact, &[], None)?
+                match resolve_name(&inventory, query, *exact, &[], None) {
+                    // 零命中时按 parity 走平台服务解析（macOS launchd label
+                    // 四候选 → `launchctl print` 运行 PID；服务 PID 零命中时
+                    // 排首位），其余错误原样返回。
+                    Err(InspectError::NotFound { .. }) => {
+                        let service = Self::launchd_service_pid(&platform, query)?;
+                        resolve_name(&inventory, query, *exact, &[], service)?
+                    }
+                    result => result?,
+                }
             }
             QueryTarget::Port(port) => {
                 let ports =

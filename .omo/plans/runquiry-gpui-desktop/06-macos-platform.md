@@ -25,6 +25,7 @@
 ## TODOs
 
 - [ ] **C1 macOS 适配器**
+  - 进度（2026-09-07，Batch 6）：`src/macos/` 已落地（process/details/network/files/source/controller/container/libproc + lsof/launchctl/plist/identity 纯解析），libproc 绑定为 libc 手写（零新增依赖）；lsof -F 机器格式解析覆盖空格/中文/换行路径与非零退出抢救；进程控制为身份重读 + kill(2)/setpriority 并披露 PID 复用窗口。`tests/macos_*` 三个纯解析测试文件 + `examples/macos_qa.rs` 双 main。独立 FFI 审查阻断项（ProcTaskInfo 线程字段宽度、rusage diskio 偏移 128/136）已修复；静态评审后已补齐：测试 unwrap 基线清理、app 侧名称解析 launchd 回退接线（`launchd_service_pid`）。**未完成**：任何编译/测试均未运行（本机 WSL 编译卡死，用户叫停）；macOS 实机验证、lsof 超时/部分失败实机场景、动作后 OS 状态核对、临时进程清理回执全部未验收；rusage 偏移仍需在 macOS 与 SDK 头文件比对。
   - 依赖：B8。
   - 使用 sysinfo 提供基线进程列表，使用 libproc 补齐 exe、cwd、祖先、资源和文件信息。
   - lsof 调用使用 -F 机器格式，提供端口、Socket、打开文件和 best-effort 文件锁。
