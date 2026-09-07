@@ -25,8 +25,8 @@ const UNSUPPORTED_GLYPH: Pixels = px(16.);
 
 /// 一个数据区域的统一状态呈现。
 ///
-/// 用于 loading、empty、error、unsupported、permission-denied 五种状态；
-/// `Ready` 表示有数据，此时不应使用本组件而应直接渲染数据。
+/// 用于 loading、empty、error、unsupported、unavailable、permission-denied
+/// 六种状态；`Ready` 表示有数据，此时不应使用本组件而应直接渲染数据。
 #[derive(IntoElement)]
 pub struct StateView {
     state: DataState,
@@ -75,10 +75,12 @@ impl StateView {
         let theme = cx.theme();
         match self.state {
             DataState::Error => theme.danger,
-            // 能力边界保持中性：不是系统故障，不应使用 danger。
-            DataState::Unsupported | DataState::Ready | DataState::Loading | DataState::Empty => {
-                theme.muted_foreground
-            }
+            // 能力与环境边界保持中性：不是系统故障，不应使用 danger。
+            DataState::Unsupported
+            | DataState::Unavailable
+            | DataState::Ready
+            | DataState::Loading
+            | DataState::Empty => theme.muted_foreground,
             DataState::PermissionDenied => theme.warning,
         }
     }

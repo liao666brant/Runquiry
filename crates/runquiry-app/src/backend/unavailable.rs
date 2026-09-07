@@ -60,7 +60,8 @@ impl WorkspaceBackend for UnavailableBackend {
     }
 
     fn process_control_capability(&self) -> CapabilityStatus {
-        CapabilityStatus::Unsupported(self.reason.clone())
+        // 与 load 一致：无法构造平台是环境不可用，不是平台不支持。
+        CapabilityStatus::Unavailable(self.reason.clone())
     }
 
     fn execute_process_action(

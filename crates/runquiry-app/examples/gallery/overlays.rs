@@ -172,12 +172,14 @@ pub(crate) fn push_notice(state: DataState, window: &mut Window, cx: &mut App) {
     );
 }
 
-/// 状态对应的通知类型：能力与权限边界是警告，不是错误。
+/// 状态对应的通知类型：能力、环境与权限边界是警告，不是错误。
 const fn notice_type(state: DataState) -> NotificationType {
     match state {
         DataState::Ready => NotificationType::Success,
         DataState::Loading | DataState::Empty => NotificationType::Info,
         DataState::Error => NotificationType::Error,
-        DataState::Unsupported | DataState::PermissionDenied => NotificationType::Warning,
+        DataState::Unsupported | DataState::Unavailable | DataState::PermissionDenied => {
+            NotificationType::Warning
+        }
     }
 }

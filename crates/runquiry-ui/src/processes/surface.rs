@@ -59,6 +59,54 @@ impl SurfaceState {
             },
         }
     }
+
+    /// Processes 页与 [`SurfaceSnapshot`] 共用的表面状态推导。
+    ///
+    /// 与清单工作区 `map_state` 的边界判定同序：能力不支持与 `Unsupported`
+    /// 诊断优先于环境不可用；其余按「是否有快照 + 诊断码」区分部分成功、
+    /// 权限边界与完全失败，不把失败伪装成空集合。
+    pub fn from_parts(
+        capability: &CapabilityStatus,
+        has_snapshot: bool,
+        issues: &[DiagnosticIssue],
+    ) -> Self {
+        if let CapabilityStatus::Unsupported(reason) = capability {
+            return Self::Unsupported {
+                reason: reason.clone(),
+            };
+        }
+        if let Some(reason) = issues
+            .iter()
+            .find(|issue| issue.code() == DiagnosticCode::Unsupported)
+            .map(|issue| issue.message().to_owned())
+        {
+            return Self::Unsupported { reason };
+        }
+        if let CapabilityStatus::Unavailable(reason) = capability {
+            return Self::Unavailable {
+                reason: reason.clone(),
+            };
+        }
+        if has_snapshot {
+            if issues.is_empty() {
+                Self::Ready
+            } else {
+                Self::Partial {
+                    issue_count: issues.len(),
+                }
+            }
+        } else if !issues.is_empty()
+            && issues
+                .iter()
+                .all(|issue| issue.code() == DiagnosticCode::PermissionDenied)
+        {
+            Self::PermissionDenied
+        } else {
+            Self::Error {
+                issue_count: issues.len(),
+            }
+        }
+    }
 }
 
 /// 状态映射保持对原始数据与诊断的借用，不丢失部分结果。
@@ -75,12 +123,14 @@ impl<'a, T> SurfaceSnapshot<'a, T> {
     pub fn new(capability: &'a CapabilityStatus, inspection: &'a Inspection<Vec<T>>) -> Self {
         let boundary = SurfaceState::from_capability(capability);
         let state = match boundary {
-            SurfaceState::Ready => state_from_inspection(inspection),
+            SurfaceState::Ready => {
+                state_from_inspection(inspection.data.as_deref(), &inspection.issues)
+            }
             SurfaceState::Partial { .. } => match inspection.data {
                 Some(_) => SurfaceState::Partial {
                     issue_count: inspection.issues.len(),
                 },
-                None => state_from_inspection(inspection),
+                None => state_from_inspection(None, &inspection.issues),
             },
             state @ (SurfaceState::Loading
             | SurfaceState::Sampling
@@ -119,23 +169,22 @@ impl<'a, T> SurfaceSnapshot<'a, T> {
     }
 }
 
-fn state_from_inspection<T>(inspection: &Inspection<Vec<T>>) -> SurfaceState {
-    match (&inspection.data, inspection.issues.is_empty()) {
+fn state_from_inspection<T>(data: Option<&[T]>, issues: &[DiagnosticIssue]) -> SurfaceState {
+    match (data, issues.is_empty()) {
         (Some(data), true) if data.is_empty() => SurfaceState::Empty,
         (Some(_), true) => SurfaceState::Ready,
         (Some(_), false) => SurfaceState::Partial {
-            issue_count: inspection.issues.len(),
+            issue_count: issues.len(),
         },
         (None, false)
-            if inspection
-                .issues
+            if issues
                 .iter()
                 .all(|issue| issue.code() == DiagnosticCode::PermissionDenied) =>
         {
             SurfaceState::PermissionDenied
         }
         (None, _) => SurfaceState::Error {
-            issue_count: inspection.issues.len(),
+            issue_count: issues.len(),
         },
     }
 }

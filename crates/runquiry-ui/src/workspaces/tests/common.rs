@@ -59,7 +59,7 @@ fn empty_snapshot_does_not_hide_permission_or_capability_boundaries() {
         (
             CapabilityStatus::Unavailable("容器运行时不可用".into()),
             Inspection::complete(Arc::from([7_u8])),
-            DataState::Ready,
+            DataState::Unavailable,
         ),
         (
             CapabilityStatus::Supported,
@@ -110,7 +110,7 @@ fn permission_unsupported_empty_and_error_are_not_conflated() {
                 DiagnosticCode::PlatformUnavailable,
                 "missing".into(),
             )]),
-            DataState::Error,
+            DataState::Unavailable,
         ),
     ];
     for (capability, inspection, expected) in cases {

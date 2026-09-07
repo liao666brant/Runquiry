@@ -5,7 +5,7 @@ use gpui::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, div,
 };
 use gpui_component::{
-    ActiveTheme as _, Selectable as _, Sizable as _,
+    ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::Input,
@@ -19,7 +19,7 @@ use crate::session::WorkspaceId;
 use crate::workspaces::{
     FileLockMode, PortMode, containers_table_view, file_locks_table_view, ports_table_view,
 };
-use crate::{DataState, StateView};
+use crate::{DataState, StateView, workspace_state_copy};
 
 impl AppShell {
     pub(super) fn render_main_area(
@@ -42,7 +42,12 @@ impl AppShell {
             .gap_3()
             .child(self.render_investigation(cx))
             .child(self.render_workspace_controls(cx))
-            .child(Input::new(&self.filter_input).small().cleanable(true))
+            .child(
+                Input::new(&self.filter_input)
+                    .small()
+                    .cleanable(true)
+                    .disabled(!self.data.interactions_enabled(self.active_workspace())),
+            )
             .child(self.partial_banner(cx))
             .child(div().flex_1().min_h_0().child(self.active_table()))
     }
@@ -96,27 +101,33 @@ impl AppShell {
             }
             WorkspaceId::Ports => workspace_table(
                 self.data.ports.load.state,
+                self.data.ports.load.boundary_reason.as_deref(),
                 ports_table_view(&self.data.ports_table),
             ),
             WorkspaceId::Containers => workspace_table(
                 self.data.containers.load.state,
+                self.data.containers.load.boundary_reason.as_deref(),
                 containers_table_view(&self.data.containers_table),
             ),
             WorkspaceId::FileLocks => workspace_table(
                 self.data.files.load.state,
+                self.data.files.load.boundary_reason.as_deref(),
                 file_locks_table_view(&self.data.files_table),
             ),
         }
     }
 
     fn render_workspace_controls(&self, cx: &Context<'_, Self>) -> AnyElement {
-        match self.active_workspace() {
+        let workspace = self.active_workspace();
+        let interactive = self.data.interactions_enabled(workspace);
+        match workspace {
             WorkspaceId::Ports => h_flex()
                 .gap_1()
                 .child(
                     Button::new("ports-listening")
                         .xsmall()
                         .ghost()
+                        .disabled(!interactive)
                         .selected(self.data.ports.mode == PortMode::Listening)
                         .label(t!("ports.listening").to_string())
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -127,6 +138,7 @@ impl AppShell {
                     Button::new("ports-all")
                         .xsmall()
                         .ghost()
+                        .disabled(!interactive)
                         .selected(self.data.ports.mode == PortMode::All)
                         .label(t!("ports.all").to_string())
                         .on_click(
@@ -140,6 +152,7 @@ impl AppShell {
                     Button::new("files-locked")
                         .xsmall()
                         .ghost()
+                        .disabled(!interactive)
                         .selected(self.data.files.mode == FileLockMode::Locked)
                         .label(t!("files.locked").to_string())
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -150,6 +163,7 @@ impl AppShell {
                     Button::new("files-open")
                         .xsmall()
                         .ghost()
+                        .disabled(!interactive)
                         .selected(self.data.files.mode == FileLockMode::AllOpen)
                         .label(t!("files.all_open").to_string())
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -160,6 +174,7 @@ impl AppShell {
             WorkspaceId::Processes => Button::new("process-sort-pid")
                 .xsmall()
                 .outline()
+                .disabled(!interactive)
                 .label(t!("processes.sort_pid").to_string())
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_process_pid_sort(cx)))
                 .into_any_element(),
@@ -188,28 +203,21 @@ const fn target_label(kind: TargetKind) -> &'static str {
     }
 }
 
-fn workspace_table(state: DataState, table: impl IntoElement) -> AnyElement {
+fn workspace_table(
+    state: DataState,
+    boundary_reason: Option<&str>,
+    table: impl IntoElement,
+) -> AnyElement {
     if state == DataState::Ready {
         table.into_any_element()
     } else {
         let (title, description) = workspace_state_copy(state);
         StateView::new(state, title)
             .description(description)
+            .when_some(boundary_reason, |view, reason| {
+                // 能力/环境边界的平台原因原样呈现：UI 不改写平台结论。
+                view.note(reason)
+            })
             .into_any_element()
     }
-}
-
-fn workspace_state_copy(state: DataState) -> (String, String) {
-    let suffix = match state {
-        DataState::Ready => return (String::new(), String::new()),
-        DataState::Loading => "loading",
-        DataState::Empty => "empty",
-        DataState::Error => "error",
-        DataState::Unsupported => "unsupported",
-        DataState::PermissionDenied => "permission_denied",
-    };
-    (
-        t!(format!("workspace_state.{suffix}.title")).to_string(),
-        t!(format!("workspace_state.{suffix}.description")).to_string(),
-    )
 }

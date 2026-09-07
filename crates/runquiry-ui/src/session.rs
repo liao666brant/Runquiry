@@ -70,8 +70,8 @@ pub struct SortOrder {
 /// 一个工作区的会话状态。
 #[derive(Debug)]
 pub struct WorkspaceSession {
-    /// 数据区域当前状态；会话默认 Loading，产品壳层在采集器不可用时映射为
-    /// [`DataState::Unsupported`]。
+    /// 数据区域当前状态；会话默认 Loading，能力或环境边界（平台不支持、
+    /// 采集器不可用）由采集结果映射为对应的边界状态而非错误。
     pub data_state: DataState,
     /// 当前有效代际：只有携带该代际的列表/详情结果可以应用。
     pub generation: Generation,

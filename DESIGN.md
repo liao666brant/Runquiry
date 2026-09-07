@@ -94,21 +94,22 @@ Runquiry 唯一的设计规范。所有界面实现（工作区、调查面板�
 - 强调是有限预算：一个区域只有一个焦点；颜色、加粗、徽标、警示不同时叠加。
 - 阅读顺序固定为：侧栏 → 工具栏 → 主数据 → 详情 → 状态栏；Tab 顺序与视觉顺序一致。
 
-## 6. 状态语义与呈现规则（五种状态）
+## 6. 状态语义与呈现规则（六种状态）
 
 | 状态 | 语义 | 图标 | 颜色 | 交互规则 |
 |---|---|---|---|---|
 | `loading` | 采集进行中 | 不定进度指示（Spinner） | 中性 `muted_foreground` | 保留上下文，禁用重复提交；首样本未到不显示伪数值 |
 | `empty` | 采集成功但结果为空 | `inbox` | 中性 | 说明下一步（调整筛选/重试）；不算错误 |
 | `error` | 采集或分析失败 | `circle-x` | `danger` | 说明发生了什么 + 恢复动作（如「重试」） |
-| `unsupported` | 平台无该能力 | `dash` | 中性 | 是能力边界，不是错误；不用错误 toast；保留导航入口并解释原因 |
+| `unsupported` | 平台无该能力 | `dash`（带圆形外框） | 中性 | 是能力边界，不是错误；不用错误 toast；保留导航入口并解释原因 |
+| `unavailable` | 平台支持但当前环境不可用（采集器缺失、服务不可达） | `info` | 中性 | 是环境边界，不是平台缺陷也不是错误；解释原因，不误报为「可重试失败」 |
 | `permission-denied` | 权限不足 | `eye-off` | `warning` | 是权限边界，不是故障；给出可行路径，不提示自动提权 |
 
 - `Ready`（有数据）不使用状态组件，直接渲染数据。
 - 实现入口：`runquiry_ui::StateView`（无状态 `RenderOnce`，标题/说明/动作由调用方传入）。
 - 状态图标固定：loading=不定进度指示、empty=`inbox`、error=`circle-x`、
-  unsupported=`dash`、permission-denied=`eye-off`；图标色分别为中性 / 中性 / `danger` /
-  中性 / `warning`。
+  unsupported=`dash`、unavailable=`info`、permission-denied=`eye-off`；图标色分别为
+  中性 / 中性 / `danger` / 中性 / 中性 / `warning`。
 - 部分成功不是 error：有数据的字段照常显示，失败项以 issue 呈现，不得丢弃其余数据。
 
 ## 7. 窗口与布局

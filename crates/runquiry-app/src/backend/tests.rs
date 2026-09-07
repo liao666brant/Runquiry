@@ -12,8 +12,9 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use runquiry_core::{
-    CapabilityStatus, FileInventory, InspectError, NetworkInventory, Pid, Port, ProcessAction,
-    ProcessIdentity, ProcessInventory, QueryTarget, Resolution,
+    CapabilityStatus, DiagnosticCode, DiagnosticIssue, FileInventory, InspectError, Inspection,
+    NetworkInventory, Pid, Port, ProcessAction, ProcessIdentity, ProcessInventory, QueryTarget,
+    Resolution,
 };
 use runquiry_platform::linux::LinuxPlatform;
 use runquiry_ui::backend::{InvestigationTarget, WorkspaceBackend};
@@ -240,12 +241,63 @@ fn unavailable_backend_disables_process_actions_with_its_construction_reason() {
 
     assert_eq!(
         backend.process_control_capability(),
-        CapabilityStatus::Unsupported(String::from("Linux 平台采集器不可用")),
+        CapabilityStatus::Unavailable(String::from("Linux 平台采集器不可用")),
     );
     assert!(matches!(
         backend.execute_process_action(&identity, ProcessAction::Terminate),
         Err(InspectError::Unsupported { reason }) if reason == "Linux 平台采集器不可用"
     ));
+}
+
+/// 采集完全失败时，app 边界必须保留平台给出的结构化结论，不折叠为单一文案。
+#[test]
+fn failed_collection_maps_platform_diagnostics_to_structured_errors() {
+    let unsupported = Inspection::<Vec<()>>::failed(vec![DiagnosticIssue::new(
+        DiagnosticCode::Unsupported,
+        String::from("Windows 平台不提供文件锁枚举（parity §10）"),
+    )]);
+    let error = PlatformBackend::failed_collection_error(
+        &unsupported,
+        String::from("文件 /x"),
+        String::from("采集未返回数据"),
+    );
+    assert!(
+        matches!(error, InspectError::Unsupported { .. }),
+        "能力不支持应保持 Unsupported，实际 {error:?}"
+    );
+    let InspectError::Unsupported { reason } = error else { return };
+    assert_eq!(reason, "Windows 平台不提供文件锁枚举（parity §10）");
+
+    let denied = Inspection::<Vec<()>>::failed(vec![DiagnosticIssue::new(
+        DiagnosticCode::PermissionDenied,
+        String::from("permission"),
+    )]);
+    let error = PlatformBackend::failed_collection_error(
+        &denied,
+        String::from("端口 443"),
+        String::from("采集未返回数据"),
+    );
+    assert!(
+        matches!(error, InspectError::PermissionDenied { .. }),
+        "权限失败应保留 subject，实际 {error:?}"
+    );
+    let InspectError::PermissionDenied { subject } = error else { return };
+    assert_eq!(subject, "端口 443");
+
+    let error = PlatformBackend::failed_collection_error(
+        &Inspection::<Vec<()>>::failed(vec![DiagnosticIssue::new(
+            DiagnosticCode::ExternalToolFailed,
+            String::from("lsof exited 2"),
+        )]),
+        String::from("subject"),
+        String::from("采集未返回数据"),
+    );
+    assert!(
+        matches!(error, InspectError::Unsupported { .. }),
+        "无能力标注的失败应折叠为 Unsupported 并保留诊断，实际 {error:?}"
+    );
+    let InspectError::Unsupported { reason } = error else { return };
+    assert_eq!(reason, "采集未返回数据：lsof exited 2");
 }
 
 #[test]

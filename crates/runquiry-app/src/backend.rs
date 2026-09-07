@@ -11,10 +11,10 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use runquiry_core::{
-    Analysis, AnalysisPorts, CapabilityStatus, ContainerInventory, FileInventory, InspectError,
-    Inspection, NetworkInventory, Pid, ProcessAction, ProcessController, ProcessIdentity,
-    ProcessInventory, ProcessSummary, QueryTarget, Resolution, analyze, resolve_file_holders,
-    resolve_name, resolve_port_owner,
+    Analysis, AnalysisPorts, CapabilityStatus, ContainerInventory, DiagnosticCode, FileInventory,
+    InspectError, Inspection, NetworkInventory, Pid, ProcessAction, ProcessController,
+    ProcessIdentity, ProcessInventory, ProcessSummary, QueryTarget, Resolution, analyze,
+    resolve_file_holders, resolve_name, resolve_port_owner,
 };
 use runquiry_ui::WorkspaceId;
 use runquiry_ui::backend::{
@@ -56,6 +56,37 @@ impl PlatformBackend {
         Platform::new().map_err(|error| InspectError::Unsupported {
             reason: format!("平台采集器不可用：{error}"),
         })
+    }
+
+    /// 把「采集未返回数据」的失败转换为结构化错误：平台标注的能力不支持
+    /// 原样保留为 `Unsupported`（如 Windows 文件锁），权限失败保留 subject，
+    /// 其余保留首条诊断，不把所有失败折叠成同一文案。
+    fn failed_collection_error<T>(
+        inspection: &Inspection<T>,
+        subject: String,
+        fallback: String,
+    ) -> InspectError {
+        if let Some(issue) = inspection
+            .issues
+            .iter()
+            .find(|issue| issue.code() == DiagnosticCode::Unsupported)
+        {
+            return InspectError::Unsupported {
+                reason: issue.message().to_owned(),
+            };
+        }
+        if inspection
+            .issues
+            .iter()
+            .any(|issue| issue.code() == DiagnosticCode::PermissionDenied)
+        {
+            return InspectError::PermissionDenied { subject };
+        }
+        InspectError::Unsupported {
+            reason: inspection.issues.first().map_or(fallback, |issue| {
+                format!("{fallback}：{}", issue.message())
+            }),
+        }
     }
 
     fn identities(platform: &Platform) -> Result<Vec<ProcessSummary>, InspectError> {
@@ -204,13 +235,16 @@ impl WorkspaceBackend for PlatformBackend {
                 }
             }
             QueryTarget::Port(port) => {
-                let ports =
-                    platform
-                        .open_ports()
-                        .data
-                        .ok_or_else(|| InspectError::Unsupported {
-                            reason: format!("端口 {port} 的采集未返回数据"),
-                        })?;
+                let ports_inspection = platform.open_ports();
+                let ports = ports_inspection
+                    .data
+                    .ok_or_else(|| {
+                        Self::failed_collection_error(
+                            &ports_inspection,
+                            format!("端口 {port}"),
+                            format!("端口 {port} 的采集未返回数据"),
+                        )
+                    })?;
                 match resolve_port_owner(&ports, *port) {
                     Ok(resolution) => resolution,
                     Err(InspectError::SocketOwnerUnknown { subject }) => {
@@ -222,11 +256,14 @@ impl WorkspaceBackend for PlatformBackend {
                 }
             }
             QueryTarget::File(path) => {
-                let holders = FileInventory::holders(&platform, path)
-                    .data
-                    .ok_or_else(|| InspectError::Unsupported {
-                        reason: format!("文件 {} 的采集未返回数据", path.display()),
-                    })?;
+                let holders_inspection = FileInventory::holders(&platform, path);
+                let holders = holders_inspection.data.ok_or_else(|| {
+                    Self::failed_collection_error(
+                        &holders_inspection,
+                        format!("文件 {}", path.display()),
+                        format!("文件 {} 的采集未返回数据", path.display()),
+                    )
+                })?;
                 resolve_file_holders(&holders, path)?
             }
             QueryTarget::Container { query, exact } => {
@@ -265,8 +302,9 @@ impl WorkspaceBackend for PlatformBackend {
     fn process_control_capability(&self) -> CapabilityStatus {
         match Self::fresh_platform() {
             Ok(platform) => ProcessController::capability(&platform),
-            Err(InspectError::Unsupported { reason }) => CapabilityStatus::Unsupported(reason),
-            Err(error) => CapabilityStatus::Unsupported(error.to_string()),
+            // 平台结构构造失败是环境不可用而非平台不支持：保留能力四态区分。
+            Err(InspectError::Unsupported { reason }) => CapabilityStatus::Unavailable(reason),
+            Err(error) => CapabilityStatus::Unavailable(error.to_string()),
         }
     }
 

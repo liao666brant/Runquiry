@@ -29,7 +29,7 @@
 
 ## 测试与质量
 
-- `cargo test -p runquiry-app --locked`：B7 变更后 24/24 个测试通过（settings 安全/持久化、窗口 bounds 更新、平台后端的真实 Linux 进程/端口/文件目标解析、容器 fallback 与进程动作桥接）。本轮不以该数字推断全仓测试或 GUI 验收。
+- `cargo test -p runquiry-app --locked`：B7 变更后 24/24 个测试通过（settings 安全/持久化、窗口 bounds 更新、平台后端的真实 Linux 进程/端口/文件目标解析、容器 fallback 与进程动作桥接）。本轮不以该数字推断全仓测试或 GUI 验收。Batch 7A C3 新增 `failed_collection_error` 映射测试**已编写、未运行**。
 - 其他验证：`cargo check -p runquiry-app --locked --examples`、`cargo deny check`、Linux 实际开窗（Batch 2 已做主题/语言/工作区切换与重启恢复的真实 QA）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束（`print_stderr` 为 warn，main 中的错误输出是当前唯一例外）。
 
@@ -57,3 +57,4 @@
 - 2026-09-03：Batch 2 评审修复——窗口 bounds 变化即时持久化并通过 1100×700 重启恢复；设置路径拒绝相对/共享临时回退；唯一排他临时文件阻断固定 `.tmp` 符号链接覆盖，Unix 新目录/文件为 0700/0600。
 - 2026-09-04（未提交工作区）：Batch 4A I1——新增 `backend` 装配边界并将其注入 AppShell；每次采集/解析/分析建立 fresh `LinuxPlatform`，共享 `AnalysisGate` 保持跨请求互斥，端口无进程属主时可回退为已发布容器详情。快捷键改由 UI 的 `ProcessCommand` 统一映射；app 测试增至 21 个。
 - 2026-09-07（未提交工作区）：Batch 4B B7——`PlatformBackend` 增加进程控制能力查询与动作转发，`UnavailableBackend` 安全禁用并保留构造原因；App 测试增至 24 个。真实 X11 QA 已覆盖五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。
+- 2026-09-07（未提交工作区）：Batch 7A C3（验证阻断）——`process_control_capability` 平台构造失败改映射 `CapabilityStatus::Unavailable`（`UnavailableBackend` 同步对齐 load 语义）；resolve 的端口/文件采集完全失败经 `failed_collection_error` 保留平台诊断（Unsupported 诊断与 PermissionDenied 不再折叠为单一「采集未返回数据」）；gallery 状态切换组补 `unavailable`（tab 序整体顺延 1 位，既有 A4 焦点/Tab 步数证据不再适用）。全部改动未经编译/测试。

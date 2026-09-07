@@ -3,6 +3,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
@@ -15,7 +16,7 @@ use gpui_component::{
 use runquiry_core::{ProcessIdentity, ProcessSummary};
 use rust_i18n::t;
 
-use crate::{DataState, StateView, state_copy};
+use crate::{DataState, StateView, workspace_state_copy};
 
 use super::{ProcessRows, SurfaceState};
 
@@ -122,18 +123,25 @@ impl TableDelegate for ProcessTableDelegate {
         _: &mut Window,
         _: &mut Context<'_, TableState<Self>>,
     ) -> impl IntoElement {
-        let state = match self.surface {
-            SurfaceState::Loading | SurfaceState::Sampling => DataState::Loading,
+        let (state, boundary_reason) = match &self.surface {
+            SurfaceState::Loading | SurfaceState::Sampling => (DataState::Loading, None),
             SurfaceState::Empty | SurfaceState::Ready | SurfaceState::Partial { .. } => {
-                DataState::Empty
+                (DataState::Empty, None)
             }
-            SurfaceState::Error { .. } | SurfaceState::Unavailable { .. } => DataState::Error,
-            SurfaceState::PermissionDenied => DataState::PermissionDenied,
-            SurfaceState::Unsupported { .. } => DataState::Unsupported,
+            SurfaceState::Error { .. } => (DataState::Error, None),
+            SurfaceState::PermissionDenied => (DataState::PermissionDenied, None),
+            SurfaceState::Unsupported { reason } => {
+                (DataState::Unsupported, Some(reason.as_str()))
+            }
+            SurfaceState::Unavailable { reason } => (DataState::Unavailable, Some(reason.as_str())),
         };
-        let (title, description) = state_copy(state);
+        let (title, description) = workspace_state_copy(state);
         StateView::new(state, title)
             .description(description)
+            .when_some(boundary_reason, |view, reason| {
+                // 能力/环境边界必须解释原因：UI 不改写平台结论。
+                view.note(reason)
+            })
             .into_any_element()
     }
 

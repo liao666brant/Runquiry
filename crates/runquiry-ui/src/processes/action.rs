@@ -141,6 +141,17 @@ impl ProcessActionFlow {
         self.pending.take().is_some()
     }
 
+    /// 能力态变化后重新门控：能力不再可用时撤销未确认的请求。
+    ///
+    /// 已进入后台执行的动作无法撤销，由后端在执行时拒绝；返回是否撤销了
+    /// 确认中的请求。
+    pub fn revoke_confirmation_if_unusable(&mut self, capability: &CapabilityStatus) -> bool {
+        if capability.is_usable() {
+            return false;
+        }
+        self.pending.take().is_some()
+    }
+
     /// 确认并冻结请求；第二次确认不会产生重复执行。
     pub fn confirm(&mut self) -> Option<ActionRequest> {
         if self.in_flight.is_some() {

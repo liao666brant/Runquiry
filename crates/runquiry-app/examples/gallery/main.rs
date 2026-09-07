@@ -145,21 +145,22 @@ const STATE_LOADING: Control = Control::new("loading", 6);
 const STATE_EMPTY: Control = Control::new("empty", 7);
 const STATE_ERROR: Control = Control::new("error", 8);
 const STATE_UNSUPPORTED: Control = Control::new("unsupported", 9);
-const STATE_PERMISSION_DENIED: Control = Control::new("permission-denied", 10);
-const OPEN_NOTIFICATION: Control = Control::new("open-notification", 11);
-const OPEN_ALERT: Control = Control::new("open-alert", 12);
-const OPEN_SHEET: Control = Control::new("open-sheet", 13);
+const STATE_UNAVAILABLE: Control = Control::new("unavailable", 10);
+const STATE_PERMISSION_DENIED: Control = Control::new("permission-denied", 11);
+const OPEN_NOTIFICATION: Control = Control::new("open-notification", 12);
+const OPEN_ALERT: Control = Control::new("open-alert", 13);
+const OPEN_SHEET: Control = Control::new("open-sheet", 14);
 /// Sheet 的 Close 按钮：不在工具栏，但走同一套焦点读数。
-const SHEET_CLOSE: Control = Control::new("sheet-close", 14);
+const SHEET_CLOSE: Control = Control::new("sheet-close", 15);
 
-/// 区域容器的 tab 顺序号：排在全部控件（1..=14）之后，让 Tab 从工具栏出发
+/// 区域容器的 tab 顺序号：排在全部控件（1..=15）之后，让 Tab 从工具栏出发
 /// 先走完工具栏按钮，再进入侧栏与数据区。工具栏容器本身保持 0（初始焦点）。
-const TAB_SIDEBAR: isize = 15;
-const TAB_CONTENT: isize = 16;
-const TAB_DATA_TABLE: isize = 17;
+const TAB_SIDEBAR: isize = 16;
+const TAB_CONTENT: isize = 17;
+const TAB_DATA_TABLE: isize = 18;
 
 /// 全部已命名控件，供焦点读数按 tab 顺序号反查控件 ID。
-const CONTROLS: [Control; 14] = [
+const CONTROLS: [Control; 15] = [
     THEME_LIGHT,
     THEME_DARK,
     LANG_EN,
@@ -169,6 +170,7 @@ const CONTROLS: [Control; 14] = [
     STATE_EMPTY,
     STATE_ERROR,
     STATE_UNSUPPORTED,
+    STATE_UNAVAILABLE,
     STATE_PERMISSION_DENIED,
     OPEN_NOTIFICATION,
     OPEN_ALERT,
@@ -367,7 +369,7 @@ impl Gallery {
         group(tr("gallery.lang_group"), vec![en.into(), zh.into()], cx)
     }
 
-    /// 五种状态 + 正常态的切换组。
+    /// 六种呈现状态 + 正常态的切换组。
     fn state_group(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let state = self.state;
         let items: Vec<AnyElement> = [
@@ -379,6 +381,11 @@ impl Gallery {
                 DataState::Unsupported,
                 STATE_UNSUPPORTED,
                 "gallery.state_unsupported",
+            ),
+            (
+                DataState::Unavailable,
+                STATE_UNAVAILABLE,
+                "gallery.state_unavailable",
             ),
             (
                 DataState::PermissionDenied,

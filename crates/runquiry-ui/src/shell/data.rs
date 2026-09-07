@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use gpui::{App, AppContext as _, Entity, Window};
 use gpui_component::table::TableState;
-use runquiry_core::{CapabilityStatus, DiagnosticIssue};
+use runquiry_core::{CapabilityStatus, DiagnosticCode, DiagnosticIssue};
 
 use crate::backend::WorkspaceSnapshot;
 use crate::processes::{ProcessTableDelegate, ProcessesState, SurfaceState};
+use crate::session::WorkspaceId;
 use crate::workspaces::{
     ContainerRow, ContainersState, ContainersTableDelegate, FileLocksState, FileLocksTableDelegate,
     PortRow, PortsState, PortsTableDelegate, update_containers_table, update_file_locks_table,
@@ -32,6 +33,33 @@ pub(super) struct ShellData {
 }
 
 impl ShellData {
+    /// 当前工作区是否允许模式切换、筛选等交互；能力/环境边界上禁用，
+    /// 不能制造「页面仍可操作」的错觉。
+    pub(super) fn interactions_enabled(&self, workspace: WorkspaceId) -> bool {
+        match workspace {
+            // 与 SurfaceState::from_parts / map_state 的边界判定同源：
+            // 能力边界或 Unsupported 诊断都禁用交互。
+            WorkspaceId::Processes => {
+                let capability_boundary = matches!(
+                    self.process_capability,
+                    CapabilityStatus::Unsupported(_) | CapabilityStatus::Unavailable(_)
+                );
+                let issue_boundary = self
+                    .process_issues
+                    .iter()
+                    .any(|issue| issue.code() == DiagnosticCode::Unsupported);
+                !(capability_boundary || issue_boundary)
+            }
+            WorkspaceId::Ports => crate::workspaces::interactions_enabled(self.ports.load.state),
+            WorkspaceId::Containers => {
+                crate::workspaces::interactions_enabled(self.containers.load.state)
+            }
+            WorkspaceId::FileLocks => {
+                crate::workspaces::interactions_enabled(self.files.load.state)
+            }
+        }
+    }
+
     pub(super) fn new(window: &mut Window, cx: &mut App) -> Self {
         let processes = ProcessesState::new(Arc::default());
         let ports = PortsState::default();
@@ -72,6 +100,7 @@ impl ShellData {
                 inspection,
             } => {
                 let issues: Arc<[DiagnosticIssue]> = inspection.issues.into();
+                let has_snapshot = inspection.data.is_some();
                 let rows = inspection.data.unwrap_or_default();
                 self.process_all = rows;
                 let rows = self.filtered_processes();
@@ -82,7 +111,11 @@ impl ShellData {
                     table.delegate_mut().replace_rows(rows);
                     table
                         .delegate_mut()
-                        .set_surface(process_surface(&capability, &self.process_issues));
+                        .set_surface(SurfaceState::from_parts(
+                            &capability,
+                            has_snapshot,
+                            &self.process_issues,
+                        ));
                     table.refresh(cx);
                 });
             }
@@ -188,25 +221,5 @@ impl ShellData {
             rows.reverse();
         }
         rows.into()
-    }
-}
-
-fn process_surface(capability: &CapabilityStatus, issues: &[DiagnosticIssue]) -> SurfaceState {
-    match capability {
-        CapabilityStatus::Unsupported(reason) => SurfaceState::Unsupported {
-            reason: reason.clone(),
-        },
-        CapabilityStatus::Unavailable(reason) => SurfaceState::Unavailable {
-            reason: reason.clone(),
-        },
-        CapabilityStatus::Partial(_) if !issues.is_empty() => SurfaceState::Partial {
-            issue_count: issues.len(),
-        },
-        CapabilityStatus::Supported | CapabilityStatus::Partial(_) if !issues.is_empty() => {
-            SurfaceState::Partial {
-                issue_count: issues.len(),
-            }
-        }
-        CapabilityStatus::Supported | CapabilityStatus::Partial(_) => SurfaceState::Ready,
     }
 }

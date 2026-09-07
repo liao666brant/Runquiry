@@ -36,12 +36,6 @@ toolbar.language.en:
 toolbar.language.zh_cn:
   en: 中文
   zh-CN: 中文
-main.collector_unavailable.title:
-  en: Collector unavailable
-  zh-CN: 采集器不可用
-main.collector_unavailable.description:
-  en: This workspace has no available collector on the current platform.
-  zh-CN: 当前平台没有可用于此工作区的采集器。
 detail.title:
   en: Details
   zh-CN: 详情
@@ -99,6 +93,12 @@ workspace_state.unsupported.title:
 workspace_state.unsupported.description:
   en: This collector is not available on the current platform.
   zh-CN: 当前平台不提供此采集能力。
+workspace_state.unavailable.title:
+  en: Collector unavailable
+  zh-CN: 采集器不可用
+workspace_state.unavailable.description:
+  en: The platform supports this workspace, but the local collector is currently unavailable.
+  zh-CN: 平台支持此工作区，但本地采集器当前不可用。
 workspace_state.permission_denied.title:
   en: Permission required
   zh-CN: 需要权限
@@ -228,6 +228,12 @@ actions.error.process_changed:
 actions.error.generic:
   en: "Process action failed: %{detail}"
   zh-CN: "进程操作失败：%{detail}"
+actions.error.unsupported:
+  en: "This action is not supported on the current platform: %{reason}"
+  zh-CN: "当前平台不支持该操作：%{reason}"
+actions.error.external_tool:
+  en: "%{program} failed: %{detail}"
+  zh-CN: "%{program} 执行失败：%{detail}"
 detail.reveal_sensitive:
   en: Reveal sensitive values for this detail
   zh-CN: 仅在当前详情显示敏感值
@@ -361,6 +367,9 @@ gallery.state_error:
 gallery.state_unsupported:
   en: Unsupported
   zh-CN: 不支持
+gallery.state_unavailable:
+  en: Unavailable
+  zh-CN: 不可用
 gallery.state_permission_denied:
   en: Permission denied
   zh-CN: 权限不足
@@ -445,6 +454,12 @@ gallery.unsupported_title:
 gallery.unsupported_description:
   en: This workspace has no collector for the current platform.
   zh-CN: 此工作区在当前平台没有可用采集器。
+gallery.unavailable_title:
+  en: Collector unavailable
+  zh-CN: 采集器不可用
+gallery.unavailable_description:
+  en: The platform supports this workspace, but the collector is currently unavailable.
+  zh-CN: 平台支持此工作区，但采集器当前不可用。
 gallery.permission_denied_title:
   en: Permission denied
   zh-CN: 权限不足

@@ -64,8 +64,10 @@ pub fn tr(key: &str) -> String {
 /// 数据状态的（标题，说明）文案；[`DataState::Ready`] 不使用状态呈现组件，
 /// 返回空串对。
 ///
-/// 供 gallery 与产品壳层共用同一套状态文案键（`gallery.<state>_title` /
-/// `gallery.<state>_description`）；状态短名见 [`state_name`]。
+/// 供 gallery 实验台使用（`gallery.<state>_title` /
+/// `gallery.<state>_description`）；产品工作区一律使用
+/// [`workspace_state_copy`]，避免实验台文案进入产品界面。状态短名见
+/// [`state_name`]。
 pub fn state_copy(state: DataState) -> (String, String) {
     match state {
         DataState::Ready => (String::new(), String::new()),
@@ -79,11 +81,33 @@ pub fn state_copy(state: DataState) -> (String, String) {
             tr("gallery.unsupported_title"),
             tr("gallery.unsupported_description"),
         ),
+        DataState::Unavailable => (
+            tr("gallery.unavailable_title"),
+            tr("gallery.unavailable_description"),
+        ),
         DataState::PermissionDenied => (
             tr("gallery.permission_denied_title"),
             tr("gallery.permission_denied_description"),
         ),
     }
+}
+
+/// 产品工作区数据状态的（标题，说明）文案（`workspace_state.<state>.{title,
+/// description}`）；[`DataState::Ready`] 不使用状态呈现组件，返回空串对。
+pub fn workspace_state_copy(state: DataState) -> (String, String) {
+    let suffix = match state {
+        DataState::Ready => return (String::new(), String::new()),
+        DataState::Loading => "loading",
+        DataState::Empty => "empty",
+        DataState::Error => "error",
+        DataState::Unsupported => "unsupported",
+        DataState::Unavailable => "unavailable",
+        DataState::PermissionDenied => "permission_denied",
+    };
+    (
+        tr(&format!("workspace_state.{suffix}.title")),
+        tr(&format!("workspace_state.{suffix}.description")),
+    )
 }
 
 /// 状态在工具栏/状态栏中使用的短名称。
@@ -94,6 +118,7 @@ pub fn state_name(state: DataState) -> String {
         DataState::Empty => "gallery.state_empty",
         DataState::Error => "gallery.state_error",
         DataState::Unsupported => "gallery.state_unsupported",
+        DataState::Unavailable => "gallery.state_unavailable",
         DataState::PermissionDenied => "gallery.state_permission_denied",
     };
     tr(key)

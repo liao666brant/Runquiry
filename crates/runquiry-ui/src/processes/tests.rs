@@ -170,6 +170,99 @@ fn cpu_none_is_sampling_and_inspection_preserves_partial_diagnostics() {
     );
 }
 
+/// Processes 页与清单工作区共用同一套失败语义：失败不伪装成空集合。
+#[test]
+fn from_parts_matches_list_workspace_state_semantics() {
+    let supported = CapabilityStatus::Supported;
+
+    // 有快照 + 诊断：部分成功。
+    assert_eq!(
+        SurfaceState::from_parts(
+            &CapabilityStatus::Supported,
+            true,
+            &[DiagnosticIssue::new(
+                DiagnosticCode::PermissionDenied,
+                String::from("denied"),
+            )],
+        ),
+        SurfaceState::Partial { issue_count: 1 }
+    );
+
+    // 无快照 + 权限失败：权限边界，不是空集合。
+    assert_eq!(
+        SurfaceState::from_parts(
+            &CapabilityStatus::Supported,
+            false,
+            &[DiagnosticIssue::new(
+                DiagnosticCode::PermissionDenied,
+                String::from("denied"),
+            )],
+        ),
+        SurfaceState::PermissionDenied
+    );
+
+    // 无快照 + 工具失败：完全失败，不是空集合。
+    let tool_failed = SurfaceState::from_parts(
+        &CapabilityStatus::Supported,
+        false,
+        &[DiagnosticIssue::new(
+            DiagnosticCode::ExternalToolFailed,
+            String::from("lsof missing"),
+        )],
+    );
+    assert!(matches!(tool_failed, SurfaceState::Error { issue_count: 1 }));
+
+    // 有快照 + 无诊断：正常态（真实空集合仍由空行触发 Empty 呈现）。
+    assert_eq!(
+        SurfaceState::from_parts(&CapabilityStatus::Supported, true, &[]),
+        SurfaceState::Ready
+    );
+
+    // Unsupported 诊断与能力边界同语义，原因取自诊断。
+    let issue_boundary = SurfaceState::from_parts(
+        &CapabilityStatus::Supported,
+        false,
+        &[DiagnosticIssue::new(
+            DiagnosticCode::Unsupported,
+            String::from("平台不提供该采集"),
+        )],
+    );
+    assert_eq!(
+        issue_boundary,
+        SurfaceState::Unsupported {
+            reason: String::from("平台不提供该采集"),
+        }
+    );
+
+    // 边界判定与 map_state 同序：Unsupported 诊断优先于环境不可用。
+    let issue_over_unavailable = SurfaceState::from_parts(
+        &CapabilityStatus::Unavailable(String::from("collector missing")),
+        false,
+        &[DiagnosticIssue::new(
+            DiagnosticCode::Unsupported,
+            String::from("unsupported"),
+        )],
+    );
+    assert_eq!(
+        issue_over_unavailable,
+        SurfaceState::Unsupported {
+            reason: String::from("unsupported"),
+        }
+    );
+
+    // 无诊断的环境不可用：Unavailable 边界。
+    assert_eq!(
+        SurfaceState::from_parts(
+            &CapabilityStatus::Unavailable(String::from("collector missing")),
+            false,
+            &[],
+        ),
+        SurfaceState::Unavailable {
+            reason: String::from("collector missing"),
+        }
+    );
+}
+
 #[test]
 fn secrets_are_redacted_and_reveal_is_scoped_to_one_detail_session() {
     let env = vec![

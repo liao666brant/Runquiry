@@ -2,11 +2,14 @@
 //!
 //! - [`theme`]：Runquiry 浅/深主题（唯一允许出现原始色值的地方）。
 //! - [`backend`]：应用装配层实现的同步只读采集边界。
-//! - [`state`] + [`state_view`]：六态数据状态与统一状态呈现。
+//! - [`state`] + [`state_view`]：七态数据状态与统一状态呈现。
 //! - [`locale`]：语言枚举与 rust-i18n 初始化（文案键在 `locales/`，en 兜底）。
 //! - [`session`]：每工作区会话状态（LoadState、generation、选择、排序、筛选）。
 //! - [`debounce`]：500ms 详情加载防抖（注入时钟，纯逻辑）。
 //! - [`shell`]：产品应用壳层（侧栏/工具栏/主数据区/详情区/状态栏）。
+
+#[cfg(test)]
+mod capability_contract_tests;
 
 pub mod backend;
 pub mod debounce;
@@ -25,7 +28,7 @@ pub mod workspaces;
 rust_i18n::i18n!("locales", fallback = "en");
 
 pub use debounce::DetailDebounce;
-pub use locale::{Lang, set_language, state_copy, state_name, tr};
+pub use locale::{Lang, set_language, state_copy, state_name, tr, workspace_state_copy};
 pub use session::{AppSession, WorkspaceId, WorkspaceSession};
 pub use shell::{AppShell, ShellEvent, ShellStartup};
 pub use state::DataState;

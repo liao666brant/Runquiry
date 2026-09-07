@@ -109,7 +109,7 @@ pub(crate) fn print_cli_error(message: &str) {
     eprintln!("gallery: {message}");
     eprintln!(
         "用法: gallery [--size 1280x800] [--theme light|dark] [--lang en|zh-CN] \
-         [--state ready|loading|empty|error|unsupported|permission-denied] \
+         [--state ready|loading|empty|error|unsupported|unavailable|permission-denied] \
          [--open sheet|alert|notification]"
     );
 }

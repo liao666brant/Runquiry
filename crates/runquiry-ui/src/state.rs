@@ -1,4 +1,4 @@
-//! 五种数据状态的语义定义（DESIGN.md「状态」节）。
+//! 七种数据状态的语义定义（`Ready` + DESIGN.md §6 的六种呈现状态）。
 //!
 //! 状态只表达「数据为什么不可用」，不表达操作系统判断；平台能力结论由 core
 //! 的 `CapabilityStatus` 传入，UI 只按本模块的语义呈现。
@@ -7,7 +7,7 @@ use gpui_component::IconName;
 
 /// 数据区域可能处于的状态。
 ///
-/// `Ready` 表示有可用数据；其余五种是 DESIGN.md 规定的统一呈现状态。
+/// `Ready` 表示有可用数据；其余六种是 DESIGN.md 规定的统一呈现状态。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DataState {
     /// 数据已加载且非空（gallery 的默认展示态）。
@@ -21,18 +21,22 @@ pub enum DataState {
     Error,
     /// 平台不支持该能力：是能力边界，不是错误。
     Unsupported,
+    /// 平台支持但当前环境不可用（采集器缺失、服务不可达）：是环境边界，
+    /// 不是平台缺陷，也不是可重试失败的错误。
+    Unavailable,
     /// 权限不足：是权限边界，不是错误。
     PermissionDenied,
 }
 
 impl DataState {
     /// CLI/QA 使用的稳定键名（小写 kebab-case）。
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Ready,
         Self::Loading,
         Self::Empty,
         Self::Error,
         Self::Unsupported,
+        Self::Unavailable,
         Self::PermissionDenied,
     ];
 
@@ -44,6 +48,7 @@ impl DataState {
             Self::Empty => "empty",
             Self::Error => "error",
             Self::Unsupported => "unsupported",
+            Self::Unavailable => "unavailable",
             Self::PermissionDenied => "permission-denied",
         }
     }
@@ -59,6 +64,7 @@ impl DataState {
             Self::Ready | Self::Loading => None,
             Self::Empty => Some(IconName::Inbox),
             Self::Error => Some(IconName::CircleX),
+            Self::Unavailable => Some(IconName::Info),
             // 能力与权限边界都不用「错误」图标：语义不同，不能只靠颜色区分。
             Self::Unsupported => Some(IconName::Dash),
             Self::PermissionDenied => Some(IconName::EyeOff),

@@ -9,7 +9,7 @@ mod file_locks_table;
 mod ports;
 mod ports_table;
 
-pub use common::{LoadPresentation, StableSelection};
+pub use common::{LoadPresentation, StableSelection, interactions_enabled};
 pub use containers::{ContainerRow, ContainerSort, ContainersState};
 pub use containers_table::{
     ContainersTableDelegate, containers_table_view, new_containers_table, update_containers_table,

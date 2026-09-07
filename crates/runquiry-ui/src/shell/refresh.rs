@@ -4,9 +4,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{AppContext as _, Context, Task};
+use runquiry_core::CapabilityStatus;
 
 use super::AppShell;
 use crate::backend::{WorkspaceResultGate, WorkspaceSnapshot};
+use crate::session::WorkspaceId;
+
+/// 一次刷新的后台产物；Processes 工作区随快照附带进程控制能力，
+/// 使能力矩阵在窗口生命周期内保持动态。
+struct RefreshOutput {
+    snapshot: WorkspaceSnapshot,
+    control_capability: Option<CapabilityStatus>,
+}
 
 impl AppShell {
     /// 发起当前工作区刷新；所有同步采集都在后台执行器运行。
@@ -18,10 +27,18 @@ impl AppShell {
         let gate = WorkspaceResultGate::new(workspace, generation);
         self.refresh_started = Some((gate, Instant::now()));
         let backend = Arc::clone(&self.backend);
-        let work = cx.background_spawn(async move { backend.load(workspace) });
+        let work = cx.background_spawn(async move {
+            let snapshot = backend.load(workspace);
+            let control_capability = (workspace == WorkspaceId::Processes)
+                .then(|| backend.process_control_capability());
+            RefreshOutput {
+                snapshot,
+                control_capability,
+            }
+        });
         self.refresh_task = Some(cx.spawn(async move |shell, cx| {
-            let snapshot = work.await;
-            let _ = shell.update(cx, |shell, cx| shell.apply_refresh(gate, snapshot, cx));
+            let output = work.await;
+            let _ = shell.update(cx, |shell, cx| shell.apply_refresh(gate, output, cx));
         }));
     }
 
@@ -39,11 +56,11 @@ impl AppShell {
     fn apply_refresh(
         &mut self,
         gate: WorkspaceResultGate,
-        snapshot: WorkspaceSnapshot,
+        output: RefreshOutput,
         cx: &mut Context<'_, Self>,
     ) {
-        let workspace = snapshot.workspace();
-        if !gate.accepts_session(&self.session, &snapshot) {
+        let workspace = output.snapshot.workspace();
+        if !gate.accepts_session(&self.session, &output.snapshot) {
             return;
         }
         let Some((active_gate, started)) = self.refresh_started else {
@@ -52,7 +69,16 @@ impl AppShell {
         if active_gate != gate {
             return;
         }
-        self.data.apply(snapshot, cx);
+        if let Some(capability) = output.control_capability {
+            self.process_action_capability = capability;
+            if self
+                .process_action_flow
+                .revoke_confirmation_if_unusable(&self.process_action_capability)
+            {
+                cx.notify();
+            }
+        }
+        self.data.apply(output.snapshot, cx);
         if self
             .session
             .session_mut(workspace)
