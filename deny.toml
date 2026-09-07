@@ -67,6 +67,19 @@ name = "runquiry-platform"
 allow = ["GPL-3.0-or-later"]
 name = "runquiry-ui"
 
+# zed 固定提交（f66ed399）内的部分 crate manifest 未声明 license 字段，
+# 实际沿用仓库统一 Apache-2.0（LICENSE-APACHE）；clarify 锁定表达式，
+# hash 由 cargo-deny 提示的实测指纹给出。
+[[licenses.clarify]]
+name = "gpui_shared_string"
+expression = "Apache-2.0"
+license-files = [{ path = "LICENSE-APACHE", hash = 0x8a8d02f6 }]
+
+[[licenses.clarify]]
+name = "gpui_util"
+expression = "Apache-2.0"
+license-files = [{ path = "LICENSE-APACHE", hash = 0x8a8d02f6 }]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
