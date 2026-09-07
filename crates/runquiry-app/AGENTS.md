@@ -15,7 +15,7 @@
 
 ## 对外接口
 
-无对外 API。窗口行为（B4 起为产品壳层）：初始 1280×800（最小 960×640），`Root` 第一级视图装配 runquiry-ui 的 `AppShell`（侧栏四工作区/工具栏/主数据区/详情区/StatusBar）；启动设置（主题/语言/最后工作区/窗口尺寸）从设置文件恢复，`ShellEvent` 与窗口 bounds 变化写回 allowlist 设置。`PlatformBackend` 对每次 load/resolve/analyze 新建 `LinuxPlatform`，避免启动期进程排除基线漏掉后启动目标；B7 的 `process_control_capability` 与 `execute_process_action` 同样按请求新建 platform，调用 core `ProcessController`，不在 UI 线程执行、不提权；失败按 `InspectError` 原样返回。共享 `AnalysisGate` 仍保证跨请求分析互斥。配置路径只接受平台环境提供的绝对路径；无安全路径时禁用持久化。
+无对外 API。窗口行为（B4 起为产品壳层）：初始 1280×800（最小 960×640），`Root` 第一级视图装配 runquiry-ui 的 `AppShell`（合并标题栏/侧栏四工作区/主数据区/详情区/StatusBar）；`WindowOptions` 以 `TitleBar::window_options()` 为基底（原生标题栏透明 + `app_owns_titlebar_drag`，窗口控制由 UI 层 `TitleBar` 自绘），仍保留 `set_window_title` 供任务栏标题；启动设置（主题/语言/最后工作区/窗口尺寸）从设置文件恢复，`ShellEvent` 与窗口 bounds 变化写回 allowlist 设置。`PlatformBackend` 对每次 load/resolve/analyze 新建 `LinuxPlatform`，避免启动期进程排除基线漏掉后启动目标；B7 的 `process_control_capability` 与 `execute_process_action` 同样按请求新建 platform，调用 core `ProcessController`，不在 UI 线程执行、不提权；失败按 `InspectError` 原样返回。共享 `AnalysisGate` 仍保证跨请求分析互斥。配置路径只接受平台环境提供的绝对路径；无安全路径时禁用持久化。
 
 另有独立开发实验台：`src` 同级的 `examples/gallery/`（`cargo run -p runquiry-app --example gallery --locked`），A4 组件 gallery，不参与产品打包。
 
@@ -29,7 +29,7 @@
 
 ## 测试与质量
 
-- `cargo test -p runquiry-app --locked`：B7 变更后 24/24 个测试通过（settings 安全/持久化、窗口 bounds 更新、平台后端的真实 Linux 进程/端口/文件目标解析、容器 fallback 与进程动作桥接）。本轮不以该数字推断全仓测试或 GUI 验收。Batch 7A C3 新增 `failed_collection_error` 映射测试**已编写、未运行**。
+- `cargo test -p runquiry-app --locked`：B7 变更后 24/24 个测试通过（settings 安全/持久化、窗口 bounds 更新、平台后端的真实 Linux 进程/端口/文件目标解析、容器 fallback 与进程动作桥接）。本轮不以该数字推断全仓测试或 GUI 验收。Batch 7A C3 新增 `failed_collection_error` 映射测试**已随 workspace 套件在 Windows 验证主机全量运行、app 套件全绿**。
 - 其他验证：`cargo check -p runquiry-app --locked --examples`、`cargo deny check`、Linux 实际开窗（Batch 2 已做主题/语言/工作区切换与重启恢复的真实 QA）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束（`print_stderr` 为 warn，main 中的错误输出是当前唯一例外）。
 
@@ -58,3 +58,4 @@
 - 2026-09-04（未提交工作区）：Batch 4A I1——新增 `backend` 装配边界并将其注入 AppShell；每次采集/解析/分析建立 fresh `LinuxPlatform`，共享 `AnalysisGate` 保持跨请求互斥，端口无进程属主时可回退为已发布容器详情。快捷键改由 UI 的 `ProcessCommand` 统一映射；app 测试增至 21 个。
 - 2026-09-07（未提交工作区）：Batch 4B B7——`PlatformBackend` 增加进程控制能力查询与动作转发，`UnavailableBackend` 安全禁用并保留构造原因；App 测试增至 24 个。真实 X11 QA 已覆盖五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。
 - 2026-09-07（未提交工作区）：Batch 7A C3（验证阻断）——`process_control_capability` 平台构造失败改映射 `CapabilityStatus::Unavailable`（`UnavailableBackend` 同步对齐 load 语义）；resolve 的端口/文件采集完全失败经 `failed_collection_error` 保留平台诊断（Unsupported 诊断与 PermissionDenied 不再折叠为单一「采集未返回数据」）；gallery 状态切换组补 `unavailable`（tab 序整体顺延 1 位，既有 A4 焦点/Tab 步数证据不再适用）。全部改动未经编译/测试。
+- 2026-09-07（未提交工作区）：Windows 验证通道打通后 app 套件全绿；标题栏合并（用户请求）——`WindowOptions` 改用 `TitleBar::window_options()`（原生标题栏透明），窗口控制移交 UI 层 `TitleBar` 自绘，`set_window_title` 保留用于任务栏标题；app 套件与 GUI 启动冒烟在 Windows 全绿，GUI 视觉与交互用户确认通过。
