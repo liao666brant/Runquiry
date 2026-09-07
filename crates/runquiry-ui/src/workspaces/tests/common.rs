@@ -23,6 +23,67 @@ fn capability_and_inspection_keep_partial_data_distinct() {
 }
 
 #[test]
+fn partial_empty_snapshot_stays_empty_and_keeps_runtime_diagnostics() {
+    let issue = DiagnosticIssue::new(
+        DiagnosticCode::ExternalToolFailed,
+        "podman unavailable".into(),
+    );
+    let mut load = LoadPresentation::default();
+
+    assert!(load.apply(
+        Generation::first(),
+        &CapabilityStatus::Partial("部分运行时不可用".into()),
+        Inspection::partial(Arc::<[u8]>::default(), vec![issue]),
+    ));
+
+    assert_eq!(load.state, DataState::Empty);
+    assert!(load.is_partial());
+    assert_eq!(load.issues.len(), 1);
+    assert_eq!(load.capability_note.as_deref(), Some("部分运行时不可用"));
+}
+
+#[test]
+fn empty_snapshot_does_not_hide_permission_or_capability_boundaries() {
+    let cases = [
+        (
+            CapabilityStatus::Partial("部分权限不足".into()),
+            Inspection::partial(
+                Arc::<[u8]>::default(),
+                vec![DiagnosticIssue::new(
+                    DiagnosticCode::PermissionDenied,
+                    "proc denied".into(),
+                )],
+            ),
+            DataState::PermissionDenied,
+        ),
+        (
+            CapabilityStatus::Unavailable("容器运行时不可用".into()),
+            Inspection::complete(Arc::from([7_u8])),
+            DataState::Ready,
+        ),
+        (
+            CapabilityStatus::Supported,
+            Inspection::failed(vec![DiagnosticIssue::new(
+                DiagnosticCode::ExternalToolFailed,
+                "collector failed".into(),
+            )]),
+            DataState::Error,
+        ),
+        (
+            CapabilityStatus::Supported,
+            Inspection::failed(Vec::new()),
+            DataState::Error,
+        ),
+    ];
+
+    for (capability, inspection, expected) in cases {
+        let mut load = LoadPresentation::default();
+        assert!(load.apply(Generation::first(), &capability, inspection));
+        assert_eq!(load.state, expected);
+    }
+}
+
+#[test]
 fn permission_unsupported_empty_and_error_are_not_conflated() {
     let cases = [
         (

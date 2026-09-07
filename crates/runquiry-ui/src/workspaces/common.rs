@@ -51,8 +51,9 @@ impl<T> LoadPresentation<T> {
             | CapabilityStatus::Unavailable(_) => None,
         };
         let issues: Arc<[DiagnosticIssue]> = inspection.issues.into();
+        let has_snapshot = inspection.data.is_some();
         let rows = inspection.data.unwrap_or_default();
-        let state = map_state(capability, &rows, &issues);
+        let state = map_state(capability, has_snapshot, &rows, &issues);
         self.rows = rows;
         self.issues = issues;
         self.capability_note = capability_note;
@@ -67,13 +68,14 @@ impl<T> LoadPresentation<T> {
 
     /// 是否应显示部分成功横幅。
     pub fn is_partial(&self) -> bool {
-        self.state == DataState::Ready
+        matches!(self.state, DataState::Ready | DataState::Empty)
             && (!self.issues.is_empty() || self.capability_note.is_some())
     }
 }
 
 fn map_state<T>(
     capability: &CapabilityStatus,
+    has_snapshot: bool,
     rows: &[T],
     issues: &[DiagnosticIssue],
 ) -> DataState {
@@ -84,17 +86,16 @@ fn map_state<T>(
     {
         return DataState::Unsupported;
     }
+    if !rows.is_empty() {
+        return DataState::Ready;
+    }
     let denied = issues
         .iter()
         .any(|issue| issue.code() == DiagnosticCode::PermissionDenied);
-    let has_data = !rows.is_empty();
-    if has_data {
-        return DataState::Ready;
-    }
     if denied {
         return DataState::PermissionDenied;
     }
-    if matches!(capability, CapabilityStatus::Unavailable(_)) || !issues.is_empty() {
+    if matches!(capability, CapabilityStatus::Unavailable(_)) || !has_snapshot {
         return DataState::Error;
     }
     DataState::Empty
