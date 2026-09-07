@@ -1,4 +1,4 @@
-//! 壳层渲染：工具栏、侧栏、响应式主数据/详情区与状态栏。
+//! 壳层渲染：合并标题栏与操作栏、侧栏、响应式主数据/详情区与状态栏。
 //!
 //! 只做呈现与交互接线；状态与会话语义见 [`super`]。文案经 `t!` 取自
 //! `locales/`，主题与语言由 gpui-component 提供。
@@ -7,11 +7,11 @@ use rust_i18n::t;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
-    Styled as _, Window, div, px,
+    Context, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
+    Render, SharedString, Styled as _, Window, div, px,
 };
 use gpui_component::{
-    ActiveTheme as _, Disableable as _, Root, Selectable as _, Sizable as _,
+    ActiveTheme as _, Disableable as _, Root, Selectable as _, Sizable as _, TitleBar,
     button::{Button, ButtonVariants as _},
     h_flex, h_resizable, resizable_panel,
     sidebar::{Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem},
@@ -29,6 +29,9 @@ use crate::locale::Lang;
 use crate::processes::ProcessActionShortcut;
 use crate::session::WorkspaceId;
 
+/// 合并标题栏内显示的应用名（原生标题栏已透明，任务栏标题仍由 app 层
+/// `set_window_title` 提供）。
+const APP_TITLE: &str = "Runquiry";
 /// 工具栏控件的稳定元素 ID 与 tab 顺序号（与视觉顺序一致，见 gallery 的做法）。
 const TAB_REFRESH: isize = 1;
 const TAB_THEME_LIGHT: isize = 2;
@@ -44,7 +47,7 @@ fn shows_inline_detail(width: gpui::Pixels) -> bool {
 
 /// 宽窗口的初始列表宽度。分隔条实际拖拽后的值由 `ResizableState` 保留。
 fn initial_main_panel_width(window_width: gpui::Pixels) -> gpui::Pixels {
-    let sidebar_width = px(224.);
+    let sidebar_width = px(120.);
     let main_minimum = px(360.);
     let detail_minimum = px(280.);
     let available = (window_width - sidebar_width).max(main_minimum + detail_minimum);
@@ -102,7 +105,7 @@ impl Render for AppShell {
             }))
             .text_color(cx.theme().foreground)
             .bg(cx.theme().background)
-            .child(self.render_toolbar(cx))
+            .child(self.render_title_bar(cx))
             .child(
                 h_flex()
                     .flex_1()
@@ -146,33 +149,43 @@ impl Render for AppShell {
 }
 
 impl AppShell {
-    fn render_toolbar(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+    /// 合并标题栏与操作栏：窗口名与操作按钮同置左侧（标题与按钮组间保持
+    /// 组间距），右侧仅窗口控制按钮（由 `TitleBar` 自绘并经
+    /// `WindowControlArea` 交给系统处理）。按钮容器按下时
+    /// `stop_propagation`，防止点击落入窗口拖拽区（gpui-component story
+    /// 示例同法）。
+    fn render_title_bar(&self, cx: &Context<'_, Self>) -> impl IntoElement {
         let refreshing = self.session.active_session().is_refreshing();
 
-        h_flex()
-            .id("toolbar")
-            .track_focus(&self.toolbar_focus)
-            .flex_wrap()
-            .items_center()
-            .gap_4()
-            .px_3()
-            .py_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().title_bar)
-            .child(
-                Button::new("toolbar-refresh")
-                    .small()
-                    .ghost()
-                    .label(t!("toolbar.refresh").to_string())
-                    .tab_index(TAB_REFRESH)
-                    .disabled(refreshing)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.refresh_active(cx);
-                    })),
-            )
-            .child(self.theme_group(cx))
-            .child(self.language_group(cx))
+        TitleBar::new().child(
+            h_flex()
+                .id("toolbar")
+                .track_focus(&self.toolbar_focus)
+                .items_center()
+                .gap_4()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(APP_TITLE),
+                )
+                .child(
+                    Button::new("toolbar-refresh")
+                        .small()
+                        .ghost()
+                        .label(t!("toolbar.refresh").to_string())
+                        .tab_index(TAB_REFRESH)
+                        .disabled(refreshing)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.refresh_active(cx);
+                        })),
+                )
+                .child(self.theme_group(cx))
+                .child(self.language_group(cx)),
+        )
     }
 
     /// 主题切换组：切换不触碰工作区会话。
@@ -232,7 +245,7 @@ impl AppShell {
             .h_full()
             .child(
                 Sidebar::new("runquiry-sidebar")
-                    .w_56()
+                    .w(px(120.))
                     .header(SidebarHeader::new().child(t!("app.name").to_string()))
                     .child(
                         SidebarGroup::new(t!("sidebar.workspaces").to_string()).child(

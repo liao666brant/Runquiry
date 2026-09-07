@@ -15,7 +15,7 @@ use gpui::{
     App, AppContext as _, Bounds, Entity, Focusable as _, Global, KeyBinding, Window, WindowBounds,
     WindowKind, WindowOptions, px, size,
 };
-use gpui_component::{Root, ThemeMode};
+use gpui_component::{Root, ThemeMode, TitleBar};
 use gpui_component_assets::Assets;
 
 use backend::{PlatformBackend, UnavailableBackend};
@@ -116,7 +116,9 @@ fn main() {
                 px_dim(WindowSize::MIN.height),
             )),
             kind: WindowKind::Normal,
-            ..Default::default()
+            // 自定义标题栏：原生标题栏透明，操作栏合并进 TitleBar（窗口
+            // 控制按钮由 TitleBar 自绘并经 WindowControlArea 交给系统处理）。
+            ..TitleBar::window_options()
         };
 
         // Root 必须是窗口第一级视图（gpui-component Root 契约）。

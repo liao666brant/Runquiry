@@ -130,7 +130,7 @@ impl<'a, T> SurfaceSnapshot<'a, T> {
                 Some(_) => SurfaceState::Partial {
                     issue_count: inspection.issues.len(),
                 },
-                None => state_from_inspection(None, &inspection.issues),
+                None => state_from_inspection::<T>(None, &inspection.issues),
             },
             state @ (SurfaceState::Loading
             | SurfaceState::Sampling
@@ -171,7 +171,7 @@ impl<'a, T> SurfaceSnapshot<'a, T> {
 
 fn state_from_inspection<T>(data: Option<&[T]>, issues: &[DiagnosticIssue]) -> SurfaceState {
     match (data, issues.is_empty()) {
-        (Some(data), true) if data.is_empty() => SurfaceState::Empty,
+        (Some([]), true) => SurfaceState::Empty,
         (Some(_), true) => SurfaceState::Ready,
         (Some(_), false) => SurfaceState::Partial {
             issue_count: issues.len(),
