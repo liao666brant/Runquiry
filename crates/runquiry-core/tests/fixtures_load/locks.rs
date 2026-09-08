@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use runquiry_core::{CapabilityStatus, FileLockEntry, Pid, ProcessIdentity};
+use runquiry_core::{CapabilityStatus, FileLockEntry, ProcessIdentity};
 
 use crate::support::fixtures::{fixtures_root, load};
 use crate::support::{FixedClock, Generation};
@@ -47,25 +47,6 @@ fn windows_file_locks_fixture_marks_capability_unsupported() -> TestResult {
 }
 
 #[test]
-fn macos_file_locks_fixture_loads_lock_entries() -> TestResult {
-    let fixture = load::<Vec<FileLockEntry>>("macos/file-locks-normal.json")?;
-    let locks = fixture
-        .inspection
-        .data
-        .as_deref()
-        .ok_or_else(|| String::from("macos 文件锁快照应有数据"))?;
-    assert_eq!(locks.len(), 1);
-    assert_eq!(locks[0].pid, Pid::new(5150)?);
-    assert_eq!(locks[0].lock_type, runquiry_core::LockType::Flock);
-    assert_eq!(locks[0].mode, runquiry_core::LockMode::Write);
-    assert_eq!(
-        locks[0].path,
-        std::path::PathBuf::from("/opt/runquiry-fixtures/var/fxt-daemon.lock")
-    );
-    Ok(())
-}
-
-#[test]
 fn linux_file_locks_fixture_loads_lock_entries() -> TestResult {
     let fixture = load::<Vec<FileLockEntry>>("linux/file-locks-normal.json")?;
     assert_metadata(&fixture, "linux", "normal");
@@ -89,7 +70,6 @@ fn linux_file_locks_fixture_loads_lock_entries() -> TestResult {
 #[test]
 fn fixtures_root_and_deterministic_basics_are_stable() -> TestResult {
     assert!(fixtures_root().join("linux").is_dir());
-    assert!(fixtures_root().join("macos").is_dir());
     assert!(fixtures_root().join("windows").is_dir());
     let mut clock = FixedClock::at_epoch_ms(CAPTURED_AT_MS)?;
     assert_eq!(clock.now(), expected_captured_at());

@@ -51,7 +51,7 @@
 - [x] **A2 witr 行为契约**
   - 依赖：无。
   - 逐项读取 witr 的 pkg/model、internal/target、internal/pipeline、internal/proc、internal/source、internal/tui 及对应测试。
-  - 在 docs/witr-parity.md 记录四工作区、五类目标、来源优先级、告警、容器运行时、刷新策略、进程操作和三平台差异。
+  - 在 docs/witr-parity.md 记录四工作区、五类目标、来源优先级、告警、容器运行时、刷新策略、进程操作和平台差异。
   - 每项只使用 parity、intentional change、out of scope 三种状态。
   - 每个条目必须链接到具体源码文件、符号或测试，不链接仓库根目录。
   - 不复制整段 Go 实现，不将当前机器运行态写入文档。
@@ -61,7 +61,7 @@
 
 - [x] **A5 Fixture 与测试基础设施**
   - 依赖：A2、A3。
-  - 从 witr 测试和人工构造数据建立 Linux、macOS、Windows fixture。
+  - 从 witr 测试和人工构造数据建立 Linux、Windows fixture（原 macOS 一列已随 macOS 移出 v1 范围删除）。
   - 提供确定性时钟、固定 generation、假平台后端和失败注入入口。
   - fixture 覆盖正常、空、部分成功、权限失败、工具缺失、超时、格式损坏和 PID 复用。
   - 所有路径、用户名、环境变量和命令行均使用合成值。
@@ -71,7 +71,7 @@
     - 扫描 fixture，确认不包含开发机用户名、主目录、Token 或真实进程数据
   - 完成证据：fixture 清单、失败模式映射、敏感信息扫描结果。
   - 实施记录（2026-09-03，Batch 2）：
-    - fixture：workspace 根 `tests/fixtures/{linux,macos,windows}/` 共 30 个 JSON（封套格式 platform/scenario/captured_at_epoch_ms/generation/capability/data/issues），清单与失败模式映射见 `tests/fixtures/README.md`。
+    - fixture：workspace 根 `tests/fixtures/{linux,macos,windows}/` 共 30 个 JSON（封套格式 platform/scenario/captured_at_epoch_ms/generation/capability/data/issues），清单与失败模式映射见 `tests/fixtures/README.md`。**2026-09-08 更新**：`macos/` 10 个 JSON 已随 macOS 移出 v1 范围删除，现存 `{linux,windows}/` 共 20 个。
     - 测试基建：`crates/runquiry-core/tests/support/`（fixture 装载器 + SocketEntry 边界校验 + 假平台后端）、`crates/runquiry-platform/tests/support/`（Scenario 枚举失败注入 + FakePlatform/命令执行假实现）、`crates/runquiry-core/tests/{fixtures_load,process_controller_contract}.rs` 与 `crates/runquiry-platform/tests/fake_backends.rs`。
     - ProcessController 契约修正（`crates/runquiry-core/src/port/process.rs` 文档注释）：execute 的身份参数表示确认流程持有的 expected snapshot；平台实现必须在动作前按 PID 重读 current identity 再用 same_process 比较；不新增第二个调用方身份参数；start_time 为 None（身份不可验证）时同样拒绝。FakeController 实现该语义：同 PID 不同 start_time → ProcessChanged 且动作计数 0；start_time None → 拒绝且计数 0；身份一致 → 执行（测试 process_controller_contract.rs 4 个 + fake_backends.rs 10 个）。
     - SocketEntry 输入边界（fixture DTO/loader 层，不改公共领域模型）：TCP/TCP6/UDP/UDP6 必须有合法端口（Some 且 1..=65535），Unix socket 必须无端口；后续平台真实输入必须复用该规则（已记录于 tests/fixtures/README.md）。

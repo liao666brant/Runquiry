@@ -1,8 +1,8 @@
-//! 三平台风格假后端共用同一套 UI 能力契约断言（模块 05 C3）。
+//! 平台风格假后端共用同一套 UI 能力契约断言（模块 05 C3）。
 //!
 //! 假后端只合成 `WorkspaceSnapshot` 与控制能力，状态语义与动作判定全部走
 //! 生产转换（`LoadPresentation::apply`、`ProcessActionFlow`），不测 mock 自身。
-//! 平台风格对齐 Batch 6 各平台真实能力返回；纯 `#[test]`，不依赖 GPUI 实体。
+//! 平台风格对齐各平台真实能力返回；纯 `#[test]`，不依赖 GPUI 实体。
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,8 +19,8 @@ use crate::session::WorkspaceId;
 use crate::state::DataState;
 use crate::workspaces::{LoadPresentation, interactions_enabled};
 
-/// macOS 文件能力的 best-effort 受限原因（与 platform 稳定原因键同形）。
-const MACOS_FILES_PARTIAL_REASON: &str = "macOS 无 /proc/locks：真实锁经 lsof 锁标志位 best-effort";
+/// 文件能力 best-effort 受限原因（平台无关的合成原因键）。
+const PARTIAL_FILES_REASON: &str = "文件锁能力 best-effort：仅能取得部分条目（合成场景）";
 /// Windows 文件锁能力的稳定原因键占位。
 const WINDOWS_FILE_LOCKS_REASON: &str = "Windows 平台不提供文件锁枚举（parity §10）";
 /// Windows 进程控制能力的稳定原因键占位。
@@ -196,10 +196,10 @@ impl WorkspaceBackend for LinuxStyleBackend {
     }
 }
 
-/// macOS 风格：文件能力 best-effort/Partial（数据与诊断保留），控制可用。
-struct MacosStyleBackend;
+/// 部分成功风格：文件能力 best-effort/Partial（数据与诊断保留），控制可用。
+struct PartialFilesBackend;
 
-impl WorkspaceBackend for MacosStyleBackend {
+impl WorkspaceBackend for PartialFilesBackend {
     fn load(&self, workspace: WorkspaceId) -> WorkspaceSnapshot {
         let mut snapshot = base_snapshot(workspace);
         if let WorkspaceSnapshot::FileLocks {
@@ -207,7 +207,7 @@ impl WorkspaceBackend for MacosStyleBackend {
             inspection,
         } = &mut snapshot
         {
-            *capability = CapabilityStatus::Partial(String::from(MACOS_FILES_PARTIAL_REASON));
+            *capability = CapabilityStatus::Partial(String::from(PARTIAL_FILES_REASON));
             *inspection = Inspection::partial(
                 Arc::from([file_entry()]),
                 vec![DiagnosticIssue::new(
@@ -364,8 +364,8 @@ fn linux_style_serves_files_and_process_control_with_real_empty_collections() {
 }
 
 #[test]
-fn macos_style_files_are_partial_with_retained_data_and_issues() {
-    let backend = MacosStyleBackend;
+fn partial_files_capability_keeps_data_and_issues() {
+    let backend = PartialFilesBackend;
     run_shared_contract(&backend);
 
     let snapshot = backend.load(WorkspaceId::FileLocks);
@@ -373,10 +373,7 @@ fn macos_style_files_are_partial_with_retained_data_and_issues() {
     assert!(matches!(capability, CapabilityStatus::Partial(_)));
     assert_eq!(contract.state, DataState::Ready, "Partial 数据必须保留");
     assert!(contract.is_partial, "Partial + 诊断必须呈现受限横幅");
-    assert_eq!(
-        contract.partial_note.as_deref(),
-        Some(MACOS_FILES_PARTIAL_REASON)
-    );
+    assert_eq!(contract.partial_note.as_deref(), Some(PARTIAL_FILES_REASON));
     assert!(contract.boundary_reason.is_none());
     assert_eq!(file_locks_row_count(&snapshot), Some(1));
 }

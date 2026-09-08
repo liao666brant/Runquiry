@@ -16,7 +16,7 @@
 
 不得写入：
 
-- core 领域规则、UI、Linux/macOS 适配器。
+- core 领域规则、UI、Linux 适配器。
 - 容器运行时通用实现。
 - 根 Cargo 配置和 Cargo.lock。
 - 伪造 File Locks 或通过命令行模拟 Unix signal。

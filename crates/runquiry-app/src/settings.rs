@@ -235,7 +235,6 @@ fn absolute_base(value: Option<&OsStr>) -> Option<PathBuf> {
 /// 默认设置文件路径（按平台标准位置组装；测试不要调用本函数）。
 ///
 /// - Linux：`$XDG_CONFIG_HOME`（缺省 `$HOME/.config`）下的 `runquiry/settings.json`
-/// - macOS：`$HOME/Library/Application Support/runquiry/settings.json`
 /// - Windows：`%APPDATA%\runquiry\settings.json`
 ///
 /// 环境变量缺失、为空或为相对路径时返回 `None`，由调用方安全禁用持久化。
@@ -245,12 +244,7 @@ pub(crate) fn default_settings_path() -> Option<PathBuf> {
         let appdata = std::env::var_os("APPDATA");
         settings_path_from_base(appdata.as_deref(), &[])
     }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var_os("HOME");
-        settings_path_from_base(home.as_deref(), &["Library", "Application Support"])
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[cfg(not(target_os = "windows"))]
     {
         let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME");
         let home = std::env::var_os("HOME");
@@ -472,17 +466,6 @@ mod tests {
 
         assert_eq!(xdg_path, None);
         assert_eq!(home_path, None);
-    }
-
-    /// macOS 的相对 HOME 不得用于生产配置。
-    #[test]
-    fn macos_relative_home_disables_persistence() {
-        let path = settings_path_from_base(
-            Some(std::ffi::OsStr::new("relative-home")),
-            &["Library", "Application Support"],
-        );
-
-        assert_eq!(path, None);
     }
 
     /// Windows 的相对 APPDATA 不得用于生产配置。

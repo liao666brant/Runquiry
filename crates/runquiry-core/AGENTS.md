@@ -6,7 +6,7 @@
 
 Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）、分析管线、告警规则、刷新状态机与平台端口。A3 落地公共领域类型与七个同步平台端口（`src/model/`、`src/port/`）；Batch 2 新增纯刷新策略 `src/refresh.rs`（Generation 代际 + RefreshGate 3–30s 自适应门控，无 GPUI/计时器/OS 依赖）；B1 已完整落地目标解析、来源识别、告警与分析管线（`src/resolve.rs`、`src/ancestry.rs`、`src/source_detect.rs`、`src/source_shell.rs`、`src/warnings.rs`、`src/analyze.rs`，见 [模块 02 计划](../../.omo/plans/runquiry-gpui-desktop/02-core-analysis.md)）；Batch 4A P1 将 `FileInventory` 明确为文件/锁工作区的列表与按路径持有者查询边界。
 
-约束：不依赖 GPUI 或操作系统实现；平台差异通过端口（trait）抽象，由 runquiry-platform 提供实现。
+约束：不依赖 GPUI 或操作系统实现；平台差异通过端口（trait）抽象，由 runquiry-platform 提供实现。`SourceType::Launchd`、`SourceEvidence::launchd_by_pid` 与 `detect_launchd` 保留为领域模型与判定链（macOS 已移出 v1 范围，当前无平台实现填充该证据）。
 
 ## 入口与启动
 
@@ -25,7 +25,7 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 
 ## 测试与质量
 
-- `cargo test -p runquiry-core --locked`：107 个测试（lib 7 + container contract 3 + domain 11 + ports 1 + fixtures 14 + controller 4 + target 21 + pipeline 30 + warnings 16）；超长集成测试已按职责拆入 `tests/domain_types/`、`fixtures_load/`、`target/`、`pipeline/`、`warnings/`。`tests/support/` 提供 fixture 装载器与假平台后端（数据在 workspace 根 `tests/fixtures/`）。
+- `cargo test -p runquiry-core --locked`：109 个测试（lib 7 + container_contract 3 + domain_types 11 + ports 1 + fixtures_load 13 + process_controller_contract 4 + target 21 + pipeline 33 + warnings 16）；超长集成测试已按职责拆入 `tests/domain_types/`、`fixtures_load/`、`target/`、`pipeline/`、`warnings/`。`tests/support/` 提供 fixture 装载器与假平台后端（数据在 workspace 根 `tests/fixtures/`，合成平台目录为 `linux`/`windows`）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束（unwrap/expect/panic 均 deny）。
 
 ## 常见问题
@@ -57,3 +57,4 @@ Runquiry 的纯领域层：领域模型、目标解析（五类 QueryTarget）�
 - 2026-09-04：评审修复——`resolve_ancestry` reader 升级为 `Result<Option<..>, DiagnosticIssue>`，单跳截断（权限失败/清单缺失）写入 `Inspection.issues`，截断链与完整链可区分；`analyze` 单次 `list()` 快照供祖先链与子进程快照共用（消除逐跳重复全量扫描与跨快照不一致）。测试保持 104 个（ancestry 截断诊断断言更新）。
 - 2026-09-04：阻断项修复——ProcessDetailsProvider 改为部分成功契约且 analyze 合并字段诊断；CommandRunner 增加 CancellationToken；新增 ContainerProcessVerifier/verified_host_pid，锁定 PID cgroup 二次验证与 containerd 稳定键的边界。新增 3 个容器契约测试并拆分超长测试文件，core 合计 107 个。
 - 2026-09-04（未提交工作区）：Batch 4A P1——新增 `LockMetadata` 与 `FileInventoryEntry`，`FileInventory` 从能力占位收紧为 `list()` 与 `holders(path)`；保留按 PID 反向查询的 `ProcessFileLocks`，供分析管线与 File Locks 工作区分别消费。core 测试保持 107 个。
+- 2026-09-08（未提交工作区）：macOS 支持移出 v1 范围——fixture 测试平台矩阵收窄为 `linux`/`windows`（`PLATFORMS` 三→二，删除 macos 文件锁/超时/socket 断言与 `macos` 目录存在性检查）；`SourceType::Launchd`、`SourceEvidence::launchd_by_pid` 与 `detect_launchd` 判定链**按决策保留**（平台无关领域层，当前无平台实现填充证据，相关 pipeline 判定测试继续生效）。core 109 测试全绿（fixtures_load 14→13）。

@@ -30,7 +30,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 ## 测试与质量
 
-- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57。不要将历史数字表述为全量。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）。Batch 7A C3 新增 `capability_contract_tests`（7 个三平台假后端契约测试）、Batch 7B C4 新增确认门禁测试 2 个（`confirm_gate_*`）：**已随 workspace 套件在 Windows 验证主机全量运行，ui 69/69 全绿**。
+- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57。不要将历史数字表述为全量。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）。Batch 7A C3 新增 `capability_contract_tests`（7 个平台风格假后端契约测试）、Batch 7B C4 新增确认门禁测试 2 个（`confirm_gate_*`）：曾在 Windows 验证主机全量运行 69/69；2026-09-08 在 WSL 复跑为 68/69，唯一失败 `shell::render::tests::wide_layout_starts_with_a_65_35_split_after_the_sidebar` 属既有测试过期（`1e44f6e` 侧栏定为 120px 后测试仍按 `px(224.)` 计算可用宽度），非本轮改动引入。
 - clippy 注意：锁定依赖树的 77 条 `multiple-crate-versions` 为基线既有问题，`-D warnings` 验证时豁免该项（见模块 05 计划 A4 实施记录）；ui 源码 clippy `--all-targets` 当前零 error（`surface.rs` 的 `redundant_guards` 已随合并标题栏批次修复）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束。
 
@@ -47,7 +47,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 - `crates/runquiry-ui/src/backend.rs` — UI 与装配层后端契约、工作区快照、结果门控与进程动作 seam
 - `crates/runquiry-ui/src/processes/` / `src/workspaces/` — B5/B6 表格行模型、查询与详情映射；B7 `command.rs`、`action.rs`、`action_tests.rs` 提供动作快捷键与确认状态机
 - `crates/runquiry-ui/src/session.rs` / `debounce.rs` / `shell/` — 工作区会话、详情防抖、双语 InputState 同步、响应式产品壳层及 B7 `process_actions.rs`/`render_process_actions.rs` 动作接线
-- `crates/runquiry-ui/src/capability_contract_tests.rs` — C3 三平台假后端能力契约测试（`#[cfg(test)]`，复用生产状态转换）
+- `crates/runquiry-ui/src/capability_contract_tests.rs` — C3 平台风格假后端能力契约测试（`#[cfg(test)]`，复用生产状态转换）
 - `crates/runquiry-app/examples/gallery/` — 独立组件实验台
 - `DESIGN.md` — 唯一设计规范
 - `docs/qa/a4-gallery/` — A4 视觉与键盘 QA 证据
@@ -65,3 +65,4 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 - 2026-09-07（未提交工作区）：Batch 7B C4（套件准备，验证阻断）——提交前再门禁提取为 `ProcessActionFlow::confirm_if_usable`（与撤销门禁同源、复用 cancel/report 原语），壳层 `confirm_process_action` 瘦身；`action_tests.rs` 新增 2 个门禁测试。三平台契约覆盖矩阵与差异复核见 `.omo/evidence/batch7b-c4-matrix.md`；全部新代码未经编译/测试验证，C4 保持未完成、v1 契约未冻结。
 - 2026-09-07（未提交工作区）：Batch 7A C3（验证阻断）——`DataState` 新增 `Unavailable` 环境边界态（DESIGN §6 六种呈现状态、图标 `info`），产品工作区状态文案统一走 `locale::workspace_state_copy`；`LoadPresentation` 保留 Unsupported/Unavailable 平台原因并在 StateView 透出，能力边界下模式/筛选/排序禁用；进程控制能力随 Processes 刷新动态取回、能力退化撤销确认并在提交前再门禁；动作错误补 `actions.error.unsupported`/`actions.error.external_tool` 专用键，删除死键 `main.collector_unavailable.*`。新增 7 个三平台假后端契约测试与 `gallery.unavailable` 相关键；全部新代码未经编译/测试/GUI 验证。code-review 修复：Processes 页失败采集不再伪装成空集合（`SurfaceState::from_parts` 与清单 `map_state` 同语义，`state_from_inspection` 改为部件签名共享单一事实源），交互门控与边界判定同源。
 - 2026-09-07（未提交工作区）：Windows 验证通道打通后自动套件全绿（ui 69/69 含 C3 契约与 C4 门禁测试，clippy 零 error）；`surface.rs` 修复 deny 级 `redundant_guards`（改 `Some([])` 切片模式）。标题栏与操作栏合并为 `TitleBar`（用户请求，DESIGN §7 已同步），侧栏经多轮调宽定为 120px；GUI 视觉与交互用户确认通过。
+- 2026-09-08（未提交工作区）：macOS 支持移出 v1 范围——`capability_contract_tests.rs` 的 `MacosStyleBackend` 改名 `PartialFilesBackend`、`MACOS_FILES_PARTIAL_REASON` 改为平台中立的 `PARTIAL_FILES_REASON`，对应测试改名 `partial_files_capability_keeps_data_and_issues`（该场景验证 Partial 能力保留数据与诊断，与具体平台无关，故保留覆盖）；文件头"三平台风格"表述同步。WSL 复跑 ui 68/69，唯一失败为既有测试过期（见「测试与质量」）。

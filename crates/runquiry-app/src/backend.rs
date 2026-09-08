@@ -23,18 +23,16 @@ use runquiry_ui::backend::{
 
 // 目标平台选择（Batch 6 最小装配）：app 边界按 target_os 绑定单一平台结构体，
 // 各平台结构体实现同一组 core 端口且构造签名一致（`new() -> io::Result<Self>`）。
-// container 运行时为跨平台模块，不随平台 cfg。
+// container 运行时为跨平台模块，不随平台 cfg。macOS 已移出 v1 范围。
 use runquiry_platform::container::ContainerRuntimes;
 #[cfg(target_os = "linux")]
 use runquiry_platform::linux::LinuxPlatform as Platform;
-#[cfg(target_os = "macos")]
-use runquiry_platform::macos::MacosPlatform as Platform;
 #[cfg(target_os = "windows")]
 use runquiry_platform::windows::WindowsPlatform as Platform;
 
 pub use self::unavailable::UnavailableBackend;
 
-/// 目标平台（按 target_os 选择 Linux/macOS/Windows）的共享只读后端。
+/// 目标平台（按 target_os 选择 Linux/Windows）的共享只读后端。
 #[derive(Debug)]
 pub struct PlatformBackend {
     analysis_gate: analysis_gate::AnalysisGate,
@@ -103,27 +101,6 @@ impl PlatformBackend {
             .iter()
             .find(|process| process.identity.pid() == pid)
             .map(|process| process.identity.clone())
-    }
-
-    /// 名称解析零命中后的平台服务回退：仅 macOS 经 launchd 解析 label
-    /// （parity line 88）；label 非法视为「无服务候选」而非调查失败，其余
-    /// 错误（launchctl 缺失/超时）原样上抛。非 macOS 平台恒无回退。
-    #[cfg(target_os = "macos")]
-    fn launchd_service_pid(platform: &Platform, query: &str) -> Result<Option<Pid>, InspectError> {
-        platform
-            .launchd_service_pid(query)
-            .or_else(|error| match error {
-                InspectError::InvalidTarget { .. } => Ok(None),
-                other => Err(other),
-            })
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    fn launchd_service_pid(
-        _platform: &Platform,
-        _query: &str,
-    ) -> Result<Option<Pid>, InspectError> {
-        Ok(None)
     }
 
     fn map_pids(
@@ -220,17 +197,10 @@ impl WorkspaceBackend for PlatformBackend {
         let inventory = Self::identities(&platform)?;
         let pids = match target {
             QueryTarget::Pid(pid) => Resolution::Unique(*pid),
+            // 名称解析零命中后的平台服务回退（launchd / systemd / SCM）已随
+            // macOS 移出 v1 范围而移除；Linux/Windows 当前无服务 PID 回退。
             QueryTarget::ProcessName { query, exact } => {
-                match resolve_name(&inventory, query, *exact, &[], None) {
-                    // 零命中时按 parity 走平台服务解析（macOS launchd label
-                    // 四候选 → `launchctl print` 运行 PID；服务 PID 零命中时
-                    // 排首位），其余错误原样返回。
-                    Err(InspectError::NotFound { .. }) => {
-                        let service = Self::launchd_service_pid(&platform, query)?;
-                        resolve_name(&inventory, query, *exact, &[], service)?
-                    }
-                    result => result?,
-                }
+                resolve_name(&inventory, query, *exact, &[], None)?
             }
             QueryTarget::Port(port) => {
                 let ports_inspection = platform.open_ports();

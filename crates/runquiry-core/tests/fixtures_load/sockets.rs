@@ -1,6 +1,6 @@
-//! Socket fixture 的三平台归因与输入边界。
+//! Socket fixture 的双平台归因与输入边界。
 
-use runquiry_core::{Protocol, SocketEntry};
+use runquiry_core::SocketEntry;
 
 use crate::support::fixtures::{load_sockets, validate_socket_entries};
 
@@ -16,19 +16,6 @@ fn sockets_normal_fixture_passes_boundary_validation_for_all_platforms() -> Test
         .ok_or_else(|| String::from("linux socket 快照应有数据"))?;
     assert_eq!(entries.len(), 3);
     assert!(entries.iter().all(|entry| entry.inode.is_some()));
-    let macos = load_sockets("macos/sockets-normal.json")?;
-    let entries = macos
-        .inspection
-        .data
-        .as_deref()
-        .ok_or_else(|| String::from("macos socket 快照应有数据"))?;
-    assert!(entries.iter().all(|entry| entry.inode.is_none()));
-    let unix = entries
-        .iter()
-        .find(|entry| entry.protocol == Protocol::Unix)
-        .ok_or_else(|| String::from("macos 应含 Unix socket 条目"))?;
-    assert_eq!(unix.port, None);
-    assert_eq!(unix.address, "/opt/runquiry-fixtures/var/fxt-daemon.sock");
     let windows = load_sockets("windows/sockets-normal.json")?;
     let entries = windows
         .inspection
@@ -46,10 +33,6 @@ fn sockets_malformed_fixtures_are_rejected_by_loader() -> TestResult {
         .err()
         .ok_or_else(|| String::from("port=0 必须被拒绝"))?;
     assert!(linux.contains("解析"));
-    let macos = load_sockets("macos/sockets-malformed.json")
-        .err()
-        .ok_or_else(|| String::from("截断 JSON 必须被拒绝"))?;
-    assert!(macos.contains("解析"));
     let windows = load_sockets("windows/sockets-malformed.json")
         .err()
         .ok_or_else(|| String::from("Unix socket 携带端口必须被拒绝"))?;

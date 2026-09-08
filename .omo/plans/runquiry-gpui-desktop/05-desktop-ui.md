@@ -98,20 +98,20 @@ UI 只依赖 core 契约。缺少平台能力时展示 CapabilityStatus，不在
     - 当前环境无可列出的容器运行时，真实窗口验证诚实的 unavailable/error 状态；无 verified host PID 的容器详情由生产转换回归覆盖，不伪造容器截图。最终 gate 见 `runquiry-batch4a-20260904-gate-review.md`。
 
 - [ ] **C3 能力矩阵与条件 UI**
-  - 依赖：C1、C2。
+  - 依赖：C2（原 C1 macOS 已于 2026-09-08 移出 v1 范围删除）。
   - 根据 PlatformCapabilities 生成页面和操作状态，不读取操作系统名称进行判断。
-  - Linux/macOS 显示进程操作；Windows 不渲染可执行动作。
+  - Linux 显示进程操作；Windows 不渲染可执行动作。
   - Windows File Locks 保留导航入口并解释系统能力限制。
   - Partial 状态显示已获得的数据和对应 issue；Unsupported 不使用错误 toast。
-  - 验证：使用三平台假后端运行相同 UI contract tests。
-  - 完成证据：平台 UI 矩阵、三套假后端测试结果。
+  - 验证：使用平台风格假后端运行相同 UI contract tests。
+  - 完成证据：平台 UI 矩阵、四套假后端测试结果。
   - 实施记录（2026-09-07，Batch 7A；**实现完成，自动验证已通过，GUI 视觉验收未做**——Windows 主机验证通道打通后自动套件全绿，TODO 因真实 GUI 交互/视觉矩阵未验收保持未勾选）：
     - 能力来源：计划中的 `PlatformCapabilities` 聚合类型在源码中不存在；按「优先复用既有契约」的约束未另建重复类型，继续以 core `CapabilityStatus` + `WorkspaceSnapshot` 每工作区能力字段 + `WorkspaceBackend::process_control_capability()` 为唯一能力输入，UI 无任何 OS 名称判断或 target_os 分支。
     - 状态语义：`DataState` 新增 `Unavailable`（环境不可用边界，DESIGN.md §6 扩为六种呈现状态，图标 `info` 中性色），`workspaces/common.rs::map_state` 将能力 `Unavailable` 映射为边界态而非可重试错误；`LoadPresentation` 新增 `boundary_reason` 保留 Unsupported/Unavailable 平台原因，StateView 以 note 呈现（Windows File Locks 保留导航入口并解释原因、不再丢失 reason）。
     - 条件 UI：能力/环境边界状态下模式切换按钮、PID 排序与筛选输入禁用（`ShellData::interactions_enabled` + `workspaces::interactions_enabled`）；调查入口保持后端拒绝门控（Windows File 目标返回 `InspectError::Unsupported` 并内联展示），不引入 UI 侧 OS 分支。
     - 进程操作：进程控制能力随 Processes 刷新在后台周期性取回（`shell/refresh.rs::RefreshOutput`），能力退化时经新增 `ProcessActionFlow::revoke_confirmation_if_unusable` 撤销确认；确认提交前按当前能力再门禁并给出结构化 Unsupported 原因；菜单/按钮/快捷键沿用既有能力门控。动作错误拆分 `actions.error.unsupported` 与 `actions.error.external_tool` 专用双语键。
     - app 边界：`process_control_capability` 平台构造失败改映射 `CapabilityStatus::Unavailable`（与 UnavailableBackend.load 一致）；resolve 的端口/文件采集完全失败经 `failed_collection_error` 保留平台诊断（Unsupported 诊断→同因 InspectError，PermissionDenied 保留 subject），不再折叠为单一「采集未返回数据」；UnavailableBackend 控制能力改 `Unavailable`。resolve/analyze 动作失败仍只能表达为 `InspectError::Unsupported`（core 无 Unavailable 错误变体，本轮不改 core）。
-    - 测试（**已编写、未运行**）：`crates/runquiry-ui/src/capability_contract_tests.rs` 七个纯 `#[test]`——Linux/macOS/Windows/Unavailable 四套假后端走同一 `run_shared_contract`（复用生产 LoadPresentation/ProcessActionFlow），覆盖 Partial 数据保留、Unsupported/Unavailable 不误报错误、权限/工具失败/空集合区分、能力变化撤销确认、不可用控制无错误路径；app `backend/tests.rs` 新增 `failed_collection_error` 映射测试并更新 Unavailable 能力断言；既有 `workspaces/tests/common.rs` 的「Unavailable+有数据→Ready」用例按新边界语义改为 Unavailable。无 gpui test-support 依赖，测试无 unwrap/expect/panic。
+    - 测试（**已编写、未运行**）：`crates/runquiry-ui/src/capability_contract_tests.rs` 七个纯 `#[test]`——Linux/PartialFiles/Windows/Unavailable 四套假后端走同一 `run_shared_contract`（复用生产 LoadPresentation/ProcessActionFlow），覆盖 Partial 数据保留、Unsupported/Unavailable 不误报错误、权限/工具失败/空集合区分、能力变化撤销确认、不可用控制无错误路径；app `backend/tests.rs` 新增 `failed_collection_error` 映射测试并更新 Unavailable 能力断言；既有 `workspaces/tests/common.rs` 的「Unavailable+有数据→Ready」用例按新边界语义改为 Unavailable。无 gpui test-support 依赖，测试无 unwrap/expect/panic。
     - 验证进展（2026-09-07，Windows 主机，未提交工作区）：`cargo test --workspace --locked --no-fail-fast` 全绿——ui 69/69（含 7 个三平台契约测试与 2 个确认门禁测试）、app 套件全绿（含 `failed_collection_error` 映射）、fmt/clippy 零 error；GUI 启动冒烟通过（`cargo run -p runquiry-app`，runquiry.exe 窗口 Responding=True，GPUI Windows 后端可用）。标题栏与操作栏合并 + 侧栏 120px 调整（用户请求的迭代）已由**用户确认视觉与交互通过**。**仍未完整验收**：真实 GUI 交互矩阵的系统化走查记录（双语切换、浅深主题对比、960px 窄窗、Unsupported 页面呈现、Partial 数据、动作禁用与快捷键、能力退化撤销确认的逐项留档）。
     - code-review（双轴，纯静态）修复：① Processes 页失败采集（权限/工具失败、无数据）此前经 `SurfaceState::Partial` 误报为「成功但为空」——新增 `SurfaceState::from_parts`（边界判定顺序与 `map_state` 同源），`state_from_inspection` 改为部件签名成为单一事实源，Processes 页与三个清单工作区状态语义对齐；② Processes 交互门控改为能力边界 + Unsupported 诊断双条件，与表格状态同源；③ ui AGENTS 相关文件清单补 `capability_contract_tests.rs`；④ 平台原因本地化（Spec P2）维持「UI 双语 + 平台原因原样附显」折中，修复属 core/platform 范围；⑤ Processes 刷新双平台实例开销（P3）接受并记录。全部修复未编译。
 

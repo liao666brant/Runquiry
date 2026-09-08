@@ -2,7 +2,7 @@
 
 ## 摘要
 
-Runquiry 是对本地 [witr 源码](../../witr/README.md) 的纯 Rust 桌面化重写。产品只提供原生桌面 GUI，不嵌入 Go，也不新增 Rust CLI/TUI。实现顺序为 Linux 纵向闭环优先，随后并行补齐 macOS 和 Windows，最终交付三个平台的无签名安装包。
+Runquiry 是对本地 [witr 源码](../../witr/README.md) 的纯 Rust 桌面化重写。产品只提供原生桌面 GUI，不嵌入 Go，也不新增 Rust CLI/TUI。实现顺序为 Linux 纵向闭环优先，随后补齐 Windows，最终交付两个平台的无签名安装包。（2026-09-08：macOS 支持已移出 v1 范围，模块 06 删除。）
 
 本计划的目标是让多个 Agent 可以按明确所有权和依赖关系并行开发。每个任务都必须独占其声明的文件或模块；共享 Cargo 配置、依赖锁和最终集成只由集成负责人修改。
 
@@ -14,12 +14,12 @@ Runquiry 是对本地 [witr 源码](../../witr/README.md) 的纯 Rust 桌面化�
   - gpui-component 提交：91217366a5765600a127bf108ce00b7143a93381。
   - Zed GPUI 锁文件提交：f66ed399cdde86092af8af3dc7b418abf45f37f8。
   - Cargo.lock 必须提交，CI、测试和打包全部使用 --locked；功能任务不得顺带升级依赖。
-- 最终平台：Linux、macOS、Windows。FreeBSD 不在本期范围。
+- 最终平台：Linux、Windows。macOS 与 FreeBSD 不在本期范围（macOS 于 2026-09-08 移出）。
 - 产品界面：Processes、Ports、Containers、File Locks 四个工作区，以及按名称、PID、端口、文件、容器发起的调查入口。
 - 保留 witr 的祖先链、启动来源、容器上下文、资源、Socket、文件、环境变量和风险告警。
-- Linux/macOS 支持 terminate、kill、pause、resume、renice；Windows 明确标记为不支持。
+- Linux 支持 terminate、kill、pause、resume、renice；Windows 明确标记为不支持。
 - 运行期完全本地：不包含遥测、云同步、远程诊断、自动更新或后台网络请求。
-- 交付 Linux AppImage/DEB、macOS APP/DMG、Windows MSI；全部无签名，不上传应用商店或创建远程 Release。
+- 交付 Linux AppImage/DEB、Windows MSI；全部无签名，不上传应用商店或创建远程 Release。
 
 ### 许可证决策
 
@@ -47,7 +47,7 @@ runquiry-core
     领域模型、目标解析、分析管线、告警规则、刷新状态机、平台端口
 
 runquiry-platform
-    Linux/macOS/Windows 采集器、容器运行时、进程控制、外部命令执行
+    Linux/Windows 采集器、容器运行时、进程控制、外部命令执行
 
 runquiry-ui
     GPUI 状态、设计系统、四个工作区、调查面板、设置与国际化
@@ -112,15 +112,15 @@ runquiry-app
 
 ### 平台能力矩阵
 
-| 能力 | Linux | macOS | Windows |
-|---|---|---|---|
-| 进程基线 | sysinfo | sysinfo | sysinfo |
-| 深度信息 | procfs、cgroup、capabilities | libproc、plist | windows crate、PEB |
-| 端口与 Socket | /proc/net + FD inode | lsof -F | IP Helper API |
-| 文件锁/打开文件 | /proc/locks、FD | lsof -F，best effort | Unsupported |
-| 服务来源 | systemd D-Bus、cron、supervisor | launchd/plist | Windows SCM |
-| 容器 | 实际存在的受支持 CLI | 实际存在的受支持 CLI | 实际存在的受支持 CLI |
-| 进程操作 | 完整 | 完整 | Unsupported |
+| 能力 | Linux | Windows |
+|---|---|---|
+| 进程基线 | sysinfo | sysinfo |
+| 深度信息 | procfs、cgroup、capabilities | windows crate、PEB |
+| 端口与 Socket | /proc/net + FD inode | IP Helper API |
+| 文件锁/打开文件 | /proc/locks、FD | Unsupported |
+| 服务来源 | systemd D-Bus、cron、supervisor | Windows SCM |
+| 容器 | 实际存在的受支持 CLI | 实际存在的受支持 CLI |
+| 进程操作 | 完整 | Unsupported |
 
 容器运行时范围：
 
@@ -136,7 +136,7 @@ FreeBSD jail 不实现。
 
 ### 外部命令边界
 
-所有容器 CLI、lsof 和 launchctl 调用统一经过 CommandRunner：
+所有容器 CLI 调用统一经过 CommandRunner：
 
 - 不经过 shell，只接受程序名与独立 argv。
 - 可用性探测超时 500ms。
@@ -157,7 +157,7 @@ FreeBSD jail 不实现。
 - SSH
 - Shell
 - systemd
-- launchd
+- launchd（判定链保留于 core，v1 无平台证据填充）
 - supervisor
 - cron
 - Windows Service
@@ -307,9 +307,10 @@ gpui-component 已提供相应 DataTable、Tree、Sidebar、Sheet、Dialog、Not
 | [03-container-runtime.md](runquiry-gpui-desktop/03-container-runtime.md) | B3 | CommandRunner、容器运行时 |
 | [04-linux-platform.md](runquiry-gpui-desktop/04-linux-platform.md) | B2、B7、B8 | Linux 采集、Unix 控制、Linux 验收 |
 | [05-desktop-ui.md](runquiry-gpui-desktop/05-desktop-ui.md) | A4、B4、B5、B6、C3 | DESIGN.md、GPUI 壳层、四工作区、能力 UI |
-| [06-macos-platform.md](runquiry-gpui-desktop/06-macos-platform.md) | C1 | macOS 采集和控制 |
 | [07-windows-platform.md](runquiry-gpui-desktop/07-windows-platform.md) | C2 | Windows 采集和能力限制 |
 | [08-integration-release.md](runquiry-gpui-desktop/08-integration-release.md) | C4、D1、D2、D3、D4 | 跨平台回归、硬化、打包、最终验收 |
+
+模块 06（macOS 平台，任务 C1）已于 2026-09-08 随 macOS 移出 v1 范围删除。
 
 ### 批次顺序
 
@@ -322,10 +323,10 @@ gpui-component 已提供相应 DataTable、Tree、Sidebar、Sheet、Dialog、Not
 | Batch 4A | B5 与 B6 并行 | 四个工作区完成 Linux 数据闭环 |
 | Batch 4B | B7 | 进程操作安全验证通过 |
 | Batch 5 | B8 | Linux X11、Wayland 真实验收通过 |
-| Batch 6 | C1 与 C2 并行 | macOS、Windows 模块分别通过实机验收 |
+| Batch 6 | C2 | Windows 模块通过实机验收（原 C1 macOS 已随 macOS 移出 v1 范围删除） |
 | Batch 7A | C3 | 平台能力正确映射到 UI |
-| Batch 7B | C4 | 三平台契约回归通过并冻结 v1 行为 |
-| Batch 8 | D1 与 D2 并行 | 安全/性能硬化和三平台打包均完成 |
+| Batch 7B | C4 | 双平台契约回归通过并冻结 v1 行为 |
+| Batch 8 | D1 与 D2 并行 | 安全/性能硬化和双平台打包均完成 |
 | Batch 9A | D3 | 用户、维护和许可证文档完成 |
 | Batch 9B | D4 | 全量自动检查、安装包和实机 QA 全部通过 |
 
@@ -337,8 +338,7 @@ A1 ─┬─> A3 ─┬─> A5 ─┬─> B1 ───────────�
     └─> A4 ─┴─> B4 ─┘       ├─> B6 ─┼─> B7 ─> B8
 A2 ────────> A3              │       │
 A5 ───────────────> B3 ──────┘       │
-                                      ├─> C1 ─┐
-                                      └─> C2 ─┴─> C3 ─> C4
+                                      └─> C2 ─> C3 ─> C4
                                                        ├─> D1 ─┐
                                                        └─> D2 ─┴─> D3 ─> D4
 ~~~
@@ -357,7 +357,7 @@ A5 ───────────────> B3 ──────┘      
 - 环境变量与敏感命令参数默认脱敏，重启后不泄露调查数据。
 - 960×640、1280×800、超宽窗口、浅色和深色主题。
 - 空列表、100k 行、40 字符进程名、无空格长路径和中文路径。
-- Linux X11、Linux Wayland、macOS 和 Windows 的安装、启动、卸载及离线运行。
+- Linux X11、Linux Wayland 和 Windows 的安装、启动、卸载及离线运行。
 - 安装包校验和与第三方许可证文件。
 
 ## 完成标准
@@ -368,7 +368,7 @@ A5 ───────────────> B3 ──────┘      
 - 平台限制、权限错误、部分结果和真正的空集合可以区分。
 - 无 unwrap、expect、panic、未说明的 unsafe 或占位 TODO。
 - 核心与平台模块控制在约 250 行纯代码以内，超过时按单一职责拆分。
-- 三个平台安装包均经过真实启动和关键路径 QA，而不只通过编译。
+- 两个平台安装包均经过真实启动和关键路径 QA，而不只通过编译。
 
 ## 假设与边界
 
@@ -377,6 +377,6 @@ A5 ───────────────> B3 ──────┘      
 - Rust 使用 edition 2024 和稳定工具链，不使用 nightly。
 - A1 从 Rust 1.90.0 开始选择第一个能编译固定依赖组合的稳定版本，并锁定精确 patch 版本。
 - 不存在或不兼容的 OS 能力通过 CapabilityStatus 表达，不通过伪数据、静默空集合或命令模拟。
-- 无签名安装器会触发 macOS Gatekeeper 和 Windows SmartScreen 提示。
+- 无签名安装器会触发 Windows SmartScreen 提示（macOS 已移出 v1 范围）。
 - 签名、公证、应用商店、自动更新和密钥管理属于后续独立项目。
 - 本计划不包含 Git 分支、commit、push、远程 Release 创建或生产发布操作。

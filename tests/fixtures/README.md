@@ -1,10 +1,11 @@
 # A5 Fixture 与测试基建（workspace 根 `tests/fixtures/`）
 
 对 [witr 行为契约](../docs/witr-parity.md)（§1 领域模型、§8 刷新、§9 进程操作、§10 平台差异）
-的三平台合成 fixture、确定性测试基建与失败模式映射。**全部数据为合成值**：
+的 Linux/Windows 双平台合成 fixture、确定性测试基建与失败模式映射。**全部数据为合成值**：
 进程名一律 `fxt-` 前缀，用户名 `fixture-user`，路径 `/opt/runquiry-fixtures/…`
-（Windows `C:\opt\runquiry-fixtures\…`，macOS `/Users/fixture-user/Library/RunquiryFixtures/…`），
+（Windows `C:\opt\runquiry-fixtures\…`），
 容器 ID `fxt…`，采集时刻固定为 epoch 毫秒 `1700000000000`，generation 固定 `7`。
+macOS 支持已于 2026-09-08 移出 v1 范围，`macos/` 目录整体删除。
 
 ## 1. fixture 清单（平台 / 场景 / 领域类型）
 
@@ -25,16 +26,6 @@
 | `linux/sockets-malformed.json` | linux | 格式损坏 | `Vec<SocketEntry>` | JSON 合法但 TCP 条目 `port = 0` → 反序列化拒绝 |
 | `linux/pid-reuse.json` | linux | PID 复用 | `Vec<ProcessIdentity>` | 同 PID 三身份：T1 / T2 / `start_time: null` |
 | `linux/file-locks-normal.json` | linux | 正常 | `Vec<FileLockEntry>` | `/proc/locks` 风格：Flock + Posix 各一条（parity §1） |
-| `macos/processes-normal.json` | macos | 正常 | `Vec<ProcessSummary>` | `/Users/fixture-user/...` 合成路径 |
-| `macos/processes-empty.json` | macos | 空结果 | `Vec<ProcessSummary>` | 同 linux |
-| `macos/processes-partial.json` | macos | 部分成功 | `Vec<ProcessSummary>` | 同 linux |
-| `macos/processes-permission.json` | macos | 权限失败 | `Vec<ProcessSummary>` | 同 linux |
-| `macos/containers-tool-missing.json` | macos | 工具缺失 | `Vec<ContainerSummary>` | 唯一运行时缺失 = 完全失败；`capability: Unavailable` |
-| `macos/open-ports-timeout.json` | macos | 超时 | `Vec<OpenPortEntry>` | lsof 超时但保留已取得端口 = 部分成功 |
-| `macos/file-locks-normal.json` | macos | 正常 | `Vec<FileLockEntry>` | lsof best-effort 文件锁 |
-| `macos/sockets-normal.json` | macos | 正常 | `Vec<SocketEntry>` | 含 Unix socket（`port: null`，inode 为 `null`） |
-| `macos/sockets-malformed.json` | macos | 格式损坏 | `Vec<SocketEntry>` | JSON 被截断 → 解析层拒绝 |
-| `macos/pid-reuse.json` | macos | PID 复用 | `Vec<ProcessIdentity>` | 同 linux |
 | `windows/processes-normal.json` | windows | 正常 | `Vec<ProcessSummary>` | `C:\opt\runquiry-fixtures\...` 合成路径 |
 | `windows/processes-empty.json` | windows | 空结果 | `Vec<ProcessSummary>` | 同 linux |
 | `windows/processes-partial.json` | windows | 部分成功 | `Vec<ProcessSummary>` | 同 linux |
@@ -50,9 +41,9 @@
 
 | 场景 | fixture 文件 | runquiry-core 测试（`tests/fixtures_load.rs` 等） | runquiry-platform 测试（`tests/fake_backends.rs`） |
 |---|---|---|---|
-| 正常 | `{平台}/processes-normal.json`、`{平台}/sockets-normal.json`、`{linux,macos}/file-locks-normal.json` | `processes_normal_fixture_loads_for_all_platforms`、`sockets_normal_fixture_passes_boundary_validation_for_all_platforms`、`{linux,macos}_file_locks_fixture_loads_lock_entries` | `normal_scenario_provides_data_on_all_ports` |
+| 正常 | `{平台}/processes-normal.json`、`{平台}/sockets-normal.json`、`linux/file-locks-normal.json` | `processes_normal_fixture_loads_for_all_platforms`、`sockets_normal_fixture_passes_boundary_validation_for_all_platforms`、`linux_file_locks_fixture_loads_lock_entries` | `normal_scenario_provides_data_on_all_ports` |
 | 空结果 | `{平台}/processes-empty.json` | `processes_empty_fixture_yields_complete_empty_data` | `empty_scenario_yields_complete_empty_collections` |
-| 部分成功 | `{平台}/processes-partial.json`、`linux/containers-tool-missing.json`、`macos/open-ports-timeout.json` | `processes_partial_fixture_keeps_data_alongside_permission_issue`、`containers_tool_missing_fixture_reports_external_tool_and_capability`、`open_ports_timeout_fixture_reports_timeout` | `partial_scenario_keeps_data_alongside_issue`、`tool_missing_scenario_reports_external_tool_and_unavailable_capability` |
+| 部分成功 | `{平台}/processes-partial.json`、`linux/containers-tool-missing.json` | `processes_partial_fixture_keeps_data_alongside_permission_issue`、`containers_tool_missing_fixture_reports_external_tool_and_capability`、`open_ports_timeout_fixture_reports_timeout` | `partial_scenario_keeps_data_alongside_issue`、`tool_missing_scenario_reports_external_tool_and_unavailable_capability` |
 | 权限失败 | `{平台}/processes-permission.json` | `processes_permission_fixture_fails_without_data` | `permission_scenario_fails_without_data` |
 | 工具缺失 | `{平台}/containers-tool-missing.json` | `containers_tool_missing_fixture_reports_external_tool_and_capability` | `tool_missing_scenario_reports_external_tool_and_unavailable_capability` |
 | 超时 | `{平台}/open-ports-timeout.json` | `open_ports_timeout_fixture_reports_timeout` | `timeout_scenario_reports_timeout_issue_and_runner_error` |
@@ -89,20 +80,25 @@
 **记录**：本规则目前在 fixture 装载边界生效（不改公共领域模型）；B2 实现各平台
 真实采集器时，把原始数据转换为 `SocketEntry` 的代码路径必须复用同一规则——届时
 应把该校验函数提升到 `runquiry-core` 公共模块（或 platform 共用模块），而非重写
-一份。三种损坏层（结构截断 → 解析失败；`port: 0` → 反序列化失败；协议-端口配对
-错误 → 规则失败）分别由 macos / linux / windows 的 `sockets-malformed.json` 覆盖。
+一份。损坏层覆盖：`port: 0` → 反序列化失败（`linux/sockets-malformed.json`）；协议-端口
+配对错误 → 规则失败（`windows/sockets-malformed.json` 与 `socket_boundary_rule_rejects_inline_violations`
+内联用例）。**已知缺口**（均为 macOS fixture 移出的连带影响）：① JSON 截断（解析层失败）
+原先由 `macos/sockets-malformed.json` 覆盖，当前无 fixture 覆盖此损坏层；② 正常形态的
+Unix socket 条目（`port: null`）原先由 `macos/sockets-normal.json` 提供，当前无 fixture
+载体，边界规则仍由 `socket_boundary_rule_rejects_inline_violations` 内联用例覆盖。
 
 ## 5. 敏感信息扫描结果
 
-扫描命令与输出（2026-09-03，30 个 JSON 文件全部无命中）：
+扫描命令与输出（2026-09-03，当时 30 个 JSON 文件全部无命中；2026-09-08 删除 `macos/`
+后剩余 20 个，删除不引入新数据，扫描结论不变）：
 
 ```console
 $ rg -ni --pcre2 -g '*.json' '(/home|/Users)/(?!fixture-user/)|[A-Za-z]:\\+Users\\+' tests/fixtures/
-# 退出码 1：除约定的 fixture-user 外，未发现 Linux、macOS 或 Windows 用户目录
+# 退出码 1：除约定的 fixture-user 外，未发现 Linux 或 Windows 用户目录
 $ rg -ni -g '*.json' 'token|secret|password|api[_-]?key' tests/fixtures/
 # 退出码 1：未发现凭据字段；两条扫描均仅检查 JSON，不会命中本 README
 $ find tests/fixtures -name '*.json' | wc -l
-30
+20
 ```
 
 补充约定：fixture 中不含真实进程数据、真实容器 ID、真实镜像仓库之外的
@@ -114,6 +110,8 @@ $ find tests/fixtures -name '*.json' | wc -l
 - `cargo test -p runquiry-core --locked`：37 通过（原 12：domain_types 11 + ports 1；
   另有 B4 的 core 侧在 `src/refresh.rs` 增加的 7 个 lib 单元测试；本次新增
   `fixtures_load` 14 + `process_controller_contract` 4）。
+- 2026-09-08（macOS 移出后）：`fixtures_load` 13（删除 `macos_file_locks_fixture_loads_lock_entries`），
+  core 合计 109 全绿；platform 180 全绿。
 - `cargo test -p runquiry-platform --locked`：10 通过（全部为本次新增）。
 - `cargo clippy` / `cargo fmt --check`：相关 crate 严格检查通过（UI/app 仅豁免锁定
   依赖树既有的 `multiple_crate_versions`，app 另豁免既有的 `print_stderr`）。

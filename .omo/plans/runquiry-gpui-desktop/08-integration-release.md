@@ -4,7 +4,7 @@
 
 ## 模块目标
 
-在三个平台模块完成后统一验证行为契约，完成安全、性能、可访问性、打包和文档，并以真实安装产物作为 v1 完成依据。
+在平台模块完成后统一验证行为契约，完成安全、性能、可访问性、打包和文档，并以真实安装产物作为 v1 完成依据。
 
 ## 所有权与边界
 
@@ -27,20 +27,21 @@
 
 ## TODOs
 
-- [ ] **C4 三平台契约回归**
+- [ ] **C4 双平台契约回归**
   - 进度（2026-09-07，Batch 7B；**套件准备完成，验证阻断**）：三平台契约覆盖矩阵、差异复核与缺口清单落地（`.omo/evidence/batch7b-c4-matrix.md`）；确认提交前再门禁提取为 `ProcessActionFlow::confirm_if_usable` 并补 2 个门禁测试（闭合 H 类唯一本轮缺口）。环境盘点：无 macOS 主机；WSL 后发现 Windows 主机（rustup 1.98.0-msvc）待授权；交叉目标装在 1.98.0 而项目锁 1.95.0。C1/C2 编译与实机证据仍为零，C3/C4 新测试未运行——C4 保持未完成，v1 契约未冻结，不开始 D1/D2。
-  - 依赖：C1-C3。
-  - 在 Linux、macOS、Windows 运行同一 adapter contract suite。
+  - 2026-09-08：C1（macOS）已随 macOS 移出 v1 范围删除，本任务范围收窄为 Linux 与 Windows。
+  - 依赖：C2、C3。
+  - 在 Linux、Windows 运行同一 adapter contract suite。
   - 对比排序、过滤、五类目标、来源、告警、脱敏、刷新、设置和能力状态。
   - 差异必须归类为平台事实或缺陷；平台事实回写行为契约，缺陷回到对应模块修复。
   - 冻结 v1 行为契约后，后续任务不得改变语义。
-  - 验证：cargo test --workspace --all-targets --locked 在三个系统均通过。
-  - 完成证据：三平台对照表、差异处置、冻结契约版本。
+  - 验证：cargo test --workspace --all-targets --locked 在两个系统均通过。
+  - 完成证据：双平台对照表、差异处置、冻结契约版本。
 
 - [ ] **D1 安全、性能与可访问性**
   - 依赖：C4。
   - 审核外部命令 argv、路径、输出上限、超时和子进程清理。
-  - 审核 PEB/libproc/Win32 FFI 的 unsafe 边界。
+  - 审核 PEB/Win32 FFI 的 unsafe 边界。
   - 验证敏感环境变量、命令参数、错误信息和 QA 证据均无泄露。
   - 使用 100k 行 fixture、连续自动刷新、快速切换页面和选择验证 stale generation。
   - 验证 960×640、1280×800、超宽窗口、中英文、浅深主题、键盘焦点和对比度。
@@ -51,7 +52,6 @@
   - 依赖：C4。
   - 使用单一 cargo-packager 配置。
   - Linux x86_64 生成 AppImage 和 DEB。
-  - macOS universal2 生成 APP 和 DMG。
   - Windows x86_64 生成 MSI。
   - 每个产物附 SHA-256、第三方许可证和构建元数据。
   - 干净 runner 只使用 Cargo.lock 和 --locked 构建。
@@ -82,7 +82,7 @@
     - cargo build --workspace --release --locked
     - cargo tree -d
   - 验证 GPUI 和 GPUI Platform 只有一个 Git source。
-  - 在 Linux X11、Linux Wayland、macOS、Windows 安装最终产物并完成四工作区、五类调查和平台能力场景。
+  - 在 Linux X11、Linux Wayland、Windows 安装最终产物并完成四工作区、五类调查和平台能力场景。
   - 核对无 unwrap、expect、panic、未说明 unsafe 或占位 TODO。
   - 核对所有 QA 进程、容器、窗口、临时目录和安装测试资源均已清理。
   - 仅当行为契约、自动检查、实机 QA、安装包和许可证证据全部通过时标记完成。
@@ -99,7 +99,7 @@
 
 ## 最终交接格式
 
-- 三平台自动验证命令和结果。
+- 双平台自动验证命令和结果。
 - 安装包、SHA-256 和许可证清单。
 - 四工作区、五类调查、平台限制的实机证据。
 - 安全、性能、可访问性结论。

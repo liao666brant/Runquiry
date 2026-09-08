@@ -1,8 +1,8 @@
 //! B7 真实进程控制 QA：只操作本程序自建并由 RAII 持有的 sleep 子进程。
 #![allow(clippy::print_stdout)] // QA 交付物需记录 PID、状态与清理回执。
 
-// 双 main 模式保证非 Linux 平台 `cargo test --locked` 可编译（与 macos_qa /
-// windows_qa 的门控模式一致）；pidfd/renice 边界为 Linux 行为。
+// 双 main 模式保证非 Linux 平台 `cargo test --locked` 可编译（与 windows_qa
+// 的门控模式一致）；pidfd/renice 边界为 Linux 行为。
 #[cfg(not(target_os = "linux"))]
 fn main() {
     println!("process_controller_qa 仅可在 Linux 上运行；Windows 侧验证见 tests/windows_*.rs。");

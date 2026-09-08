@@ -1,6 +1,6 @@
 # Runquiry
 
-对本地 [witr](witr/README.md)（Go CLI/TUI）的纯 Rust + GPUI 桌面化重写：原生桌面 GUI，提供 Processes、Ports、Containers、File Locks 四个工作区与按名称、PID、端口、文件、容器发起的调查。不嵌入 Go，不新增 CLI/TUI；运行期完全本地（无遥测、云服务、自动更新或后台网络请求）。目标平台 Linux、macOS、Windows，交付无签名安装包。
+对本地 [witr](witr/README.md)（Go CLI/TUI）的纯 Rust + GPUI 桌面化重写：原生桌面 GUI，提供 Processes、Ports、Containers、File Locks 四个工作区与按名称、PID、端口、文件、容器发起的调查。不嵌入 Go，不新增 CLI/TUI；运行期完全本地（无遥测、云服务、自动更新或后台网络请求）。目标平台 Linux 与 Windows，交付无签名安装包。
 
 ## 架构总览
 
@@ -20,7 +20,7 @@ graph TD
 ```
 
 - **runquiry-core**：领域模型、目标解析、分析管线、告警规则、刷新状态机、平台端口（trait）。不依赖 GPUI 或操作系统。
-- **runquiry-platform**：core 端口的三平台实现（采集器、容器运行时、进程控制、外部命令执行）。
+- **runquiry-platform**：core 端口的 Linux/Windows 双平台实现（采集器、容器运行时、进程控制、外部命令执行）。
 - **runquiry-ui**：GPUI 状态、设计系统、四个工作区、调查面板、设置与国际化。
 - **runquiry-app**：可执行装配层（窗口启动、配置持久化、资源与打包元数据）。
 
@@ -35,7 +35,7 @@ graph TD
 | crates/runquiry-ui | GPUI 界面：工作区、调查面板与设计系统 | [AGENTS.md](crates/runquiry-ui/AGENTS.md) |
 | crates/runquiry-app | 依赖装配、窗口启动与打包元数据 | [AGENTS.md](crates/runquiry-app/AGENTS.md) |
 | docs/witr-parity.md | witr 行为契约（202 条，Runquiry 语义的唯一来源） | [witr-parity.md](docs/witr-parity.md) |
-| .omo/plans/runquiry-gpui-desktop/ | 8 个模块的实施计划与任务勾选 | [总计划](.omo/plans/runquiry-gpui-desktop.md) |
+| .omo/plans/runquiry-gpui-desktop/ | 7 个模块的实施计划与任务勾选 | [总计划](.omo/plans/runquiry-gpui-desktop.md) |
 
 ## 运行与开发
 
@@ -59,7 +59,7 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 
 ## 测试策略
 
-- Batch 6 前基线为四 crate 273 个测试：`cargo test -p runquiry-core --locked`（107）、`-p runquiry-platform`（97）、`-p runquiry-ui`（48）、`-p runquiry-app`（21）；B7 独立结果为 platform `process_controller` 6/6、UI 完整套件 57/57，随后确认态定向测试 1/1，app 24/24；这些调用不可相加推断为本轮全量测试或“58 个 UI 全跑”。`cargo test -p runquiry-ui` 等禁止给 ui 加 gpui test-support dev-dependency（会引入 deny 白名单外 git 源 proptest），纯逻辑一律普通 `#[test]`。Batch 6 当前实测：core 110/110（+3 个 launchd/Windows service/init 来源判定测试）、app 24/24；platform 新增 `tests/macos_*` / `tests/windows_*` 纯解析套件（约 30+ 测试，经 `#[path]` 引入 src 纯模块）**尚未运行**（本机 WSL 构建卡死停跑，见 `.omo/evidence/batch6-result.md`）。Batch 7A C3 新增：UI `capability_contract_tests` 7 个三平台假后端契约测试 + `from_parts` 状态推导断言测试、app `failed_collection_error` 映射测试，**全部已编写、未运行**（延续构建禁令，见 `.omo/evidence/batch7a-result.md`），运行后以实际数字更新各模块 AGENTS。
+- Batch 6 前基线为四 crate 273 个测试：`cargo test -p runquiry-core --locked`（107）、`-p runquiry-platform`（97）、`-p runquiry-ui`（48）、`-p runquiry-app`（21）；B7 独立结果为 platform `process_controller` 6/6、UI 完整套件 57/57，随后确认态定向测试 1/1，app 24/24；这些调用不可相加推断为本轮全量测试或“58 个 UI 全跑”。`cargo test -p runquiry-ui` 等禁止给 ui 加 gpui test-support dev-dependency（会引入 deny 白名单外 git 源 proptest），纯逻辑一律普通 `#[test]`。Batch 6 当前实测：core 110/110（+3 个 launchd/Windows service/init 来源判定测试）、app 24/24；platform 新增 `tests/windows_*` 纯解析套件（约 20+ 测试，经 `#[path]` 引入 src 纯模块；`tests/macos_*` 已随 macOS 移出 v1 范围删除）。Batch 7A C3 新增：UI `capability_contract_tests` 7 个平台风格假后端契约测试 + `from_parts` 状态推导断言测试、app `failed_collection_error` 映射测试，**全部已编写、未运行**（延续构建禁令，见 `.omo/evidence/batch7a-result.md`），运行后以实际数字更新各模块 AGENTS。
 - 合成 fixture 与失败注入在 workspace 根 `tests/fixtures/`（清单与敏感信息扫描见其 README.md）；SocketEntry 输入边界规则（TCP/UDP 必有合法端口、Unix 必无端口）在 fixture loader 层执行，平台真实输入必须复用。
 - 行为语义以 [docs/witr-parity.md](docs/witr-parity.md) 为验收依据；fixture 要求合成值（无真实用户名、路径、Token）。
 
@@ -97,11 +97,12 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 - 2026-09-07（未提交工作区）：Batch 7 自动验证闭合与 C2 实机证据扩展——`cargo test --workspace --locked --no-fail-fast` 在 Windows 全绿（core 全绿、platform 除搁置的 macos_launchd_parse 外全绿、ui 69/69 含 Batch 7A 的 7 个三平台契约测试与 2 个确认门禁测试、app 全绿），**C3 自动验证缺口闭合**（勾选仍待真实 GUI 交互/视觉矩阵验收）；windows_qa 扩展三个实机验收场景：受保护进程（csrss/winlogon）详情 Ok + `PermissionDenied` 诊断 + sysinfo 基线保留（部分结果契约）、32 位进程 PEB32 详情（环境块 55 项、工作目录可得）、容器 CLI 三者均未安装（「未安装」场景，另两场景该环境不适用）；新增 `process_list::snapshot_live` ToolHelp32 真机测试（lib 49 全绿）；GUI 启动冒烟通过（runquiry.exe 窗口 Responding，GPUI Windows 后端可用）；07 模块计划 C2 进度补记（签名确认、ToolHelp 回退真机验证闭合），C2 剩 GUI 交互矩阵、容器未启动/已启动场景（该环境无 Docker）、SCM QA 采样说明。
 - 2026-09-07（未提交工作区）：cargo-deny 安装并接入验证（用户授权全局安装，`cargo install cargo-deny --locked`）；首次 `cargo deny check` licenses 失败——zed 固定提交内 `gpui_shared_string`/`gpui_util` manifest 未声明 license 字段，`deny.toml` 补两个 `[[licenses.clarify]]`（Apache-2.0，指纹 0x8a8d02f6）后**四项全绿**（advisories/bans/licenses/sources ok）。**用户决定：Linux/WSL 侧验证不在当前 Windows 验证环境进行，后续 Linux 验证需另行环境**（Linux 侧历史证据见 Batch 3–5 与 .omo/evidence）。
 - 2026-09-07（未提交工作区）：Windows 标题栏与操作栏合并（用户请求）——app `WindowOptions` 改用 `TitleBar::window_options()`（原生标题栏透明 + `app_owns_titlebar_drag`），UI `render_toolbar` 改为 `render_title_bar`：左侧窗口名与刷新/主题/语言按钮同置（组间距 16px），窗口控制按钮由 `TitleBar` 经 `WindowControlArea` 自绘交给系统；`toolbar_focus` 与 tab 顺序保持不变。侧栏宽度经 224→176→100 多轮调整最终定为 120px（用户确认），主区初始宽度计算同步。**GUI 视觉与交互用户确认通过**。`DESIGN.md` §5/§7/§8 与 ui/app 模块 `AGENTS.md` 已同步；顺带修复 ui 首次过 clippy 暴露的 `surface.rs` deny 级 `redundant_guards`（改 `Some([])` 切片模式）；ui 69/69、ui/app clippy 零 error、fmt 干净。
+- 2026-09-08（未提交工作区）：macOS 支持移出 v1 范围（用户决策，v1 收窄为 Linux 与 Windows）——删除 `crates/runquiry-platform/src/macos/`（libproc/lsof/launchctl/plist，15 文件 2660 行）、`examples/macos_qa.rs`、`tests/macos_{identity,launchd,lsof}_parse.rs` 与 `tests/fixtures/macos/`（10 个 fixture）；app 删除 `MacosPlatform` 平台别名、`launchd_service_pid` 名称解析回退（parity line 88）与 settings 的 macOS 配置路径分支；core fixture 测试平台矩阵收窄为 linux/windows；UI `MacosStyleBackend` 改名 `PartialFilesBackend`（该场景平台无关）；platform/app 增加 `compile_error!` 平台门禁。core 保留 `SourceType::Launchd`/`launchd_by_pid`/`detect_launchd` 领域类型与判定链（平台无关层）。`docs/witr-parity.md` 的 macOS 专属条目改标 out of scope。验证：四 crate `cargo check --all-targets` 全绿；core 109 + platform 180（合计 289）测试全绿、app 24 全绿；ui 68/69，唯一失败为既有测试过期（`render.rs` 仍按 224px 侧栏计算可用宽度），非本次引入。
 
 ## 索引状态
-- 2026-09-08 图标接入：原图与系统图标保存在 `assets/`；app 接入 Windows 资源 ID 1、Linux X11 图标及 app_id、cargo-bundle 图标元数据，详见 app 模块索引。未在本机构建或做目标平台视觉验收。
+- 2026-09-08 macOS 支持移除（v1 范围收窄为 Linux 与 Windows）：删除 `crates/runquiry-platform/src/macos/`（15 文件 2660 行）、`examples/macos_qa.rs`、`tests/macos_{identity,launchd,lsof}_parse.rs`、`tests/fixtures/macos/`（10 个 fixture）与模块 06 计划；app 删除 `MacosPlatform` 装配、`launchd_service_pid` 名称解析回退与 settings 的 `Library/Application Support` 分支；platform/app 增加非 Linux/Windows 目标的 `compile_error!` 门禁；core 保留 `SourceType::Launchd` / `launchd_by_pid` / `detect_launchd`（平台无关领域层，无平台实现）；`docs/witr-parity.md` 的 macOS 专属条目改标 out of scope。验证：core 109 + platform 180（合计 289）全绿、app 24 全绿、ui 68/69（唯一失败为既有测试过期，见下）。
 - 上次索引：2026-09-07T14:47:43Z（标题栏合并与侧栏调宽收尾、模块文档同步，未提交工作区，主 Agent 直接增量更新）
 - 上次索引：2026-09-07T13:22:30Z（Windows 主机验证通道打通 + macos_launchd_parse 搁置记录，未提交工作区，主 Agent 直接增量更新）
 - 基线提交：2f93ef4（Batch 7B C4 已提交 1656fb7）
-- 已知缺口：macos_launchd_parse 在 Windows 验证主机上不稳定（疑似内存硬件，用户侧排查中）且无 macOS 设备，该套件验证搁置；macOS 适配器完整实机验收长期无环境；Linux/WSL 侧验证已由用户决定移出当前 Windows 验证环境范围；C3 剩 GUI 交互矩阵的系统化走查留档（标题栏合并与侧栏视觉已用户确认）、C2 剩 GUI 四工作区交互与容器运行时场景；三平台契约 v1 未冻结；B8 已通过（.omo/evidence/batch5-*），不重复验收
+- 已知缺口：**既有失败（非本次删除引入）** `shell::render::tests::wide_layout_starts_with_a_65_35_split_after_the_sidebar`——`1e44f6e` 将侧栏定为 120px 后测试仍按 `px(224.)` 计算可用宽度；`processes/tests.rs:176` 声明后未使用的 `supported` 变量；Linux/WSL 侧验证已由用户决定移出当前 Windows 验证环境范围；C3 剩 GUI 交互矩阵的系统化走查留档（标题栏合并与侧栏视觉已用户确认）、C2 剩 GUI 四工作区交互与容器运行时场景；契约 v1 未冻结；B8 已通过（.omo/evidence/batch5-*），不重复验收
 - 扫描进度：已完成

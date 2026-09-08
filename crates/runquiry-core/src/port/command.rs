@@ -1,4 +1,4 @@
-//! 外部命令执行端口（容器 CLI、`lsof`、`launchctl` 的唯一通道）。
+//! 外部命令执行端口（容器 CLI 等外部工具的唯一通道）。
 
 use std::time::Duration;
 use std::{

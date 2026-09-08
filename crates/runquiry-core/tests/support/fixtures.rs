@@ -20,7 +20,7 @@ use runquiry_core::{
 /// fixture 快照封套：平台、场景、确定性时刻、generation、能力状态与部分成功语义。
 #[derive(Debug, serde::Deserialize)]
 pub struct FixtureEnvelope<T> {
-    /// 合成平台名（`linux` / `macos` / `windows`）。
+    /// 合成平台名（`linux` / `windows`）。
     pub platform: String,
     /// 合成场景名（如 `normal`、`pid_reuse`）。
     pub scenario: String,

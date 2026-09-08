@@ -65,7 +65,7 @@ impl ContainerProcessVerifier for WindowsPlatform {
     ///
     /// Docker Desktop 的容器进程运行在 Linux 虚拟机内，其 PID 与宿主
     /// Windows 的 PID 空间互不可见，运行时报告的「host PID」不可映射、
-    /// 不得用于调查或控制（与 macOS 侧披露一致）。
+    /// 不得用于调查或控制。
     fn belongs_to_container(&self, _pid: Pid, _key: &ContainerKey) -> bool {
         false
     }

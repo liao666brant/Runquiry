@@ -32,8 +32,8 @@ pub(super) fn sysinfo_pids() -> Vec<u32> {
 }
 
 /// sysinfo 启动秒数 → 身份启动时间（0 = 不可得 → `None`，与 core
-/// `ProcessIdentity` 的保守语义及 macOS 侧 `start_time_from_unix_seconds`
-/// 一致：`None` 使 `same_process` 恒拒绝，防止不可验证身份误判未复用）。
+/// `ProcessIdentity` 的保守语义一致：`None` 使 `same_process` 恒拒绝，
+/// 防止不可验证身份误判未复用）。
 pub(super) fn start_time_from_sysinfo(seconds: u64) -> Option<SystemTime> {
     (seconds > 0).then(|| SystemTime::UNIX_EPOCH + Duration::from_secs(seconds))
 }

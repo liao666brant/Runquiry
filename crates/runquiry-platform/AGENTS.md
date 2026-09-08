@@ -4,13 +4,13 @@
 
 ## 模块职责
 
-平台采集与控制层：Linux/macOS/Windows 采集器、容器运行时集成、进程控制（terminate/kill/pause/resume/renice）与外部命令执行。B2 已落地 Linux 只读采集（`src/linux/`），B3 已落地受限命令执行器与七种容器运行时（`src/command/`、`src/container/`）；Batch 4A P1 以 `/proc/PID/fd` 与 `/proc/locks` 提供文件/锁清单和路径持有者查询；Batch 4B B7 已落地 Linux 生产 `ProcessController`，使用 pidfd 定向信号并对 renice 的残余 PID 复用窗口如实设界；macOS/Windows 采集与进程控制（Unix 控制、三平台差异）属后续任务（模块 04/06/07）。
+平台采集与控制层：Linux/Windows 采集器、容器运行时集成、进程控制（terminate/kill/pause/resume/renice）与外部命令执行。B2 已落地 Linux 只读采集（`src/linux/`），B3 已落地受限命令执行器与七种容器运行时（`src/command/`、`src/container/`）；Batch 4A P1 以 `/proc/PID/fd` 与 `/proc/locks` 提供文件/锁清单和路径持有者查询；Batch 4B B7 已落地 Linux 生产 `ProcessController`，使用 pidfd 定向信号并对 renice 的残余 PID 复用窗口如实设界；Windows 采集属模块 07（C2）；macOS 支持已移出 v1 范围（2026-09-08）。
 
 约束：只依赖 runquiry-core，为其端口（trait）提供实现；UI 不得绕过本层直接读取 /proc、调用 Win32 API 或运行 lsof/容器 CLI。全部外部命令（容器 CLI、QA 假 CLI）只能经 `StdCommandRunner`，绝不经过 shell。
 
 ## 入口与启动
 
-无独立入口。库 crate，`src/lib.rs` 导出 `command`、`container` 与 cfg(linux) 的 `linux` 模块。
+无独立入口。库 crate，`src/lib.rs` 导出 `command`、`container` 与 cfg 门控的 `linux`/`windows` 模块；非 Linux/Windows 目标由 `compile_error!` 显式拒绝（macOS 已移出 v1 范围）。
 
 ## 对外接口
 
@@ -18,21 +18,20 @@
 - `container::ContainerRuntimes`：实现 `ContainerInventory`、`resolve`、`published_on`、`verified_host_pid`、`enrich` 与 `ContainerHealthcheckProbe`。command/Compose 匹配键只存在于私有且不可序列化的 `ListedContainer`，公共列表不外泄；nerdctl 的稳定键/显示名为 containerd，crictl 为 k8s。Docker 发布端口回退使用固定 argv；运行时 PID 只是候选，Linux `ContainerProcessVerifier` 必须以 `/proc/PID/cgroup` 再验证。七运行时独立失败，按 runtime+id 去重。
 - `linux::LinuxPlatform`（仅 `target_os = "linux"`）：实现 ProcessInventory、ProcessDetailsProvider、NetworkInventory、FileInventory、ProcessFileLocks、SourceEvidenceProvider、ContainerProcessVerifier 七个只读边界，并实现 `ProcessController`。`FileInventory::list` 合并可见 `/proc/PID/fd` 与真实锁，`holders(path)` 以路径（含可解析时的 canonical 路径）筛选；权限/读取问题转为有界诊断。`new()` 以 sysinfo 枚举生产 PID、真实墙钟建立排除基线，`with_injected` 使用合成 ProcFs；注入平台始终禁用控制副作用。可选详情字段失败保留数据并逐项诊断；systemd D-Bus 有 2s 方法超时与 single-flight。健康标签按 parity 计算（Z/T/HighCpu >2h/HighMem >1GiB）。
 - `ProcessController`：production `LinuxPlatform` 先重读启动时间与 executable 身份，再以 `pidfd_open` + `pidfd_send_signal` 执行 TERM/KILL/STOP/CONT；renice 先 signal 0 再按 PID 调 `setpriority`，两次 syscall 间仍有已披露的极窄 PID 复用 TOCTOU。身份不一致、不可验证、自身 PID、注入平台与系统调用错误均返回结构化 `InspectError`，不降级到裸 `kill` 或提权。
-- `macos::MacosPlatform`（仅 `target_os = "macos"`，C1）：sysinfo 基线 + libproc（libc 手写绑定，进程详情/资源）+ lsof -F 机器格式（端口/Socket/打开文件/锁 best-effort）+ launchctl/plist 证据；控制器为身份重读 + kill(2)/setpriority，start_time 秒级、重读与信号间存在已披露 PID 复用窗口；纯解析（lsof/launchctl/plist/identity）无 OS 依赖，经 `tests/macos_*` 的 `#[path]` 在 Linux 可测；`examples/macos_qa` 双 main。`launchd_service_pid`（pub）供 app 名称解析零命中后的 launchd 回退（parity line 88；label 非法 → `InvalidTarget`，由 app 转为「无候选」）。
 - `windows::WindowsPlatform`（仅 `target_os = "windows"`，C2）：sysinfo 基线（ToolHelp 快照补名）+ windows-sys 0.61.2 安全包装（ffi/{mod,process,toolhelp} + ffi_scm）+ IP Helper 端口表（IPv4/IPv6 TCP/UDP + PID）+ PEB/PEB32 有界远程读取（UTF-16 环境块解码）+ SCM 来源证据；FileInventory/ProcessFileLocks/ProcessController 为 Unsupported（原因键稳定，见 src/windows/unsupported.rs）；ContainerProcessVerifier 恒 false（Docker Desktop VM PID 不可映射）。
-- 未实现：macOS/Windows 实机验收与交叉编译验证（Batch 6 代码已落盘但未编译，见 .omo/evidence/batch6-result.md）。
+- 未实现：Windows 完整实机验收（只读冒烟与 lib 套件已在 Windows 验证主机通过，GUI 交互矩阵与容器运行时场景待补）。
 
 ## 关键依赖与配置
 
-- 依赖：runquiry-core、sysinfo 0.31.4（进程基线）、serde 1.0.229 / serde_json 1.0.151（容器 JSON 解析）、zbus 5.19.0（systemd D-Bus，blocking，仅 Linux 语义）、libc 0.2.189（cfg(unix)，kill(2) 进程组终止与 macOS libproc 手写绑定）、windows-sys 0.61.2（仅 `cfg(target_os = "windows")`，C2，用户已授权：锁内既有版本，Cargo.lock 仅 +1 行依赖边）。GPUI source 未漂移；manifest 变更由主 Agent（依赖守门）执行。
+- 依赖：runquiry-core、sysinfo 0.31.4（进程基线）、serde 1.0.229 / serde_json 1.0.151（容器 JSON 解析）、zbus 5.19.0（systemd D-Bus，blocking，仅 Linux 语义）、libc 0.2.189（cfg(unix)，kill(2) 进程组终止）、windows-sys 0.61.2（仅 `cfg(target_os = "windows")`，C2，用户已授权：锁内既有版本，Cargo.lock 仅 +1 行依赖边）。GPUI source 未漂移；manifest 变更由主 Agent（依赖守门）执行。
 - Linux 构建系统依赖（pkg-config、fontconfig 等）见根 AGENTS.md。
 
 ## 测试与质量
 
-- `cargo test -p runquiry-platform --locked`：Batch 4A 基线 97 个测试；B7 另以 `cargo test -p runquiry-platform --test process_controller --locked` 定向执行 6 个控制器测试，6/6 通过。不要将这两组数字相加推断为本轮全量测试。
+- `cargo test -p runquiry-platform --locked`：Batch 4A 基线 97 个测试；2026-09-08 实测 180 个（含 `windows_*` 77 个，`macos_*` 已随 macOS 移出删除）；B7 另以 `cargo test -p runquiry-platform --test process_controller --locked` 定向执行 6 个控制器测试，6/6 通过。不要将这两组数字相加推断为本轮全量测试。
 - B7 独立真实 QA：`cargo run -p runquiry-platform --example process_controller_qa --locked`，仅控制 QA 自建并清理的两个 `sleep` 子进程；暂停/恢复/renice/TERM、KILL 与身份拒绝均有真实 PID 回执（见本地 `.omo/evidence/batch4b-platform-real-qa.log`）。命令双流竞争回归另连续执行 10 次通过；既有 platform clippy 结果见本地 `.omo/evidence/batch4b-platform-clippy.log`。这些日志不纳入 Git。
 - linux 采集测试用合成 /proc tempdir 树（可注入根目录），不读真实 /proc、不依赖 root、不 sleep；容器测试用 tempdir 假 CLI 经生产 `StdCommandRunner` 驱动。
-- Batch 6 新增 `tests/macos_*`（identity/launchd/lsof 解析）与 `tests/windows_*`（ip_table/peb/scm/unsupported/utf16/winerror）纯解析套件：`#[path]` 引入 src 无 OS 依赖模块，Linux 直接编译运行；**本批未执行**（WSL 构建卡死停跑，见 `.omo/evidence/batch6-result.md`），Windows/macOS cfg 内联测试仅随目标平台编译运行。测试代码同样受 `unwrap_used/expect_used = deny`（无 clippy.toml 测试豁免）：新测试一律 `Result + ?` / `unwrap_or` / `assert!`，不使用 `.unwrap()`。
+- `tests/windows_*`（ip_table/peb/scm/unsupported/utf16/winerror）纯解析套件：`#[path]` 引入 src 无 OS 依赖模块，Linux 直接编译运行；Windows cfg 内联测试仅随目标平台编译运行。`tests/macos_*` 已随 macOS 移出 v1 范围删除。测试代码同样受 `unwrap_used/expect_used = deny`（无 clippy.toml 测试豁免）：新测试一律 `Result + ?` / `unwrap_or` / `assert!`，不使用 `.unwrap()`。
 - 真实 QA 示例：`cargo run -p runquiry-platform --example linux_qa --locked`（普通用户真实采集，环境变量只报计数）；`--example container_qa`（真实只读 list/verified_host_pid/enrich；daemon 不可用或 CLI 缺失时如实报告 Partial）。
 
 ## 常见问题
@@ -50,10 +49,9 @@
 - `crates/runquiry-platform/src/linux/` — Linux 只读采集（procfs/process/summary/details/fdscan/network/locks/open_files/file_diagnostics/source/capabilities/container）
 - `crates/runquiry-platform/src/linux/controller.rs` — B7 身份复核、pidfd 信号与 renice 控制
 - `crates/runquiry-platform/tests/process_controller.rs` — B7 真实自建进程、身份拒绝与注入平台无副作用回归
-- `crates/runquiry-platform/src/macos/` — C1 macOS 采集/来源/控制（libproc、lsof -F、launchctl/plist、纯解析子模块）
 - `crates/runquiry-platform/src/windows/` — C2 Windows 采集（ffi 系列安全包装、ip_table/peb/scm_parse 纯解析、limits Unsupported 建模）
-- `crates/runquiry-platform/tests/` — command_runner、container_*、linux_adapters、fake_backends（超长套件按同名子目录拆分）；macos_* / windows_* 纯解析套件经 `#[path]` 引入 src 模块在 Linux 直跑
-- `crates/runquiry-platform/examples/` — linux_qa、container_qa、process_controller_qa、macos_qa、windows_qa（真实 QA，双 main 平台门控）
+- `crates/runquiry-platform/tests/` — command_runner、container_*、linux_adapters、fake_backends（超长套件按同名子目录拆分）；windows_* 纯解析套件经 `#[path]` 引入 src 模块在 Linux 直跑
+- `crates/runquiry-platform/examples/` — linux_qa、container_qa、process_controller_qa、windows_qa（真实 QA，双 main 平台门控）
 - `docs/witr-parity.md` — 采集与运行时行为契约
 - `.omo/plans/runquiry-gpui-desktop/03-container-runtime.md`、`04-linux-platform.md` — B3/B2 任务定义
 
@@ -66,3 +64,4 @@
 - 2026-09-04（未提交工作区）：Batch 4A P1——新增 `linux/open_files.rs` 与 `file_diagnostics.rs`，`LinuxPlatform` 为 File Locks 工作区提供真实打开文件/锁清单及路径持有者查询，合成 ProcFs 回归覆盖 PID 0、权限与锁/FD 合并。platform 测试增至 97 个。
 - 2026-09-07（未提交工作区）：Batch 4B B7——Linux `ProcessController` 以身份重读 + pidfd 实现 TERM/KILL/STOP/CONT，renice 明确保留 signal 0 与 `setpriority` 间窄 TOCTOU；新增 6 个定向测试与独立 QA 示例。真实 X11 QA 已覆盖五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。
 - 2026-09-07（未提交工作区）：Batch 6 C1/C2——新增 `src/macos/`（libproc 手写绑定、lsof -F、launchctl/plist、身份重读 + kill(2)/setpriority 控制）与 `src/windows/`（windows-sys 0.61.2 安全包装 ffi{,/process,/toolhelp}/ffi_scm、IP Helper 端口表、PEB/PEB32 有界读取、SCM 证据、File Locks 与进程控制 Unsupported）；core `SourceEvidence` 加性扩展 launchd/Windows service 证据字段并补齐 detect 链（core 110 测试全绿）；app backend 按 target_os 装配平台（Linux 24/24 回归通过）；macos_*/windows_* 纯解析套件经 `#[path]` 可在 Linux 直跑。**全部 macOS/Windows cfg 代码未编译、未测试**（本机 WSL 编译卡死，用户叫停）；独立 FFI 审查两处阻断项（ProcTaskInfo 字段宽度、rusage 偏移）与三项建议缺陷已修复；随后静态 code-review（双轴）修复 Windows IP Helper 重试丢尺寸、Windows start_time 0 → `None` 语义（与 macOS/core 对齐）与 25 处测试 unwrap 基线违规；实机验收未开始。
+- 2026-09-08（未提交工作区）：macOS 支持移出 v1 范围——删除 `src/macos/`（15 文件 2660 行：libproc/lsof/launchctl/plist/identity 与控制器）、`examples/macos_qa.rs`、`tests/macos_{identity,launchd,lsof}_parse.rs`；`src/lib.rs` 移除 `#[cfg(target_os = "macos")] pub mod macos;` 并增加非 Linux/Windows 目标的 `compile_error!` 门禁；libc 依赖说明去掉 macOS libproc 手写绑定表述。`cargo check -p runquiry-platform --locked --all-targets` 通过，`cargo test -p runquiry-platform --locked` 180 测试全绿（windows_* 77 个，已无 macos_*）。

@@ -4,8 +4,8 @@ use std::time::{Duration, SystemTime};
 
 use crate::support::fixtures::LoadedFixture;
 
-/// 覆盖的三个合成平台目录名。
-pub const PLATFORMS: [&str; 3] = ["linux", "macos", "windows"];
+/// 覆盖的两个合成平台目录名（macOS 已移出 v1 范围）。
+pub const PLATFORMS: [&str; 2] = ["linux", "windows"];
 /// 固定 fixture 采集时间的毫秒时间戳。
 pub const CAPTURED_AT_MS: u64 = 1_700_000_000_000;
 

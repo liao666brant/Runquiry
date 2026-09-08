@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-可执行 crate（二进制名 `runquiry`）：依赖装配、窗口启动、配置持久化、资源与打包元数据。Batch 2 B4 起为真实产品壳层装配：runquiry-ui 的 `AppShell` 经 `Root` 装配进主窗口，设置持久化（allowlist 白名单）与快捷键在此层接线；Batch 4A I1 在本层装配 Linux 只读采集后端，UI 不直接访问操作系统或容器 CLI；Batch 4B B7 通过同一 `WorkspaceBackend` 桥接 Linux 进程控制能力，按动作请求 fresh platform 并原样传递结构化错误。
+可执行 crate（二进制名 `runquiry`）：依赖装配、窗口启动、配置持久化、资源与打包元数据。Batch 2 B4 起为真实产品壳层装配：runquiry-ui 的 `AppShell` 经 `Root` 装配进主窗口，设置持久化（allowlist 白名单）与快捷键在此层接线；Batch 4A I1 在本层装配平台只读采集后端，UI 不直接访问操作系统或容器 CLI；Batch 4B B7 通过同一 `WorkspaceBackend` 桥接 Linux 进程控制能力，按动作请求 fresh platform 并原样传递结构化错误。
 
 ## 入口与启动
 
@@ -15,13 +15,13 @@
 
 ## 对外接口
 
-无对外 API。窗口行为（B4 起为产品壳层）：初始 1280×800（最小 960×640），`Root` 第一级视图装配 runquiry-ui 的 `AppShell`（合并标题栏/侧栏四工作区/主数据区/详情区/StatusBar）；`WindowOptions` 以 `TitleBar::window_options()` 为基底（原生标题栏透明 + `app_owns_titlebar_drag`，窗口控制由 UI 层 `TitleBar` 自绘），仍保留 `set_window_title` 供任务栏标题；启动设置（主题/语言/最后工作区/窗口尺寸）从设置文件恢复，`ShellEvent` 与窗口 bounds 变化写回 allowlist 设置。`PlatformBackend` 对每次 load/resolve/analyze 新建 `LinuxPlatform`，避免启动期进程排除基线漏掉后启动目标；B7 的 `process_control_capability` 与 `execute_process_action` 同样按请求新建 platform，调用 core `ProcessController`，不在 UI 线程执行、不提权；失败按 `InspectError` 原样返回。共享 `AnalysisGate` 仍保证跨请求分析互斥。配置路径只接受平台环境提供的绝对路径；无安全路径时禁用持久化。
+无对外 API。窗口行为（B4 起为产品壳层）：初始 1280×800（最小 960×640），`Root` 第一级视图装配 runquiry-ui 的 `AppShell`（合并标题栏/侧栏四工作区/主数据区/详情区/StatusBar）；`WindowOptions` 以 `TitleBar::window_options()` 为基底（原生标题栏透明 + `app_owns_titlebar_drag`，窗口控制由 UI 层 `TitleBar` 自绘），仍保留 `set_window_title` 供任务栏标题；启动设置（主题/语言/最后工作区/窗口尺寸）从设置文件恢复，`ShellEvent` 与窗口 bounds 变化写回 allowlist 设置。`PlatformBackend` 对每次 load/resolve/analyze 新建目标平台结构体（按 `target_os` 选择 Linux/Windows；非二者由 platform 层 `compile_error!` 拒绝），避免启动期进程排除基线漏掉后启动目标；B7 的 `process_control_capability` 与 `execute_process_action` 同样按请求新建 platform，调用 core `ProcessController`，不在 UI 线程执行、不提权；失败按 `InspectError` 原样返回。共享 `AnalysisGate` 仍保证跨请求分析互斥。配置路径只接受平台环境提供的绝对路径；无安全路径时禁用持久化。
 
 另有独立开发实验台：`src` 同级的 `examples/gallery/`（`cargo run -p runquiry-app --example gallery --locked`），A4 组件 gallery，不参与产品打包。
 
 ## 关键依赖与配置
 
-- 应用图标：`assets/branding/runquiry-icon-concept-v1.png` 保留原图，`assets/icons/` 保存 PNG/ICO 与 Linux desktop entry。`build.rs` 将资源 ID 1 嵌入 Windows `runquiry` 二进制；Linux X11 在 `WindowOptions.icon` 使用嵌入 PNG，Wayland 依赖安装 `runquiry.desktop` 与 hicolor 图标。macOS 图标由 `Cargo.toml` 的 cargo-bundle 元数据生成，裸二进制不携带 Dock 图标。
+- 应用图标：`assets/branding/runquiry-icon-concept-v1.png` 保留原图，`assets/icons/` 保存 PNG/ICO 与 Linux desktop entry。`build.rs` 将资源 ID 1 嵌入 Windows `runquiry` 二进制；Linux X11 在 `WindowOptions.icon` 使用嵌入 PNG，Wayland 依赖安装 `runquiry.desktop` 与 hicolor 图标。macOS 支持已移出 v1 范围，无 macOS 图标产物。
 - 图标依赖 `image = 0.25.10`（仅 Linux，PNG 解码）与构建依赖 `embed-resource = 3.0.11` 均复用锁内版本；图标接入尚未做目标平台构建/GUI 验收。
 - runquiry-core / runquiry-platform / runquiry-ui（workspace 继承）。
 - **git 依赖内联声明**（不经 workspace 继承——cargo-deny 0.20 的 bans 无法解析 git 源的 workspace 继承依赖）：
@@ -45,7 +45,7 @@
 - `assets/icons/` — 系统图标资源与 Linux 桌面入口
 - `crates/runquiry-app/Cargo.toml` — manifest（含 git 依赖内联声明的原因注释）
 - `crates/runquiry-app/src/main.rs` — 应用入口与最小窗口
-- `crates/runquiry-app/src/backend.rs` / `src/backend/` — Linux 平台后端装配、fresh platform、共享分析门控、容器 fallback 与真实 Linux 回归
+- `crates/runquiry-app/src/backend.rs` / `src/backend/` — 目标平台后端装配、fresh platform、共享分析门控、容器 fallback 与真实平台回归
 - `crates/runquiry-app/src/settings.rs` — allowlist 设置 schema、安全路径与原子写入
 - `crates/runquiry-app/examples/gallery/` — A4 组件实验台（独立入口）
 - `Cargo.toml` — 根 workspace 配置与 git 依赖锁定机制说明
@@ -63,3 +63,4 @@
 - 2026-09-07（未提交工作区）：Batch 4B B7——`PlatformBackend` 增加进程控制能力查询与动作转发，`UnavailableBackend` 安全禁用并保留构造原因；App 测试增至 24 个。真实 X11 QA 已覆盖五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。
 - 2026-09-07（未提交工作区）：Batch 7A C3（验证阻断）——`process_control_capability` 平台构造失败改映射 `CapabilityStatus::Unavailable`（`UnavailableBackend` 同步对齐 load 语义）；resolve 的端口/文件采集完全失败经 `failed_collection_error` 保留平台诊断（Unsupported 诊断与 PermissionDenied 不再折叠为单一「采集未返回数据」）；gallery 状态切换组补 `unavailable`（tab 序整体顺延 1 位，既有 A4 焦点/Tab 步数证据不再适用）。全部改动未经编译/测试。
 - 2026-09-07（未提交工作区）：Windows 验证通道打通后 app 套件全绿；标题栏合并（用户请求）——`WindowOptions` 改用 `TitleBar::window_options()`（原生标题栏透明），窗口控制移交 UI 层 `TitleBar` 自绘，`set_window_title` 保留用于任务栏标题；app 套件与 GUI 启动冒烟在 Windows 全绿，GUI 视觉与交互用户确认通过。
+- 2026-09-08（未提交工作区）：macOS 支持移出 v1 范围——`backend.rs` 删除 `MacosPlatform` 平台别名、`launchd_service_pid` 名称解析回退（parity line 88）与对应调用点，`ProcessName` 解析直接走 `resolve_name`；`settings.rs` 删除 `Library/Application Support` 配置路径分支与 `macos_relative_home_disables_persistence` 测试（`#[cfg(not(target_os = "windows"))]` 承接 Linux 分支）。`cargo check -p runquiry-app --locked --all-targets` 通过，app 24 测试全绿。

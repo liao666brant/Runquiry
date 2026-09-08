@@ -7,7 +7,7 @@
 规范来源为：
 
 - 上级方案：[Runquiry 桌面化实施计划](../.omo/plans/runquiry-gpui-desktop.md)（架构、产品边界、平台矩阵与全局验收标准）。
-- 模块任务文件：[01-foundation.md](../.omo/plans/runquiry-gpui-desktop/01-foundation.md)（A2 要求：四工作区、五类目标、来源优先级、告警、容器运行时、刷新策略、进程操作和三平台差异）。
+- 模块任务文件：[01-foundation.md](../.omo/plans/runquiry-gpui-desktop/01-foundation.md)（A2 要求：四工作区、五类目标、来源优先级、告警、容器运行时、刷新策略、进程操作和平台差异）。
 
 ## 状态图例
 
@@ -17,7 +17,7 @@
 |---|---|
 | `parity` | 与 witr 行为一致，Runquiry 需按原语义实现 |
 | `intentional change` | 有意偏离 witr 的行为（例如 CLI 提示改为 GPUI 候选表、退出码改为类型化错误） |
-| `out of scope` | 本期不实现，或属于被明确排除的平台/入口形态 |
+| `out of scope` | 本期不实现，或属于被明确排除的平台/入口形态（含 macOS 专属行为） |
 
 ## 生成说明
 
@@ -25,6 +25,7 @@
 - 每个条目的证据列均链接到 `witr/` 下的具体源码文件与符号；无 witr 对应行为的条目标注为 `out of scope` 并在证据列说明。
 - `out of scope` 条目保留以说明边界：FreeBSD 不在本期范围，GUI 应用无 `--version` / 补全 / doc 生成入口，`json:"..."` 输出契约不保留，`Exit*` 数字退出码不进入 GUI。
 - 跨章节重复的条目保留在主要主题章节，重复行的证据列以「同 §X 对应条」标注来源；同一章节内的逐字重复行已删除。
+- **macOS 已移出 v1 范围（2026-09-08）**：纯 macOS 专属条目统一改标为 `out of scope`；跨平台条目中提及 macOS 实现方式的备注保留原文（记录 witr 行为事实），但其 macOS 部分不在 Runquiry 实现范围内。平台矩阵为 Linux 与 Windows。
 
 ## 1. 领域模型
 
@@ -56,7 +57,7 @@
 | Compose 项目信息（ComposeProject / ComposeService / ComposeConfigFile / ComposeWorkingDir） | out of scope | [`ComposeProject / ComposeService / ComposeConfigFile / ComposeWorkingDir`](../witr/pkg/model/container.go) | core 容器上下文（总计划未列） | 无 |
 | 启动来源结构（Type/Name/Description/UnitFile/Details） | parity | [`Source{Type, Name, Description, UnitFile, Details map[string]string}`](../witr/pkg/model/source.go) | core 来源识别 | UnitFile 为 systemd 语义；macOS 用 launchd/plist，Windows 用 SCM |
 | unknown 兜底来源 | parity | [`SourceUnknown SourceType = "unknown"`](../witr/pkg/model/source.go) | core 来源识别（平台限制、权限错误、部分结果和真正的空集合可以区分） | 无 |
-| macOS 资源上下文（EnergyImpact/PreventsSleep/ThermalState/AppNapped/CPUUsage/MemoryUsage） | parity | [`ResourceContext`（注释 holds resource usage context for a process）](../witr/pkg/model/resource.go) | core 领域模型 + platform macOS 采集 | macOS 专属（EnergyImpact/ThermalState/AppNap 为 macOS 概念） |
+| macOS 资源上下文（EnergyImpact/PreventsSleep/ThermalState/AppNapped/CPUUsage/MemoryUsage） | out of scope | [`ResourceContext`（注释 holds resource usage context for a process）](../witr/pkg/model/resource.go) | 无（macOS 支持已移出 v1 范围） | macOS 专属（EnergyImpact/ThermalState/AppNap 为 macOS 概念） |
 | 文件锁行模型（PID、进程名、路径、锁类型 POSIX/FLOCK/OFDLCK、模式 READ/WRITE/RW） | parity | [`LockedFile{PID, Process, Path, Type, Mode}`](../witr/pkg/model/lock.go) | core 领域模型 + ui File Locks 工作区 | Linux /proc/locks；macOS lsof -F best effort；Windows Unsupported（保留页面入口并显示说明） |
 | 进程级文件上下文（打开文件数、FD 软上限、锁文件路径列表） | parity | [`FileContext{OpenFiles, FileLimit, LockedFiles}`](../witr/pkg/model/filecontext.go) | core 领域模型 + ui Processes 文件详情 | Linux /proc/PID/fd；macOS lsof best effort；Windows Unsupported |
 | FD 上限获取（进程自身 limit 优先，失败回退系统默认） | parity | [`getFileLimit / getDefaultMaxOpenFiles`](../witr/internal/proc/filecontext_linux.go)、[`filecontext_darwin.go 的 getFileLimit（默认 256）`](../witr/internal/proc/filecontext_darwin.go)、[`filecontext_freebsd.go 的 getFileLimit（默认 1024）`](../witr/internal/proc/filecontext_freebsd.go)、[`extended_linux.go 的 ReadExtendedInfo（fdLimit 复用 getFileLimit）`](../witr/internal/proc/extended_linux.go) | platform（页面 Processes 详情「文件」） | 各平台来源不同，Linux 读 /proc/<pid>/limits 的 "Max open files" 软限制（unlimited 记为 0） |
@@ -85,15 +86,15 @@
 | 名称解析排除自身及其祖先进程链（shell、sudo 等），避免 witr bash 总是命中用户自己的 shell | parity | [`isIgnored 闭包 + procpkg.ResolveAncestry`](../witr/internal/target/name_linux.go) | core 目标解析 | Linux 惰性构建 ignored 集合；macOS/FreeBSD/Windows 在扫描前即构建 |
 | 名称解析禁止把纯数字 PID 字符串当作进程名命中对应进程（查询值等于某 PID 的十进制字符串时跳过该进程） | parity | [`lowerName == strconv.Itoa(pid) 时 continue`](../witr/internal/target/name_linux.go) | core 目标解析 | Linux/macOS/FreeBSD 实现；Windows 版无此防护 |
 | Linux 名称解析在 /proc 扫描零命中时回退到 systemd：接受 foo 与 foo.service 两种写法，用 systemctl show -p MainPID --value 取主进程 PID，PID 为 0 视为服务未运行 | parity | [`resolveSystemdServiceMainPID / ResolveName（len(procPIDs) == 0 时才调用）`](../witr/internal/target/name_linux.go) | core 目标解析 + platform 服务来源 systemd | 仅 Linux |
-| macOS 名称解析通过 `ps -axo pid=,comm=,args=` 枚举进程，零命中后回退 launchd：先校验 label（`^[a-zA-Z0-9._-]+$`，长度 1-256）再依次尝试 name、com.apple.name、org.name、io.name 四种 label，从 launchctl print 输出解析 "pid = <n>" | parity | [`ResolveName / resolveLaunchdServicePID / isValidServiceLabel / validServiceLabelRegex`](../witr/internal/target/name_darwin.go) | core 目标解析 + platform 服务来源 launchd | 仅 macOS |
-| launchd/rc.d 服务 label 输入校验用于防命令注入：只允许字母数字与 `. _ -`，长度 1-256（FreeBSD 版要求首字符为字母数字） | parity | [`isValidServiceLabel / validServiceLabelRegex`](../witr/internal/target/name_darwin.go)、[`name_freebsd.go`](../witr/internal/target/name_freebsd.go) | core 目标解析输入校验（不经过 shell，只接受 argv；FreeBSD 版不在范围内） | macOS 与 FreeBSD 正则略有差异（FreeBSD 要求首字符为字母数字） |
+| macOS 名称解析通过 `ps -axo pid=,comm=,args=` 枚举进程，零命中后回退 launchd：先校验 label（`^[a-zA-Z0-9._-]+$`，长度 1-256）再依次尝试 name、com.apple.name、org.name、io.name 四种 label，从 launchctl print 输出解析 "pid = <n>" | out of scope | [`ResolveName / resolveLaunchdServicePID / isValidServiceLabel / validServiceLabelRegex`](../witr/internal/target/name_darwin.go) | 无（macOS 支持已移出 v1 范围；app 的 launchd 名称解析回退已删除） | 仅 macOS |
+| launchd/rc.d 服务 label 输入校验用于防命令注入：只允许字母数字与 `. _ -`，长度 1-256（FreeBSD 版要求首字符为字母数字） | out of scope | [`isValidServiceLabel / validServiceLabelRegex`](../witr/internal/target/name_darwin.go)、[`name_freebsd.go`](../witr/internal/target/name_freebsd.go) | 无（macOS 与 FreeBSD 均已移出 v1 范围） | macOS 与 FreeBSD 正则略有差异（FreeBSD 要求首字符为字母数字） |
 | 名称解析结果去重并按 PID 升序排序，服务解析出的 PID 排在首位且与进程扫描结果去重 | parity | [`seen map + sort.Ints，servicePID 前置`](../witr/internal/target/name_linux.go)、[`ResolveName（同逻辑）`](../witr/internal/target/name_darwin.go)、[`name_freebsd.go（同逻辑）`](../witr/internal/target/name_freebsd.go) | core 目标解析（多结果进入候选表） | Linux/macOS/FreeBSD 一致；Windows 版不做排序/服务前置 |
 | 名称解析无结果时返回明确错误：Unix 为 `no running process or service named %q`，Windows 为 `no process found matching: %s` | parity | [`ResolveName（len(pids)==0 分支）`](../witr/internal/target/name_linux.go)、[`name_darwin.go`](../witr/internal/target/name_darwin.go)、[`name_freebsd.go`](../witr/internal/target/name_freebsd.go)、[`name_windows.go（no process found matching: %s）`](../witr/internal/target/name_windows.go) | core InspectError::NotFound | Linux/macOS/FreeBSD 与 Windows 错误文案不同 |
 | Windows 名称解析采用两遍策略：第一遍 ToolHelp32 快照对可执行名做即时匹配，仅当零命中才对存活候选逐个读 PEB 取命令行，SYSTEM 进程读取被拒时静默跳过 | parity | [`procpkg.ListProcessSnapshot / procpkg.GetProcessDetailedInfo，pass 1/pass 2 注释`](../witr/internal/target/name_windows.go) | platform 深度信息 windows crate、PEB + core 目标解析 | 仅 Windows |
-| FreeBSD 名称解析用 `ps -axww -o pid -o comm -o args`（跳过表头），服务回退读 `/var/run/<name>.pid` 并用 ps 验证进程存活，再回退 service <name> status 输出解析 pid | out of scope | [`ResolveName / resolveRcServicePID`](../witr/internal/target/name_freebsd.go) | 总计划明确 FreeBSD jail 不实现，平台矩阵只含 Linux/macOS/Windows | 仅 FreeBSD |
+| FreeBSD 名称解析用 `ps -axww -o pid -o comm -o args`（跳过表头），服务回退读 `/var/run/<name>.pid` 并用 ps 验证进程存活，再回退 service <name> status 输出解析 pid | out of scope | [`ResolveName / resolveRcServicePID`](../witr/internal/target/name_freebsd.go) | 总计划明确 FreeBSD jail 不实现，平台矩阵只含 Linux/Windows | 仅 FreeBSD |
 | 文件目标解析前先取绝对路径，并尝试 EvalSymlinks 归一化（失败则退回绝对路径） | parity | [`filepath.Abs + filepath.EvalSymlinks`](../witr/internal/target/file_linux.go) | core 目标解析 File(PathBuf)；ui 调查入口 File 支持手工路径与文件选择器 | Linux 做符号链接归一化；macOS/Windows/FreeBSD 只取绝对路径 |
 | Linux 文件解析遍历 `/proc/<pid>/fd` 的 readlink 结果，与归一化路径或绝对路径任一相等即命中，每个进程最多计一次 | parity | [`linkPath == realPath || linkPath == absPath，break`](../witr/internal/target/file_linux.go) | platform FileInventory /proc locks、FD | 仅 Linux |
-| macOS 文件解析用 `lsof -F p <absPath>`，lsof 退出码 1 视为无进程持有，其他失败报 lsof failed | parity | [`ResolveFile（exec.Command("lsof", "-F", "p", absPath)，ExitError.ExitCode()==1 分支）`](../witr/internal/target/file_darwin.go) | platform FileInventory lsof -F best effort | 仅 macOS |
+| macOS 文件解析用 `lsof -F p <absPath>`，lsof 退出码 1 视为无进程持有，其他失败报 lsof failed | out of scope | [`ResolveFile（exec.Command("lsof", "-F", "p", absPath)，ExitError.ExitCode()==1 分支）`](../witr/internal/target/file_darwin.go) | 无（macOS 支持已移出 v1 范围） | 仅 macOS |
 | Windows 文件解析用 Restart Manager（rstrtmgr.dll 的 RmStartSession/RmRegisterResources/RmGetList/RmEndSession），先 sizing 再取列表，RM_PROCESS_INFO 结构体必须精确 668 字节 | intentional change | [`ResolveFile / rmProcessInfo / rmUniqueProcess`](../witr/internal/target/file_windows.go) 与 [`TestRmProcessInfoSize`](../witr/internal/target/file_windows_test.go) | 总计划平台矩阵将 Windows 文件锁定为 Unsupported，File Locks 页保留入口并展示 Unsupported 说明 | 仅 Windows |
 | FreeBSD 文件解析用 fstat <absPath> 输出第三列作为 PID，无命中报 no process found holding file | out of scope | [`ResolveFile`](../witr/internal/target/file_freebsd.go) | 总计划平台矩阵不含 FreeBSD | 仅 FreeBSD |
 | 文件目标无进程持有时返回错误：Linux/macOS/FreeBSD 为 `no process found holding file: <path>`，Windows 为 `no process is holding <path>` | parity | [`ResolveFile`](../witr/internal/target/file_linux.go)、[`file_darwin.go`](../witr/internal/target/file_darwin.go)、[`file_freebsd.go`](../witr/internal/target/file_freebsd.go)、[`file_windows.go（needed == 0 / len(pids)==0 分支）`](../witr/internal/target/file_windows.go) | core InspectError::NotFound | Windows 文案不同 |
@@ -130,7 +131,7 @@
 | 开放端口条目（PID、Port、Address、Protocol、State） | parity | 同 §2 对应条：[`OpenPort{PID, Port, Address, Protocol, State}`](../witr/pkg/model/net.go) | core 领域模型 + ui Ports 工作区 | Linux /proc/net + FD inode；macOS lsof -F；Windows IP Helper API |
 | 文件目标解析前先取绝对路径，并尝试 EvalSymlinks 归一化（失败则退回绝对路径） | parity | 同 §2 对应条：[`filepath.Abs + filepath.EvalSymlinks`](../witr/internal/target/file_linux.go) | core 目标解析 File(PathBuf) | Linux 做符号链接归一化 |
 | Linux 文件解析遍历 `/proc/<pid>/fd` 的 readlink 结果，与归一化路径或绝对路径任一相等即命中，每个进程最多计一次 | parity | 同 §2 对应条：[`linkPath == realPath || linkPath == absPath，break`](../witr/internal/target/file_linux.go) | platform FileInventory /proc locks、FD | 仅 Linux |
-| macOS 文件解析用 `lsof -F p <absPath>`，lsof 退出码 1 视为无进程持有，其他失败报 lsof failed | parity | 同 §2 对应条：[`ResolveFile（exec.Command("lsof", "-F", "p", absPath)，ExitError.ExitCode()==1 分支）`](../witr/internal/target/file_darwin.go) | platform FileInventory lsof -F best effort | 仅 macOS |
+| macOS 文件解析用 `lsof -F p <absPath>`，lsof 退出码 1 视为无进程持有，其他失败报 lsof failed | out of scope | 同 §2 对应条：[`ResolveFile（exec.Command("lsof", "-F", "p", absPath)，ExitError.ExitCode()==1 分支）`](../witr/internal/target/file_darwin.go) | 无（macOS 支持已移出 v1 范围） | 仅 macOS |
 | Windows 文件解析用 Restart Manager（rstrtmgr.dll），先 sizing 再取列表，RM_PROCESS_INFO 结构体必须精确 668 字节 | intentional change | 同 §2 对应条：[`ResolveFile / rmProcessInfo / rmUniqueProcess`](../witr/internal/target/file_windows.go) 与 [`TestRmProcessInfoSize`](../witr/internal/target/file_windows_test.go) | 总计划平台矩阵将 Windows 文件锁定为 Unsupported | 仅 Windows |
 | 平台不支持的目标（如 Windows 上的 -f）单独处理：不附加"换个名称/端口/PID 再试"的通用提示，直接输出错误并按无效输入退出码返回 | parity | 同 §2 对应条：[`errors.Is(err, target.ErrUnsupported) 分支注释`](../witr/internal/app/app.go) | core InspectError::Unsupported + ui 各工作区 Unsupported 展示 | 典型场景为 Windows 上不支持 file 目标 |
 | socket 属主不可知且容器回退未命中时，提示可能权限不足并给出 sudo 命令，按权限错误退出码返回 | intentional change | 同 §2 对应条：[`handleResolveError（A socket was found for the port... Try running with sudo，return ExitPermission）`](../witr/internal/app/app.go) | ui/app 错误呈现 | 无（文案通用，触发条件各平台均为 ErrSocketOwnerUnknown） |
@@ -182,8 +183,8 @@
 | systemd 单元名从 /proc/PID/cgroup 解析 | parity | [`getUnitNameFromCgroup`](../witr/internal/source/systemd_linux.go) | platform Linux 采集 | 仅 Linux（cgroup v1/v2） |
 | systemd D-Bus 富化（Description/FragmentPath/SourcePath/NRestarts） | parity | [`enrichFromSystemd`（doc 注释 best-effort）](../witr/internal/source/systemd_linux.go) | platform Linux | 无 |
 | systemd 定时器调度展示 | parity | [`timerSchedule、calendarSpec、monotonicSpec`](../witr/internal/source/systemd_linux.go) | platform Linux（详情面板 schedule 字段） | 无 |
-| launchd 来源判定 | parity | [`detectLaunchd`（hasLaunchd 检查与 err 回退）](../witr/internal/source/launchd_darwin.go) | core 来源识别 + platform macOS | 仅 macOS |
-| launchd 富化（label/comment/DomainDescription/PlistPath/FormatTriggers/KeepAlive） | parity | [`detectLaunchd` 各段](../witr/internal/source/launchd_darwin.go) | platform macOS | 无 |
+| launchd 来源判定 | out of scope | [`detectLaunchd`（hasLaunchd 检查与 err 回退）](../witr/internal/source/launchd_darwin.go) | core 保留判定链（`detect_launchd`），platform macOS 已删除、无证据填充 | 仅 macOS |
+| launchd 富化（label/comment/DomainDescription/PlistPath/FormatTriggers/KeepAlive） | out of scope | [`detectLaunchd` 各段](../witr/internal/source/launchd_darwin.go) | 无（platform macOS 已移出 v1 范围） | 无 |
 | SSH 连接详情回溯 | parity | [`detectSSH`（for i := len-1 递减回溯）](../witr/internal/source/ssh.go) | core 来源识别 | 无 |
 | Shell 来源判定 | parity | [`isShell`（名单含 bash/zsh/sh/fish/csh/tcsh/ksh/dash/ash/cmd.exe/powershell.exe/pwsh.exe/explorer.exe 等）](../witr/internal/source/shell.go) | core 来源识别（Shell） | Windows 下先剥离 .exe/.cmd/.bat/.com 后缀再查表 |
 | Shell 来源识别用户工具 | parity | [`userTools`（python/node/ruby/perl/php/go/java/cargo/npm/yarn/make 等）](../witr/internal/source/shell.go) | core 来源识别（Shell） | Windows 下先剥离 .exe/.cmd/.bat/.com 后缀 |
@@ -256,12 +257,12 @@
 | PID 身份变化时早退并提示重试 | parity | [`pidIdentityChanged 命中时置 statusMsg "PID %d changed since opened — refresh and retry" 并早退`](../witr/internal/tui/update.go) | core/platform | 无 |
 | 操作后错误状态显示 | intentional change | witr 以单条状态行呈现：[`update.go 的 m.statusMsg = fmt.Sprintf("Error: %v", execErr)`](../witr/internal/tui/update.go)；Runquiry 改为结构化错误状态矩阵 | ui 状态矩阵 | 无 |
 
-## 10. Linux/macOS/Windows 平台差异
+## 10. Linux/Windows 平台差异
 
 | 平台 | 能力差异 | 状态 | witr 证据 |
 |---|---|---|---|
 | Linux | /proc/net、/proc/locks、/proc/PID/io、cgroup、capabilities、systemd D-Bus、logind | parity | [`ReadProcess（/proc 采集）`](../witr/internal/proc/process_linux.go)、[`detectSystemd / enrichFromSystemd`](../witr/internal/source/systemd_linux.go)、[`resource_linux.go 的 checkPreventsSleep（logind D-Bus）`](../witr/internal/proc/resource_linux.go) |
-| macOS | lsof -F（socket/文件锁）、libproc（能耗/热状态/App Nap）、pmset assertions、launchd/plist | parity | [`ResolveFile（lsof -F p）`](../witr/internal/target/file_darwin.go)、[`GetResourceContext / checkPreventsSleep / getThermalState`](../witr/internal/proc/resource_darwin.go)、[`detectLaunchd`](../witr/internal/source/launchd_darwin.go) |
+| macOS | lsof -F（socket/文件锁）、libproc（能耗/热状态/App Nap）、pmset assertions、launchd/plist | out of scope | [`ResolveFile（lsof -F p）`](../witr/internal/target/file_darwin.go)、[`GetResourceContext / checkPreventsSleep / getThermalState`](../witr/internal/proc/resource_darwin.go)、[`detectLaunchd`](../witr/internal/source/launchd_darwin.go)；macOS 支持已移出 v1 范围 |
 | Windows | ToolHelp32 快照、IP Helper API、PSAPI、Windows SCM；文件锁与进程操作 Unsupported | parity | [`readEnvironmentBlock / parseEnvBlock（PEB）`](../witr/internal/proc/peb_windows.go)、[`detectWindowsService（三级判定）`](../witr/internal/source/service_windows.go)、[`serviceMapCacheTTL 服务映射缓存`](../witr/internal/proc/services_windows.go)；文件锁 Unsupported 见 [`locks_windows.go`](../witr/internal/proc/locks_windows.go)、进程操作 Unsupported 见 [`actions_windows.go`](../witr/internal/tui/actions_windows.go) |
 | 缓存 TTL | Linux socket 表缓存、macOS lsof/ps 缓存、Windows 快照/服务映射缓存 | parity | [`socketCacheTTL`](../witr/internal/proc/net_linux.go)、[`openPortsCacheTTL`](../witr/internal/proc/fd_darwin.go)、[`snapshotCacheTTL`](../witr/internal/proc/snapshot_windows.go)、[`serviceMapCacheTTL`](../witr/internal/proc/services_windows.go)（同 §8 缓存 TTL 条） |
 | FreeBSD | 不在本期范围（supervisor/rc.d 名单仅作参考） | out of scope | witr 存在实现（[`name_freebsd.go`](../witr/internal/target/name_freebsd.go)、[`file_freebsd.go`](../witr/internal/target/file_freebsd.go)、[`runtime_jail_freebsd.go`](../witr/internal/proc/runtime_jail_freebsd.go)），Runquiry 平台矩阵明确排除 |
@@ -296,4 +297,5 @@ Runquiry 的四个工作区一一对应 witr TUI 的四个标签页（[`tabProce
 - 行为条目总数：202 条（§1 领域模型 35、§2 目标 40、§3 解析补充 20、§4 管线 27、§5 来源 21、§6 告警 12、§7 容器运行时 16、§8 刷新 6、§9 进程操作 9、§10 平台差异 5、§11 其他 7、§12 四工作区 4）。
 - 无来源条目数：0（每条的证据列均含指向 `../witr/` 下具体文件与符号的链接；仅 §8 generation 条与 §10 FreeBSD 行标注为「无 witr 对应行为 / witr 已实现但明确排除」，并各自给出佐证链接）。
 - 跨章节重复条目已标注「同 §X 对应条」，同章节内的逐字重复行已删除。
-- 覆盖主题：四个工作区（Processes/Ports/Containers/File Locks，见 §12）、五类调查目标（名称/PID/端口/文件/容器）、目标解析与多结果行为、来源识别及优先级、告警规则、容器运行时、刷新策略、进程操作、Linux/macOS/Windows 平台差异、领域模型、其他行为（CLI 入口与输出格式）。
+- 覆盖主题：四个工作区（Processes/Ports/Containers/File Locks，见 §12）、五类调查目标（名称/PID/端口/文件/容器）、目标解析与多结果行为、来源识别及优先级、告警规则、容器运行时、刷新策略、进程操作、Linux/Windows 平台差异、领域模型、其他行为（CLI 入口与输出格式）。
+- macOS 条目处置（2026-09-08）：纯 macOS 专属条目改标 `out of scope`；跨平台条目保留 `parity`，其备注中的 macOS 实现方式仅作 witr 行为记录。

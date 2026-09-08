@@ -7,13 +7,13 @@
 //! 不读其他进程的环境值；不使用 sudo，不自动提权。
 #![allow(clippy::print_stdout, clippy::print_stderr)] // QA 示例以控制台输出为交付物
 
-// 双 main 模式保证非 Linux 平台 `cargo test --locked` 可编译（与 macos_qa /
-// windows_qa 的门控模式一致）。
+// 双 main 模式保证非 Linux 平台 `cargo test --locked` 可编译（与 windows_qa
+// 的门控模式一致）。
 #[cfg(not(target_os = "linux"))]
 fn main() {
     println!("linux_qa 仅可在 Linux 上运行；Windows 侧验证见 tests/windows_*.rs。");
     println!(
-        "本机可执行的验证：cargo test -p runquiry-platform --locked（windows_*/macos_* 纯解析测试）。"
+        "本机可执行的验证：cargo test -p runquiry-platform --locked（windows_* 纯解析测试）。"
     );
 }
 
