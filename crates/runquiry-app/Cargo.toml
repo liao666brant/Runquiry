@@ -26,5 +26,19 @@ gpui_platform = { version = "0.1.0", git = "https://github.com/zed-industries/ze
 gpui-component = { version = "0.5.2", git = "https://github.com/longbridge/gpui-component", rev = "91217366a5765600a127bf108ce00b7143a93381" }
 gpui-component-assets = { version = "0.5.1", git = "https://github.com/longbridge/gpui-component", rev = "91217366a5765600a127bf108ce00b7143a93381" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+[build-dependencies]
+embed-resource = "=3.0.11"
+
+[package.metadata.bundle]
+name = "Runquiry"
+identifier = "io.github.runquiry"
+icon = ["../../assets/icons/runquiry-512.png"]
+category = "Developer Tool"
+linux_startup_wm_class = "runquiry"
+short_description = "Local process investigation"
+
 [lints]
 workspace = true

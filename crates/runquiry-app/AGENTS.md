@@ -21,6 +21,8 @@
 
 ## 关键依赖与配置
 
+- 应用图标：`assets/branding/runquiry-icon-concept-v1.png` 保留原图，`assets/icons/` 保存 PNG/ICO 与 Linux desktop entry。`build.rs` 将资源 ID 1 嵌入 Windows `runquiry` 二进制；Linux X11 在 `WindowOptions.icon` 使用嵌入 PNG，Wayland 依赖安装 `runquiry.desktop` 与 hicolor 图标。macOS 图标由 `Cargo.toml` 的 cargo-bundle 元数据生成，裸二进制不携带 Dock 图标。
+- 图标依赖 `image = 0.25.10`（仅 Linux，PNG 解码）与构建依赖 `embed-resource = 3.0.11` 均复用锁内版本；图标接入尚未做目标平台构建/GUI 验收。
 - runquiry-core / runquiry-platform / runquiry-ui（workspace 继承）。
 - **git 依赖内联声明**（不经 workspace 继承——cargo-deny 0.20 的 bans 无法解析 git 源的 workspace 继承依赖）：
   - `gpui`、`gpui_platform`（zed 仓库，rev 经 Cargo.lock 锁定 f66ed399）
@@ -39,6 +41,8 @@
 
 ## 相关文件清单
 
+- `crates/runquiry-app/build.rs` / `resources/runquiry.rc` — Windows EXE 图标嵌入
+- `assets/icons/` — 系统图标资源与 Linux 桌面入口
 - `crates/runquiry-app/Cargo.toml` — manifest（含 git 依赖内联声明的原因注释）
 - `crates/runquiry-app/src/main.rs` — 应用入口与最小窗口
 - `crates/runquiry-app/src/backend.rs` / `src/backend/` — Linux 平台后端装配、fresh platform、共享分析门控、容器 fallback 与真实 Linux 回归

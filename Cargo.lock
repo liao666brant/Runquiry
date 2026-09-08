@@ -5430,10 +5430,12 @@ dependencies = [
 name = "runquiry-app"
 version = "0.1.0"
 dependencies = [
+ "embed-resource",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "image",
  "runquiry-core",
  "runquiry-platform",
  "runquiry-ui",

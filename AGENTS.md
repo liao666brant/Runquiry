@@ -99,6 +99,7 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 - 2026-09-07（未提交工作区）：Windows 标题栏与操作栏合并（用户请求）——app `WindowOptions` 改用 `TitleBar::window_options()`（原生标题栏透明 + `app_owns_titlebar_drag`），UI `render_toolbar` 改为 `render_title_bar`：左侧窗口名与刷新/主题/语言按钮同置（组间距 16px），窗口控制按钮由 `TitleBar` 经 `WindowControlArea` 自绘交给系统；`toolbar_focus` 与 tab 顺序保持不变。侧栏宽度经 224→176→100 多轮调整最终定为 120px（用户确认），主区初始宽度计算同步。**GUI 视觉与交互用户确认通过**。`DESIGN.md` §5/§7/§8 与 ui/app 模块 `AGENTS.md` 已同步；顺带修复 ui 首次过 clippy 暴露的 `surface.rs` deny 级 `redundant_guards`（改 `Some([])` 切片模式）；ui 69/69、ui/app clippy 零 error、fmt 干净。
 
 ## 索引状态
+- 2026-09-08 图标接入：原图与系统图标保存在 `assets/`；app 接入 Windows 资源 ID 1、Linux X11 图标及 app_id、cargo-bundle 图标元数据，详见 app 模块索引。未在本机构建或做目标平台视觉验收。
 - 上次索引：2026-09-07T14:47:43Z（标题栏合并与侧栏调宽收尾、模块文档同步，未提交工作区，主 Agent 直接增量更新）
 - 上次索引：2026-09-07T13:22:30Z（Windows 主机验证通道打通 + macos_launchd_parse 搁置记录，未提交工作区，主 Agent 直接增量更新）
 - 基线提交：2f93ef4（Batch 7B C4 已提交 1656fb7）

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Runquiry
+Comment=Local process investigation
+Exec=runquiry
+Icon=runquiry
+Terminal=false
+Categories=Development;
+StartupWMClass=runquiry

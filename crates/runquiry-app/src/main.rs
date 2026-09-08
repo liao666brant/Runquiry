@@ -52,6 +52,7 @@ fn main() {
 
     let app = gpui_platform::application().with_assets(Assets);
     app.run(move |cx| {
+        cx.set_app_identity("io.github.runquiry", WINDOW_TITLE);
         // rust-i18n：先并入 gpui-component 的内置文案，再初始化组件
         // （进程内只允许调用一次，见 runquiry-ui::locale）。
         runquiry_ui::locale::extend_component_translations();
@@ -110,6 +111,17 @@ fn main() {
             cx,
         );
         let options = WindowOptions {
+            app_id: Some("runquiry".into()),
+            #[cfg(target_os = "linux")]
+            icon: match image::load_from_memory(include_bytes!(
+                "../../../assets/icons/runquiry.png"
+            )) {
+                Ok(icon) => Some(Arc::new(icon.into_rgba8())),
+                Err(error) => {
+                    eprintln!("加载应用图标失败: {error}");
+                    None
+                }
+            },
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             window_min_size: Some(size(
                 px_dim(WindowSize::MIN.width),
