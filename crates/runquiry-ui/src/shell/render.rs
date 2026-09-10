@@ -39,6 +39,8 @@ const TAB_THEME_DARK: isize = 3;
 const TAB_LANG_EN: isize = 4;
 const TAB_LANG_ZH_CN: isize = 5;
 const MAIN_PANEL_SHARE: f32 = 0.65;
+/// 侧栏固定宽度：实现与宽度计算测试共用，避免两处漂移。
+const SIDEBAR_WIDTH: f32 = 120.;
 
 /// 宽窗口内联显示详情；窄窗口为后续按选择打开 Sheet 保留主区宽度。
 fn shows_inline_detail(width: gpui::Pixels) -> bool {
@@ -47,7 +49,7 @@ fn shows_inline_detail(width: gpui::Pixels) -> bool {
 
 /// 宽窗口的初始列表宽度。分隔条实际拖拽后的值由 `ResizableState` 保留。
 fn initial_main_panel_width(window_width: gpui::Pixels) -> gpui::Pixels {
-    let sidebar_width = px(120.);
+    let sidebar_width = px(SIDEBAR_WIDTH);
     let main_minimum = px(360.);
     let detail_minimum = px(280.);
     let available = (window_width - sidebar_width).max(main_minimum + detail_minimum);
@@ -245,7 +247,7 @@ impl AppShell {
             .h_full()
             .child(
                 Sidebar::new("runquiry-sidebar")
-                    .w(px(120.))
+                    .w(px(SIDEBAR_WIDTH))
                     .header(SidebarHeader::new().child(t!("app.name").to_string()))
                     .child(
                         SidebarGroup::new(t!("sidebar.workspaces").to_string()).child(
@@ -294,7 +296,7 @@ fn workspace_title(workspace: WorkspaceId) -> SharedString {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAIN_PANEL_SHARE, initial_main_panel_width, shows_inline_detail};
+    use super::{MAIN_PANEL_SHARE, SIDEBAR_WIDTH, initial_main_panel_width, shows_inline_detail};
     use gpui::px;
 
     #[test]
@@ -324,7 +326,7 @@ mod tests {
     #[test]
     fn wide_layout_starts_with_a_65_35_split_after_the_sidebar() {
         for width in [px(1_100.), px(1_280.)] {
-            let available = width - px(224.);
+            let available = width - px(SIDEBAR_WIDTH);
             let main = initial_main_panel_width(width);
 
             assert!((main.as_f32() / available.as_f32() - MAIN_PANEL_SHARE).abs() < f32::EPSILON);

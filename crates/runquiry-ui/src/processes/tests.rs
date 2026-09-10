@@ -173,8 +173,6 @@ fn cpu_none_is_sampling_and_inspection_preserves_partial_diagnostics() {
 /// Processes 页与清单工作区共用同一套失败语义：失败不伪装成空集合。
 #[test]
 fn from_parts_matches_list_workspace_state_semantics() {
-    let supported = CapabilityStatus::Supported;
-
     // 有快照 + 诊断：部分成功。
     assert_eq!(
         SurfaceState::from_parts(

@@ -30,6 +30,7 @@
 - [ ] **C4 双平台契约回归**
   - 进度（2026-09-07，Batch 7B；**套件准备完成，验证阻断**）：三平台契约覆盖矩阵、差异复核与缺口清单落地（`.omo/evidence/batch7b-c4-matrix.md`）；确认提交前再门禁提取为 `ProcessActionFlow::confirm_if_usable` 并补 2 个门禁测试（闭合 H 类唯一本轮缺口）。环境盘点：无 macOS 主机；WSL 后发现 Windows 主机（rustup 1.98.0-msvc）待授权；交叉目标装在 1.98.0 而项目锁 1.95.0。C1/C2 编译与实机证据仍为零，C3/C4 新测试未运行——C4 保持未完成，v1 契约未冻结，不开始 D1/D2。
   - 2026-09-08：C1（macOS）已随 macOS 移出 v1 范围删除，本任务范围收窄为 Linux 与 Windows。
+  - 进度（2026-09-10，Linux/WSL 侧）：在基线 `5a837d0` 上以锁定工具链 1.95.0 串行执行——`cargo fmt --check` 干净、core 109、platform 180（含 `windows_*` 纯解析 77）、ui 69、app 24 全部通过，`cargo test --workspace --all-targets --locked` 385/385 退出码 0，clippy 零 error，`check --examples` 通过（日志与元数据见 `.omo/evidence/c4-linux-verification.md`）。修复 ui 既有失败 `wide_layout_starts_with_a_65_35_split_after_the_sidebar`：`1e44f6e` 侧栏定为 120px 后测试仍按 `px(224.)` 计算，提取共享常量 `SIDEBAR_WIDTH` 统一实现与断言（三处硬编码收敛为一处）；并删除 `processes/tests.rs` 中 clippy `--all-targets` 暴露的未使用 `supported` 变量。**缺口闭合**：batch7b §6.1-2（纯解析套件已跑）、§6.1-3（ui C3 契约与门禁测试已跑）、§6.2 需 Linux 环境项。**C4 仍未完成**：Windows 侧须在 `5a837d0` 之后重跑（其全绿记录早于 macOS 移除提交，两平台须同基线）；差异 #1/#2 待裁决、#3/#4 待实机复核；Linux GUI 交互回归未做。
   - 依赖：C2、C3。
   - 在 Linux、Windows 运行同一 adapter contract suite。
   - 对比排序、过滤、五类目标、来源、告警、脱敏、刷新、设置和能力状态。
