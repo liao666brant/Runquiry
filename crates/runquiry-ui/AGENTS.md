@@ -16,6 +16,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 - `theme`：Runquiry Light/Dark 主题（原始色值只允许出现在 `theme.rs` 的 PALETTE 表；`install`/`apply` 切换）。
 - `state` + `state_view`：DataState 七态（含 `Unavailable` 环境边界态）与 RenderOnce 统一状态呈现（loading/empty/error/unsupported/unavailable/permission-denied/ready）。
+- `format`：时间的用户可读呈现与统一占位符。`format_timestamp(Option<SystemTime>)` 输出 UTC 的 `YYYY-MM-DD HH:MM:SS UTC`（`None`/纪元前返回 `UNAVAILABLE`），`format_optional(Option<&str>)` 回退到同一占位符。纯标准库实现（锁定依赖内无日期库，新增依赖须经守门人批准），供进程确认对话框与容器表格共用，避免各处 `Debug` 打印 `SystemTime` 或重复定义 `—`。
 - `locale`：Lang + rust-i18n 初始化（`i18n!("locales", fallback="en")`；`extend_component_translations()` 须在 gpui_component::init 前调用一次；`set_language` 后必须显式 notify）；对外文案 API：`tr(key)`/`state_copy(state)`/`state_name(state)`（键在 `locales/app.yml`，v2 格式，en 兜底，键完整性由单测强制）。
 - `session`：AppSession/WorkspaceId/WorkspaceSession——四工作区隔离的 LoadState/generation/选择/排序/筛选；手工与自动刷新共用 `try_refresh` 一条通道，in-flight 拒绝重入；刷新完成/中止与结果均绑定 generation，过期信号不改变当前请求。
 - `debounce`：DetailDebounce 500ms 详情防抖（注入毫秒时钟，纯逻辑）。
@@ -30,7 +31,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 ## 测试与质量
 
-- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57。不要将历史数字表述为全量。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）。Batch 7A C3 新增 `capability_contract_tests`（7 个平台风格假后端契约测试）、Batch 7B C4 新增确认门禁测试 2 个（`confirm_gate_*`）：曾在 Windows 验证主机全量运行 69/69；2026-09-10 在 WSL 以锁定工具链复跑 69/69。此前 `shell::render::tests::wide_layout_starts_with_a_65_35_split_after_the_sidebar` 的过期断言（`1e44f6e` 侧栏定为 120px 后测试仍按 `px(224.)` 打可用宽度）已修复——侧栏宽度收敛为 `shell::render::SIDEBAR_WIDTH` 常量，实现、渲染与断言共用单一来源；`processes/tests.rs` 中 `clippy --all-targets` 暴露的未使用 `supported` 变量同期删除，两处修复后 UI 套件 69/69 且无该警告。
+- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57。不要将历史数字表述为全量。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）。Batch 7A C3 新增 `capability_contract_tests`（7 个平台风格假后端契约测试）、Batch 7B C4 新增确认门禁测试 2 个（`confirm_gate_*`）：曾在 Windows 验证主机全量运行 69/69；2026-09-10 在 WSL 以锁定工具链复跑 69/69。此前 `shell::render::tests::wide_layout_starts_with_a_65_35_split_after_the_sidebar` 的过期断言（`1e44f6e` 侧栏定为 120px 后测试仍按 `px(224.)` 打可用宽度）已修复——侧栏宽度收敛为 `shell::render::SIDEBAR_WIDTH` 常量，实现、渲染与断言共用单一来源；`processes/tests.rs` 中 `clippy --all-targets` 暴露的未使用 `supported` 变量同期删除，两处修复后 UI 套件 69/69 且无该警告；同日新增 `format` 模块 7 个测试与确认描述 2 个测试后为 78/78，工作区 `--all-targets` 394/394。
 - clippy 注意：锁定依赖树的 77 条 `multiple-crate-versions` 为基线既有问题，`-D warnings` 验证时豁免该项（见模块 05 计划 A4 实施记录）；ui 源码 clippy `--all-targets` 当前零 error（`surface.rs` 的 `redundant_guards` 已随合并标题栏批次修复）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束。
 
@@ -42,6 +43,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 - `crates/runquiry-ui/Cargo.toml` — crate manifest（含内联 git 依赖）
 - `crates/runquiry-ui/src/lib.rs` — 库入口与模块重导出
+- `crates/runquiry-ui/src/format.rs` — 时间可读格式化与占位符（无第三方依赖）
 - `crates/runquiry-ui/src/theme.rs` — 主题与集中式色值表
 - `crates/runquiry-ui/src/state.rs` / `state_view.rs` / `locale.rs` — 状态语义/呈现/双语
 - `crates/runquiry-ui/src/backend.rs` — UI 与装配层后端契约、工作区快照、结果门控与进程动作 seam
@@ -67,3 +69,4 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 - 2026-09-07（未提交工作区）：Windows 验证通道打通后自动套件全绿（ui 69/69 含 C3 契约与 C4 门禁测试，clippy 零 error）；`surface.rs` 修复 deny 级 `redundant_guards`（改 `Some([])` 切片模式）。标题栏与操作栏合并为 `TitleBar`（用户请求，DESIGN §7 已同步），侧栏经多轮调宽定为 120px；GUI 视觉与交互用户确认通过。
 - 2026-09-08（未提交工作区）：macOS 支持移出 v1 范围——`capability_contract_tests.rs` 的 `MacosStyleBackend` 改名 `PartialFilesBackend`、`MACOS_FILES_PARTIAL_REASON` 改为平台中立的 `PARTIAL_FILES_REASON`，对应测试改名 `partial_files_capability_keeps_data_and_issues`（该场景验证 Partial 能力保留数据与诊断，与具体平台无关，故保留覆盖）；文件头"三平台风格"表述同步。WSL 复跑 ui 68/69，唯一失败为既有测试过期（见「测试与质量」）。
 - 2026-09-10：C4 Linux 侧回归（`.omo/evidence/c4-linux-verification.md`）——侧栏宽度提取 `shell::render::SIDEBAR_WIDTH` 常量，宽度计算、`Sidebar::w()` 与测试断言共用单一来源，修复 `wide_layout_starts_with_a_65_35_split_after_the_sidebar` 过期断言；删除 `processes/tests.rs` 未使用的 `supported` 变量。ui 套件 69/69、`cargo fmt --check` 干净、clippy `--all-targets` 零 error。
+- 2026-09-10（续）：Linux GUI 交互验收（WSLg 强制 X11）——真实产品路径走查四工作区真实快照、Partial 横幅含逐条诊断、空结果态与失败态区分、详情面板全字段、敏感值脱敏（`CLAUDE_CODE_MESSAGING_TOKEN` 已遮蔽）、中英即时重绘、浅深主题、960×640 窄窗 Sheet 与 Escape 分层、进程动作二次确认与取消（取消后目标进程存活、按钮恢复）；gallery 实验台验证 `Unavailable`（`i` 图标、中性色）与 `Unsupported`（`—` 图标）边界态视觉可区分。共 21 张截图，见 `.omo/evidence/linux-gui-verification.md` 与 `linux-gui-verification/`。结合走查发现的确认对话框缺陷与 Containers 启动时间列同源问题，已修复：新增 `format` 模块（`format_timestamp` 纯标准库 UTC 格式化 + 占位符 `UNAVAILABLE`，零新增依赖）供对话框与容器表格共用；对话框补齐总计划要求的五要素（身份三项仍取自冻结的 `ProcessIdentity`，冻结语义不变）。同轮 code-review 后修订：提取 `AppShell::current_action_target()` 消除取数链重复、对话框描述提取为纯函数 `confirmation_description` 并补 2 个测试、`format_optional` 统一占位符（去掉两处 `String::clone()`，`containers_table` 删除本地 `optional()`）。验证 ui 78/78、工作区 394/394、`clippy --all-targets` 零 error、GUI 实测通过（`.omo/evidence/fix-confirm-dialog.md`）。C3 仍保持未勾选（Windows 侧 Unsupported 与运行期动态退化场景在 Linux 无对应）。

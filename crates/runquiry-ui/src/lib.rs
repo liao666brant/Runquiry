@@ -13,6 +13,7 @@ mod capability_contract_tests;
 
 pub mod backend;
 pub mod debounce;
+pub mod format;
 pub mod locale;
 pub mod processes;
 pub mod session;

@@ -10,6 +10,7 @@ use gpui_component::{
 };
 
 use super::{ContainerSort, ContainersState};
+use crate::format::{UNAVAILABLE, format_optional, format_timestamp};
 use rust_i18n::t;
 
 /// Containers 虚拟表 delegate。
@@ -139,18 +140,15 @@ impl TableDelegate for ContainersTableDelegate {
         };
         let text = match col_ix {
             0 => row.summary.key.runtime.clone(),
-            1 => optional(row.summary.name.as_deref()),
+            1 => format_optional(row.summary.name.as_deref()),
             2 => row.summary.key.id.clone(),
-            3 => optional(row.summary.status.as_deref()),
-            4 => optional(row.summary.health.as_deref()),
-            5 => optional(row.summary.image.as_deref()),
+            3 => format_optional(row.summary.status.as_deref()),
+            4 => format_optional(row.summary.health.as_deref()),
+            5 => format_optional(row.summary.image.as_deref()),
             6 => row
                 .verified_host_pid
-                .map_or_else(|| "—".into(), |pid| pid.to_string()),
-            7 => row
-                .summary
-                .started_at
-                .map_or_else(|| "—".into(), |time| format!("{time:?}")),
+                .map_or_else(|| UNAVAILABLE.to_owned(), |pid| pid.to_string()),
+            7 => format_timestamp(row.summary.started_at),
             _ => String::new(),
         };
         div()
@@ -182,8 +180,4 @@ impl TableDelegate for ContainersTableDelegate {
         cx.emit(gpui_component::table::TableEvent::SelectColumn(col_ix));
         cx.notify();
     }
-}
-
-fn optional(value: Option<&str>) -> String {
-    value.unwrap_or("—").to_owned()
 }

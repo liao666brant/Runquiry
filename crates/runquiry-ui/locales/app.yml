@@ -205,8 +205,8 @@ actions.confirm.title:
   en: "%{action} PID %{pid}?"
   zh-CN: "对 PID %{pid} 执行“%{action}”？"
 actions.confirm.description:
-  en: "Identity: started %{started}; executable %{executable}. The action is aborted if this identity changed."
-  zh-CN: "进程身份：启动时间 %{started}；可执行文件 %{executable}。若身份已变化，操作将中止。"
+  en: "Process %{name} (user %{user}); started %{started}; executable %{executable}. The action is aborted if this identity changed."
+  zh-CN: "进程 %{name}（用户 %{user}）；启动时间 %{started}；可执行文件 %{executable}。若身份已变化，操作将中止。"
 actions.cancel:
   en: Cancel
   zh-CN: 取消

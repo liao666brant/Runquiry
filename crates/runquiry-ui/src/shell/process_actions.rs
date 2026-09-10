@@ -2,10 +2,11 @@
 
 use gpui::{AppContext as _, Context, Window};
 use gpui_component::{WindowExt as _, button::ButtonVariant, dialog::DialogButtonProps};
-use runquiry_core::{InspectError, ProcessAction, ProcessIdentity, Renice};
+use runquiry_core::{InspectError, ProcessAction, ProcessIdentity, ProcessSummary, Renice};
 use rust_i18n::t;
 
 use super::{AppShell, render_process_actions::action_label};
+use crate::format::{UNAVAILABLE, format_optional, format_timestamp};
 use crate::processes::{
     ActionCompletion, ActionRequest, ProcessActionShortcut, SuccessDisposition,
     accepts_action_shortcut,
@@ -112,16 +113,7 @@ impl AppShell {
             pid = identity.pid()
         )
         .to_string();
-        let description = t!(
-            "actions.confirm.description",
-            started = identity
-                .start_time()
-                .map_or_else(|| "—".into(), |time| format!("{time:?}")),
-            executable = identity
-                .executable()
-                .map_or_else(|| "—".into(), |path| path.display().to_string())
-        )
-        .to_string();
+        let description = confirmation_description(self.current_action_target(), &identity);
         let ok_text = action_label(action);
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, _| {
@@ -248,12 +240,18 @@ impl AppShell {
         }));
     }
 
-    fn current_action_identity(&self) -> Option<&ProcessIdentity> {
+    /// 当前详情的进程摘要；确认对话框的进程名与属主取自这里。
+    fn current_action_target(&self) -> Option<&ProcessSummary> {
         self.analysis
             .as_ref()?
             .data
             .as_ref()
-            .map(|analysis| &analysis.target.identity)
+            .map(|analysis| &analysis.target)
+    }
+
+    fn current_action_identity(&self) -> Option<&ProcessIdentity> {
+        self.current_action_target()
+            .map(|summary| &summary.identity)
     }
 
     fn report_renice_error(&mut self, raw: &str, cx: &mut Context<'_, Self>) {
@@ -263,5 +261,75 @@ impl AppShell {
                 reason: t!("actions.renice.invalid", value = raw).to_string(),
             });
         cx.notify();
+    }
+}
+
+/// 确认对话框的描述文案：五要素中的进程名、用户、启动时间与可执行路径。
+///
+/// PID 与动作由标题给出。进程名与属主只有分析结果有——身份冻结只覆盖 PID、
+/// 启动时间与可执行路径，这两项可能缺失，缺失时回退占位符。
+fn confirmation_description(target: Option<&ProcessSummary>, identity: &ProcessIdentity) -> String {
+    t!(
+        "actions.confirm.description",
+        name = format_optional(target.map(|summary| summary.command.as_str())),
+        user = format_optional(target.and_then(|summary| summary.user.as_deref())),
+        started = format_timestamp(identity.start_time()),
+        executable = identity.executable().map_or_else(
+            || UNAVAILABLE.to_string(),
+            |path| path.display().to_string()
+        )
+    )
+    .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::confirmation_description;
+    use crate::format::UNAVAILABLE;
+    use runquiry_core::{HealthStatus, Pid, ProcessIdentity, ProcessSummary};
+    use std::time::{Duration, SystemTime};
+
+    /// 与 `format::tests` 同一时刻：2026-09-10 07:34:20 UTC。
+    const STARTED_AT: u64 = 1_789_025_660;
+
+    fn identity() -> ProcessIdentity {
+        ProcessIdentity::new(
+            Pid::new(1).unwrap_or(Pid::MIN),
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(STARTED_AT)),
+            Some("/usr/bin/sleep".into()),
+        )
+    }
+
+    fn summary(command: &str, user: Option<&str>) -> ProcessSummary {
+        ProcessSummary {
+            identity: identity(),
+            parent_pid: None,
+            command: command.to_owned(),
+            command_line: None,
+            user: user.map(str::to_owned),
+            health: HealthStatus::Unknown,
+            container: None,
+            exe_deleted: false,
+            capabilities: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn description_carries_all_five_elements() {
+        let described =
+            confirmation_description(Some(&summary("sleep", Some("syspetro"))), &identity());
+
+        assert!(described.contains("sleep"));
+        assert!(described.contains("syspetro"));
+        assert!(described.contains("2026-09-10 07:34:20 UTC"));
+        assert!(described.contains("/usr/bin/sleep"));
+    }
+
+    #[test]
+    fn missing_analysis_falls_back_to_placeholders() {
+        let described = confirmation_description(None, &identity());
+
+        // 进程名与属主两项缺失，各回退一次占位符。
+        assert_eq!(described.matches(UNAVAILABLE).count(), 2);
     }
 }
