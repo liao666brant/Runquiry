@@ -1,8 +1,8 @@
 //! 进程分析中可核对的来源、祖先、告警、Socket 与文件锁明细。
 
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, IntoElement as _, ParentElement as _, Styled as _, div};
-use gpui_component::v_flex;
+use gpui_kit::component::v_flex;
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{AnyElement, IntoElement as _, ParentElement as _, Styled as _, div};
 use runquiry_core::Analysis;
 use rust_i18n::t;
 
@@ -74,7 +74,7 @@ impl AppShell {
     }
 }
 
-fn evidence_group(label: impl Into<gpui::SharedString>, entries: &[String]) -> AnyElement {
+fn evidence_group(label: impl Into<gpui_kit::SharedString>, entries: &[String]) -> AnyElement {
     v_flex()
         .min_w_0()
         .gap_1()

@@ -4,9 +4,11 @@ pub(crate) mod backend;
 
 use std::sync::Arc;
 
-use gpui::{AppContext as _, Bounds, Entity, WindowBounds, WindowKind, WindowOptions, px, size};
-use gpui_component::{Root, ThemeMode};
-use gpui_component_assets::Assets;
+use gpui_kit::assets::Assets;
+use gpui_kit::component::{Root, ThemeMode};
+use gpui_kit::{
+    AppContext as _, Bounds, Entity, WindowBounds, WindowKind, WindowOptions, px, size,
+};
 use runquiry_ui::backend::WorkspaceBackend;
 use runquiry_ui::{AppShell, Lang, ShellStartup, WorkspaceId, set_language};
 
@@ -19,10 +21,10 @@ fn main() {
         Ok(backend) => Arc::new(backend),
         Err(_) => return,
     };
-    let app = gpui_platform::application().with_assets(Assets);
+    let app = gpui_kit::application().with_assets(Assets);
     app.run(move |cx| {
         runquiry_ui::locale::extend_component_translations();
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         runquiry_ui::theme::install(cx);
         runquiry_ui::theme::apply(ThemeMode::Dark, None, cx);
         set_language(Lang::En);

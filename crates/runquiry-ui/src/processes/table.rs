@@ -3,15 +3,15 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _, Sizable as _, Size,
     table::{Column, DataTable, TableDelegate, TableState},
     tooltip::Tooltip,
+};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{
+    App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 use runquiry_core::{ProcessIdentity, ProcessSummary};
 use rust_i18n::t;
@@ -148,7 +148,7 @@ impl TableDelegate for ProcessTableDelegate {
         row_ix: usize,
         _: &mut Window,
         _: &mut Context<'_, TableState<Self>>,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
         let id = self
             .stable_row_id_at(row_ix)
             .unwrap_or_else(|| SharedString::from("process-missing"));

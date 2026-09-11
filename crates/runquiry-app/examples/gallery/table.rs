@@ -7,14 +7,14 @@
 
 #![allow(clippy::redundant_pub_crate)]
 
-use gpui::{
-    App, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _,
     table::{Column, TableDelegate, TableState},
     tooltip::Tooltip,
+};
+use gpui_kit::{
+    App, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
 use crate::data;
@@ -79,7 +79,7 @@ impl TableDelegate for GalleryTable {
         row_ix: usize,
         _: &mut Window,
         _: &mut Context<'_, TableState<Self>>,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
         let id = data::ROWS.get(row_ix).map_or("row-unknown", |row| row.id);
         div().id(id)
     }

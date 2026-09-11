@@ -2,8 +2,8 @@
 
 use std::time::UNIX_EPOCH;
 
-use gpui::{AnyElement, App, IntoElement, ParentElement as _, Styled as _, div};
-use gpui_component::{ActiveTheme as _, v_flex};
+use gpui_kit::component::{ActiveTheme as _, v_flex};
+use gpui_kit::{AnyElement, App, IntoElement, ParentElement as _, Styled as _, div};
 use runquiry_core::DiagnosticIssue;
 use rust_i18n::t;
 

@@ -1,10 +1,10 @@
 //! `DataTable` 与 `Input` 事件订阅。
 
-use gpui::{Context, Entity, Subscription, Window};
-use gpui_component::{
+use gpui_kit::component::{
     input::{InputEvent, InputState},
     table::TableEvent,
 };
+use gpui_kit::{Context, Entity, Subscription, Window};
 
 use super::{AppShell, ShellData};
 

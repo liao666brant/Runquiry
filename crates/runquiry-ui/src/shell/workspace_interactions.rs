@@ -1,6 +1,6 @@
 //! 工作区筛选、模式、排序与稳定选择的统一 generation 接线。
 
-use gpui::{Context, Window};
+use gpui_kit::{Context, Window};
 
 use super::AppShell;
 use crate::session::{SortOrder, WorkspaceId};

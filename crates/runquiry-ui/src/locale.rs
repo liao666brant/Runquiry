@@ -5,7 +5,7 @@
 //! GPUI 不追踪的全局状态：[`set_language`] 切换后调用方必须显式
 //! `cx.notify()` 才会重绘。
 
-use gpui_component::set_locale;
+use gpui_kit::component::{self, set_locale};
 
 use crate::state::DataState;
 
@@ -39,10 +39,10 @@ impl Lang {
 
 /// 把 gpui-component 的内置文案并入我们的翻译后端（进程内只允许调用一次）。
 ///
-/// 必须在 `gpui_component::init` 之前调用一次；重复调用会被 rust-i18n 断言
+/// 必须在 `gpui_kit::component::init` 之前调用一次；重复调用会被 rust-i18n 断言
 /// 拒绝。此后组件文案查找会先经过我们 `locales/` 里的覆盖键。
 pub fn extend_component_translations() {
-    rust_i18n::extend!(gpui_component);
+    rust_i18n::extend!(component);
 }
 
 /// 切换界面语言（全局 locale，立即生效于后续 `t!` 查询）。
@@ -190,7 +190,7 @@ mod tests {
         for lang in Lang::ALL {
             assert_eq!(Lang::parse(lang.code()), Some(lang));
             set_language(lang);
-            assert_eq!(&*gpui_component::locale(), lang.code());
+            assert_eq!(&*gpui_kit::component::locale(), lang.code());
         }
         assert_eq!(Lang::parse("zh"), None);
         set_language(Lang::En);

@@ -7,8 +7,7 @@
 
 #![allow(clippy::redundant_pub_crate)]
 
-use gpui::{App, IntoElement, ParentElement as _, Styled as _, Window, div};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariant},
     dialog::DialogButtonProps,
@@ -16,6 +15,7 @@ use gpui_component::{
     notification::{Notification, NotificationType},
     v_flex,
 };
+use gpui_kit::{App, IntoElement, ParentElement as _, Styled as _, Window, div};
 
 use crate::data;
 use runquiry_ui::{DataState, StateView, state_copy, state_name, tr};

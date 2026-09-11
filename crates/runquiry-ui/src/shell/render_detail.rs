@@ -1,12 +1,12 @@
 //! 调查结果与工作区选择详情。
 
-use gpui::prelude::FluentBuilder as _;
-use gpui::{
+use gpui_kit::component::{
+    ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _, button::Button, v_flex,
+};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{
     AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, div,
-};
-use gpui_component::{
-    ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _, button::Button, v_flex,
 };
 use runquiry_core::{Analysis, DiagnosticIssue};
 use rust_i18n::t;
@@ -236,7 +236,7 @@ fn target_label(target: &InvestigationTarget) -> String {
     }
 }
 
-pub(super) fn detail_line(label: impl Into<gpui::SharedString>, value: &str) -> AnyElement {
+pub(super) fn detail_line(label: impl Into<gpui_kit::SharedString>, value: &str) -> AnyElement {
     v_flex()
         .min_w_0()
         .gap_1()

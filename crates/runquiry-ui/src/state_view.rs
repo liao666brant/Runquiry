@@ -5,12 +5,12 @@
 //! 进度指示，其余状态使用语义图标（unsupported 的短横额外带圆形外框，避免与
 //! 分隔线混淆），保证状态不只靠颜色区分。
 
-use gpui::{
+use gpui_kit::component::{
+    ActiveTheme as _, Icon, Sizable as _, Size, StyledExt as _, h_flex, spinner::Spinner, v_flex,
+};
+use gpui_kit::{
     AnyElement, App, IntoElement, ParentElement, Pixels, RenderOnce, SharedString, Styled as _,
     Window, div, prelude::FluentBuilder as _, px,
-};
-use gpui_component::{
-    ActiveTheme as _, Icon, Sizable as _, Size, StyledExt as _, h_flex, spinner::Spinner, v_flex,
 };
 
 use crate::state::DataState;
@@ -71,7 +71,7 @@ impl StateView {
 
     /// 状态的图标颜色语义：错误用 danger，权限边界用 warning，其余保持中性，
     /// 避免把能力边界画成系统故障。
-    fn icon_color(&self, cx: &App) -> gpui::Hsla {
+    fn icon_color(&self, cx: &App) -> gpui_kit::Hsla {
         let theme = cx.theme();
         match self.state {
             DataState::Error => theme.danger,
@@ -147,7 +147,11 @@ impl StateView {
     /// 下尤其弱）。给它一个带边框的圆形外框，读作「该能力不可用」的标记——仍是
     /// 中性色、不是错误红，但与 error（红 circle-x）、permission-denied（琥珀
     /// eye-off）、empty（inbox）在形状上可区分，满足「状态不只靠颜色」的要求。
-    fn render_icon(&self, name: gpui_component::IconName, color: gpui::Hsla) -> AnyElement {
+    fn render_icon(
+        &self,
+        name: gpui_kit::component::IconName,
+        color: gpui_kit::Hsla,
+    ) -> AnyElement {
         if self.state != DataState::Unsupported {
             return Icon::new(name)
                 .with_size(Size::Large)

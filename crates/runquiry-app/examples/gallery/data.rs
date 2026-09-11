@@ -84,8 +84,8 @@ pub(crate) const ROWS: [Row; 8] = [
 ];
 
 /// 合成的来源树：进程 → 来源（容器/服务/会话）。
-pub(crate) fn tree_items() -> Vec<gpui_component::tree::TreeItem> {
-    use gpui_component::tree::TreeItem;
+pub(crate) fn tree_items() -> Vec<gpui_kit::component::tree::TreeItem> {
+    use gpui_kit::component::tree::TreeItem;
 
     vec![
         TreeItem::new("tree-container", "Container")

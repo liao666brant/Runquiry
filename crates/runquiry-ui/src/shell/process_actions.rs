@@ -1,7 +1,7 @@
 //! 进程动作菜单、确认对话框与异步执行。
 
-use gpui::{AppContext as _, Context, Window};
-use gpui_component::{WindowExt as _, button::ButtonVariant, dialog::DialogButtonProps};
+use gpui_kit::component::{WindowExt as _, button::ButtonVariant, dialog::DialogButtonProps};
+use gpui_kit::{AppContext as _, Context, Window};
 use runquiry_core::{InspectError, ProcessAction, ProcessIdentity, ProcessSummary, Renice};
 use rust_i18n::t;
 

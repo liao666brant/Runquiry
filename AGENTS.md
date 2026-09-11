@@ -52,14 +52,14 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 
 ## 依赖锁定（关键约束）
 
-- gpui-component 固定 rev `91217366`，Zed GPUI 经 Cargo.lock 锁定 `f66ed399`；锁内 23 个 zed 包单一 source。
-- **禁止无差别 `cargo update`**（GPUI 会漂移到 zed main 新提交）；所有验证、CI、打包必须 `--locked`。
-- git 依赖在 runquiry-app 与 runquiry-ui 内联声明（cargo-deny 0.20 无法解析 git 源的 workspace 继承依赖），两处 version/rev 须保持一致并与根 `Cargo.toml` 注释同步。
-- 新增依赖由模块 01（A1）负责人集中修改并重新验证单一 GPUI source。
+- GPUI Kit 在根 `Cargo.toml` 的 workspace dependencies 中精确锁定为 `=0.6.1`，runquiry-app 与 runquiry-ui 统一继承；GPUI、组件与资源分别由 `gpui_kit`、`gpui_kit::component`、`gpui_kit::assets` 提供。
+- 配套 `gpui-pre-*` 由 `Cargo.lock` 锁定为 0.3.4，依赖来源统一为 crates.io；不得混入旧 GPUI/git 组件依赖。
+- **禁止无差别 `cargo update`**；所有验证、CI、打包必须 `--locked`。
+- 新增依赖由模块 01（A1）负责人集中修改并重新验证 GPUI 类型与来源一致性。
 
 ## 测试策略
 
-- Batch 6 前基线为四 crate 273 个测试：`cargo test -p runquiry-core --locked`（107）、`-p runquiry-platform`（97）、`-p runquiry-ui`（48）、`-p runquiry-app`（21）；B7 独立结果为 platform `process_controller` 6/6、UI 完整套件 57/57，随后确认态定向测试 1/1，app 24/24；这些调用不可相加推断为本轮全量测试或“58 个 UI 全跑”。`cargo test -p runquiry-ui` 等禁止给 ui 加 gpui test-support dev-dependency（会引入 deny 白名单外 git 源 proptest），纯逻辑一律普通 `#[test]`。Batch 6 当前实测：core 110/110（+3 个 launchd/Windows service/init 来源判定测试）、app 24/24；platform 新增 `tests/windows_*` 纯解析套件（约 20+ 测试，经 `#[path]` 引入 src 纯模块；`tests/macos_*` 已随 macOS 移出 v1 范围删除）。Batch 7A C3 新增：UI `capability_contract_tests` 7 个平台风格假后端契约测试 + `from_parts` 状态推导断言测试、app `failed_collection_error` 映射测试，**全部已编写、未运行**（延续构建禁令，见 `.omo/evidence/batch7a-result.md`），运行后以实际数字更新各模块 AGENTS。
+- Batch 6 前基线为四 crate 273 个测试：`cargo test -p runquiry-core --locked`（107）、`-p runquiry-platform`（97）、`-p runquiry-ui`（48）、`-p runquiry-app`（21）；B7 独立结果为 platform `process_controller` 6/6、UI 完整套件 57/57，随后确认态定向测试 1/1，app 24/24；这些调用不可相加推断为本轮全量测试或“58 个 UI 全跑”。`cargo test -p runquiry-ui` 等禁止给 ui 加 gpui test-support dev-dependency（新增测试依赖须经依赖守门人核验），纯逻辑一律普通 `#[test]`。Batch 6 当前实测：core 110/110（+3 个 launchd/Windows service/init 来源判定测试）、app 24/24；platform 新增 `tests/windows_*` 纯解析套件（约 20+ 测试，经 `#[path]` 引入 src 纯模块；`tests/macos_*` 已随 macOS 移出 v1 范围删除）。Batch 7A C3 新增：UI `capability_contract_tests` 7 个平台风格假后端契约测试 + `from_parts` 状态推导断言测试、app `failed_collection_error` 映射测试，**全部已编写、未运行**（延续构建禁令，见 `.omo/evidence/batch7a-result.md`），运行后以实际数字更新各模块 AGENTS。
 - 合成 fixture 与失败注入在 workspace 根 `tests/fixtures/`（清单与敏感信息扫描见其 README.md）；SocketEntry 输入边界规则（TCP/UDP 必有合法端口、Unix 必无端口）在 fixture loader 层执行，平台真实输入必须复用。
 - 行为语义以 [docs/witr-parity.md](docs/witr-parity.md) 为验收依据；fixture 要求合成值（无真实用户名、路径、Token）。
 
@@ -68,14 +68,14 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 - Rust edition 2024；rustfmt 由 [rustfmt.toml](rustfmt.toml) 约定（max_width = 100）。
 - lint 基线在根 `Cargo.toml` `[workspace.lints]`：clippy all = deny、pedantic/nursery/cargo = warn；`unwrap_used`/`expect_used`/`panic`/`todo`/`unimplemented` 均 deny；`missing_docs` = warn。
 - 依赖方向单向：core 不依赖 GPUI/OS；platform 与 ui 只依赖 core；ui 禁止直接读 /proc、调用 Win32 API 或运行 lsof/容器 CLI。
-- 许可证：项目 GPL-3.0-or-later（[LICENSE](LICENSE)）；witr 归属见 [NOTICE](NOTICE)；deny.toml 中 GPL 例外仅限固定来源的 zlog/ztracing/ztracing_macro，另有 zed 固定提交内 `gpui_shared_string`/`gpui_util` 的 Apache-2.0 clarify（其 manifest 未声明 license 字段）。
+- 许可证：项目 GPL-3.0-or-later（[LICENSE](LICENSE)）；witr 归属见 [NOTICE](NOTICE)；依赖许可证与来源限制以 `deny.toml` 为准，GPUI Kit 迁移后的 crates.io 依赖不再沿用旧 Zed git 包的 GPL 例外与 license clarify。
 
 ## AI 使用指引
 
 - 任何功能实现前先读 [docs/witr-parity.md](docs/witr-parity.md) 对应章节——它逐项定义 parity / intentional change / out of scope，无需重新决定 witr 语义。
 - 实施计划与任务勾选在 [.omo/plans/runquiry-gpui-desktop/](.omo/plans/runquiry-gpui-desktop/)；共享根文件（根 Cargo.toml、Cargo.lock、deny.toml、rust-toolchain.toml）只允许模块 01 负责人写入。
 - 不修改 `witr/` 参考源码；不顺带升级计划外依赖。
-- GPUI/gpui-component 用法参考 `.agents/skills/gpui/` 与 `.agents/skills/gpui-component/`（含 Root 契约：`Root` 必须是每个窗口的第一级视图）。
+- GPUI Kit API 与框架机制参考 `.agents/skills/gpui-kit/`；设计与交互变更先读 `.agents/skills/gpui-kit-design-guides/`。`gpui_kit::component::Root` 必须是每个窗口的第一级视图。
 
 ## 变更记录
 
@@ -103,6 +103,7 @@ cargo deny check                       # 许可证/ advisories / 来源检查（
 - 2026-09-10（续）：Linux GUI 交互验收（WSLg 强制 X11，`xdotool` + ImageMagick `import`）——真实产品路径走查四工作区真实快照、Partial 横幅含逐条诊断、空结果态与失败态区分、详情面板全字段、敏感值脱敏（`CLAUDE_CODE_MESSAGING_TOKEN` 已遮蔽）、中英即时重绘、浅深主题、960×640 窄窗 Sheet 与 Escape 分层、进程动作二次确认与取消（取消后目标进程存活），共 21 张留档截图；gallery 实验台验证 `Unavailable`/`Unsupported` 边界态视觉可区分。**发现并修复 3 处时间/要素缺陷**（模块 05）：确认对话框以 Rust `SystemTime` Debug 格式展示启动时间、缺少进程名与用户字段，以及 Containers 启动时间列的同源 `Debug` 渲染。修复为新增 `runquiry-ui::format::format_timestamp`（纯标准库 UTC 格式化 + 占位符，零新增依赖）供两处共用，对话框补齐总计划五要素且不改变身份冻结语义（`.omo/evidence/fix-confirm-dialog.md`；ui 78/78、工作区 394/394、clippy 零 error、GUI 实测通过，含同轮 code-review 后的重构修订）。C3 保持未勾选——Windows 侧产品路径的 Unsupported 呈现与能力运行期动态退化在 Linux 无对应场景。证据：`.omo/evidence/linux-gui-verification.md` 与 `linux-gui-verification/`。差异 #1/#2 经用户裁决**接受计划既有明示折中、记录后冻结**。
 
 ## 索引状态
+- 2026-09-11T08:37:05Z：GPUI Kit 迁移局部索引同步（`@a4729f4` 工作区）；依赖及 API 路径已更新。Linux app/ui/example 测试 105/105、check/build、clippy 零 error、deny 四项通过；四工作区与实验台状态/覆盖层启动截图见 `.omo/evidence/gpui-kit-upgrade/README.md`。Windows、Wayland 与完整交互矩阵未复验；保留原全局索引基线。
 - 2026-09-08 macOS 支持移除（v1 范围收窄为 Linux 与 Windows）：删除 `crates/runquiry-platform/src/macos/`（15 文件 2660 行）、`examples/macos_qa.rs`、`tests/macos_{identity,launchd,lsof}_parse.rs`、`tests/fixtures/macos/`（10 个 fixture）与模块 06 计划；app 删除 `MacosPlatform` 装配、`launchd_service_pid` 名称解析回退与 settings 的 `Library/Application Support` 分支；platform/app 增加非 Linux/Windows 目标的 `compile_error!` 门禁；core 保留 `SourceType::Launchd` / `launchd_by_pid` / `detect_launchd`（平台无关领域层，无平台实现）；`docs/witr-parity.md` 的 macOS 专属条目改标 out of scope。验证：core 109 + platform 180（合计 289）全绿、app 24 全绿、ui 68/69（唯一失败为既有测试过期，见下）。
 - 上次索引：2026-09-07T14:47:43Z（标题栏合并与侧栏调宽收尾、模块文档同步，未提交工作区，主 Agent 直接增量更新）
 - 上次索引：2026-09-07T13:22:30Z（Windows 主机验证通道打通 + macos_launchd_parse 搁置记录，未提交工作区，主 Agent 直接增量更新）

@@ -97,10 +97,10 @@ pub(crate) struct Settings {
 
 impl Settings {
     /// 解析主题字段；无法识别的取值回退默认浅色。
-    pub(crate) fn theme_mode(&self) -> Option<gpui_component::ThemeMode> {
+    pub(crate) fn theme_mode(&self) -> Option<gpui_kit::component::ThemeMode> {
         self.theme.as_deref().map(|value| match value {
-            "dark" => gpui_component::ThemeMode::Dark,
-            _ => gpui_component::ThemeMode::Light,
+            "dark" => gpui_kit::component::ThemeMode::Dark,
+            _ => gpui_kit::component::ThemeMode::Light,
         })
     }
 

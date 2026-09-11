@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use gpui::{AppContext as _, Context, ParentElement as _, Window};
-use gpui_component::{WindowExt as _, table::TableEvent};
+use gpui_kit::component::{WindowExt as _, table::TableEvent};
+use gpui_kit::{AppContext as _, Context, ParentElement as _, Window};
 use runquiry_core::{Generation, InspectError, ProcessIdentity, Resolution};
 
 use super::{AppShell, compact_detail::CompactDetail};

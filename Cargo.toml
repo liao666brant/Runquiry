@@ -17,13 +17,9 @@ publish = false
 runquiry-core = { path = "crates/runquiry-core", version = "0.1.0" }
 runquiry-platform = { path = "crates/runquiry-platform", version = "0.1.0" }
 runquiry-ui = { path = "crates/runquiry-ui", version = "0.1.0" }
-# 注意：gpui/gpui-component 的 git 依赖由 runquiry-app 与 runquiry-ui 各自内联声明
-# （与固定提交一致；cargo-deny 0.20 的 bans 检查无法解析 git 源的 workspace 继承
-# 依赖）。两处 manifest 的 version/rev 必须保持同步，修改时须同时更新。
-# Zed GPUI 的精确提交由 Cargo.lock 锁定
-# （f66ed399cdde86092af8af3dc7b418abf45f37f8，与 gpui-component 固定提交
-# 自带锁文件一致），所有验证必须使用 --locked，且不得运行无差别
-# cargo update，否则 GPUI 会漂移到 zed main 分支新提交。
+# GPUI Kit 统一提供 GPUI、组件与资源；传递依赖由 Cargo.lock 锁定。
+# 所有验证必须使用 --locked，不运行无差别 cargo update。
+gpui-kit = "=0.6.1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

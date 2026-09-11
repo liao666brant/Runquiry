@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use gpui::{App, AppContext as _, Entity, Window};
-use gpui_component::table::TableState;
+use gpui_kit::component::table::TableState;
+use gpui_kit::{App, AppContext as _, Entity, Window};
 use runquiry_core::{CapabilityStatus, DiagnosticCode, DiagnosticIssue};
 
 use crate::backend::WorkspaceSnapshot;

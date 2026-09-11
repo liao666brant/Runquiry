@@ -18,11 +18,11 @@ mod workspace_interactions;
 use std::sync::Arc;
 use std::time::Instant;
 
-use gpui::{
+use gpui_kit::component::{ThemeMode, input::InputState};
+use gpui_kit::{
     AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, Subscription, Task,
     Window,
 };
-use gpui_component::{ThemeMode, input::InputState};
 use runquiry_core::{Analysis, CapabilityStatus, Generation, InspectError, Inspection};
 use rust_i18n::t;
 
@@ -53,7 +53,7 @@ pub enum ShellEvent {
 
 #[allow(missing_docs, clippy::derive_partial_eq_without_eq)]
 pub mod actions {
-    gpui::actions!(
+    gpui_kit::actions!(
         runquiry_ui,
         [
             RefreshWorkspace,
@@ -130,7 +130,7 @@ impl std::fmt::Debug for AppShell {
 }
 
 impl Focusable for AppShell {
-    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
+    fn focus_handle(&self, _: &gpui_kit::App) -> FocusHandle {
         self.toolbar_focus.clone()
     }
 }

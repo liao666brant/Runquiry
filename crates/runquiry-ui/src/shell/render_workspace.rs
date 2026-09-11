@@ -1,15 +1,15 @@
 //! 调查栏与四工作区主数据区。
 
-use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, div,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _,
     button::{Button, ButtonVariants as _},
     h_flex,
     input::Input,
     v_flex,
+};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{
+    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, div,
 };
 use rust_i18n::t;
 

@@ -17,22 +17,22 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 - `theme`：Runquiry Light/Dark 主题（原始色值只允许出现在 `theme.rs` 的 PALETTE 表；`install`/`apply` 切换）。
 - `state` + `state_view`：DataState 七态（含 `Unavailable` 环境边界态）与 RenderOnce 统一状态呈现（loading/empty/error/unsupported/unavailable/permission-denied/ready）。
 - `format`：时间的用户可读呈现与统一占位符。`format_timestamp(Option<SystemTime>)` 输出 UTC 的 `YYYY-MM-DD HH:MM:SS UTC`（`None`/纪元前返回 `UNAVAILABLE`），`format_optional(Option<&str>)` 回退到同一占位符。纯标准库实现（锁定依赖内无日期库，新增依赖须经守门人批准），供进程确认对话框与容器表格共用，避免各处 `Debug` 打印 `SystemTime` 或重复定义 `—`。
-- `locale`：Lang + rust-i18n 初始化（`i18n!("locales", fallback="en")`；`extend_component_translations()` 须在 gpui_component::init 前调用一次；`set_language` 后必须显式 notify）；对外文案 API：`tr(key)`/`state_copy(state)`/`state_name(state)`（键在 `locales/app.yml`，v2 格式，en 兜底，键完整性由单测强制）。
+- `locale`：Lang + rust-i18n 初始化（`i18n!("locales", fallback="en")`；`extend_component_translations()` 须在 gpui_kit::init 前调用一次；`set_language` 后必须显式 notify）；对外文案 API：`tr(key)`/`state_copy(state)`/`state_name(state)`（键在 `locales/app.yml`，v2 格式，en 兜底，键完整性由单测强制）。
 - `session`：AppSession/WorkspaceId/WorkspaceSession——四工作区隔离的 LoadState/generation/选择/排序/筛选；手工与自动刷新共用 `try_refresh` 一条通道，in-flight 拒绝重入；刷新完成/中止与结果均绑定 generation，过期信号不改变当前请求。
 - `debounce`：DetailDebounce 500ms 详情防抖（注入毫秒时钟，纯逻辑）。
 - `backend`：`WorkspaceBackend` 是 UI 与装配层的采集/解析/分析及进程控制边界；`WorkspaceSnapshot` 将四类采集结果按工作区路由，`WorkspaceResultGate` 同时校验工作区与 generation，容器无已验证宿主 PID 时保留容器详情而不误报未找到；动作 seam 默认明确返回 `Unsupported`。
 - `processes` / `workspaces`：进程表及 Ports、Containers、File Locks 的行模型、筛选/排序、查询结果和详情映射；`ProcessCommand` 集中声明刷新、查询、工作区与动作菜单快捷键，`ProcessActionFlow` 冻结确认时的身份、拦截重复提交并门控过期结果，具体平台操作始终由后端能力态安全禁用；C3 起能力退化经 `revoke_confirmation_if_unusable` 撤销确认、确认提交前经 `confirm_if_usable` 按当前能力再门禁（不可用时撤销并记录结构化 Unsupported 原因），清单工作区经 `LoadPresentation::boundary_reason` 保留 Unsupported/Unavailable 平台原因并以 `workspaces::interactions_enabled` 禁用边界状态下的模式/筛选交互；Processes 页表面状态由 `SurfaceState::from_parts` 推导，与清单工作区 `map_state` 共用同一套边界/失败语义（`state_from_inspection` 为单一事实源）。
-- `shell`：AppShell 产品壳层（合并标题栏/侧栏四工作区/主数据区/详情区/StatusBar）；标题栏与操作栏合并为 gpui-component `TitleBar`（原生标题栏透明，窗口名与刷新/主题/语言按钮同置左侧、窗口控制自绘经 `WindowControlArea` 交系统处理），侧栏固定宽 120px；宽度 ≥1100px 使用真实 `h_resizable` 初始 65/35 主从分栏，960–1099px 保留完整主区并以选择后的 Sheet 呈现详情。进程动作区支持 TERM/KILL/STOP/CONT/renice 的 AlertDialog 二次确认、取消/关闭与结构化错误文案；动作成功按类型返回列表或保留详情并强制新代际刷新。语言切换保留会话实体，并同步既有 query/filter `InputState` placeholder；`ShellStartup` 启动设置一次到位，`ShellEvent`（主题/语言/工作区变化）交装配层持久化。真实 X11 QA 已验证五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；合并标题栏后的 GUI 视觉矩阵验收由用户确认通过。
+- `shell`：AppShell 产品壳层（合并标题栏/侧栏四工作区/主数据区/详情区/StatusBar）；标题栏与操作栏合并为 `gpui_kit::component::TitleBar`（原生标题栏透明，窗口名与刷新/主题/语言按钮同置左侧、窗口控制自绘经 `WindowControlArea` 交系统处理），侧栏固定宽 120px；宽度 ≥1100px 使用真实 `h_resizable` 初始 65/35 主从分栏，960–1099px 保留完整主区并以选择后的 Sheet 呈现详情。进程动作区支持 TERM/KILL/STOP/CONT/renice 的 AlertDialog 二次确认、取消/关闭与结构化错误文案；动作成功按类型返回列表或保留详情并强制新代际刷新。语言切换保留会话实体，并同步既有 query/filter `InputState` placeholder；`ShellStartup` 启动设置一次到位，`ShellEvent`（主题/语言/工作区变化）交装配层持久化。真实 X11 QA 已验证五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；合并标题栏后的 GUI 视觉矩阵验收由用户确认通过。
 
 ## 关键依赖与配置
 
-- 依赖：`runquiry-core.workspace = true` + gpui/gpui-component（git 依赖与 runquiry-app 各自内联声明、version/rev 保持同步并经 Cargo.lock 锁定，见根 [Cargo.toml](../../Cargo.toml) 注释与根 [AGENTS.md](../../AGENTS.md)）。
-- gpui-component 用法参考：`.agents/skills/gpui-component/` 与 `.agents/skills/gpui/`（含 Root 契约、element/entity/event 参考）。
+- 依赖：`runquiry-core.workspace = true` + `gpui-kit.workspace = true`；GPUI Kit 版本由根 [Cargo.toml](../../Cargo.toml) 统一定义，组件使用 `gpui_kit::component`，GPUI 类型使用 `gpui_kit` 重导出，传递依赖由 Cargo.lock 锁定。
+- GPUI Kit API 与框架机制参考 `.agents/skills/gpui-kit/`；设计与交互变更先读 `.agents/skills/gpui-kit-design-guides/`。每个窗口第一级视图必须是 `gpui_kit::component::Root`。
 
 ## 测试与质量
 
-- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57。不要将历史数字表述为全量。**禁止添加 gpui test-support dev-dependency**（引入 deny 白名单外 git 源 proptest）。Batch 7A C3 新增 `capability_contract_tests`（7 个平台风格假后端契约测试）、Batch 7B C4 新增确认门禁测试 2 个（`confirm_gate_*`）：曾在 Windows 验证主机全量运行 69/69；2026-09-10 在 WSL 以锁定工具链复跑 69/69。此前 `shell::render::tests::wide_layout_starts_with_a_65_35_split_after_the_sidebar` 的过期断言（`1e44f6e` 侧栏定为 120px 后测试仍按 `px(224.)` 打可用宽度）已修复——侧栏宽度收敛为 `shell::render::SIDEBAR_WIDTH` 常量，实现、渲染与断言共用单一来源；`processes/tests.rs` 中 `clippy --all-targets` 暴露的未使用 `supported` 变量同期删除，两处修复后 UI 套件 69/69 且无该警告；同日新增 `format` 模块 7 个测试与确认描述 2 个测试后为 78/78，工作区 `--all-targets` 394/394。
-- clippy 注意：锁定依赖树的 77 条 `multiple-crate-versions` 为基线既有问题，`-D warnings` 验证时豁免该项（见模块 05 计划 A4 实施记录）；ui 源码 clippy `--all-targets` 当前零 error（`surface.rs` 的 `redundant_guards` 已随合并标题栏批次修复）。
+- `cargo test -p runquiry-ui --locked`：Batch 4A 基线 48 个纯逻辑测试；B7 后 UI 完整套件 57/57。不要将历史数字表述为全量。**禁止添加 gpui test-support dev-dependency**；纯逻辑测试使用普通 `#[test]`，新增测试依赖须经依赖守门人核验。Batch 7A C3 新增 `capability_contract_tests`（7 个平台风格假后端契约测试）、Batch 7B C4 新增确认门禁测试 2 个（`confirm_gate_*`）：曾在 Windows 验证主机全量运行 69/69；2026-09-10 在 WSL 以锁定工具链复跑 69/69。此前 `shell::render::tests::wide_layout_starts_with_a_65_35_split_after_the_sidebar` 的过期断言（`1e44f6e` 侧栏定为 120px 后测试仍按 `px(224.)` 打可用宽度）已修复——侧栏宽度收敛为 `shell::render::SIDEBAR_WIDTH` 常量，实现、渲染与断言共用单一来源；`processes/tests.rs` 中 `clippy --all-targets` 暴露的未使用 `supported` 变量同期删除，两处修复后 UI 套件 69/69 且无该警告；同日新增 `format` 模块 7 个测试与确认描述 2 个测试后为 78/78，工作区 `--all-targets` 394/394。
+- clippy 注意：旧 GPUI 依赖树的 77 条 `multiple-crate-versions` 为基线既有问题，`-D warnings` 验证时豁免该项（见模块 05 计划 A4 实施记录）；ui 源码 clippy `--all-targets` 在升级前零 error（`surface.rs` 的 `redundant_guards` 已随合并标题栏批次修复）。
 - lint 基线由根 `Cargo.toml` 的 `[workspace.lints]` 统一约束。
 
 ## 常见问题
@@ -41,7 +41,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 ## 相关文件清单
 
-- `crates/runquiry-ui/Cargo.toml` — crate manifest（含内联 git 依赖）
+- `crates/runquiry-ui/Cargo.toml` — crate manifest（继承 workspace GPUI Kit 依赖）
 - `crates/runquiry-ui/src/lib.rs` — 库入口与模块重导出
 - `crates/runquiry-ui/src/format.rs` — 时间可读格式化与占位符（无第三方依赖）
 - `crates/runquiry-ui/src/theme.rs` — 主题与集中式色值表
@@ -57,6 +57,7 @@ GPUI 界面层：UI 状态管理、设计系统、四个工作区（Processes、
 
 ## 变更记录
 
+- 2026-09-11：迁移 GPUI Kit workspace 依赖与统一 API 路径，更新框架与设计技能指针。Linux UI 78/78、clippy 零 error；四工作区、七态及 Sheet/Alert/Notification 启动截图已检查，实验台同尺寸基线对照 72/1,024,000 像素不同，证据见 `.omo/evidence/gpui-kit-upgrade/README.md`。Windows、Wayland 与完整交互矩阵未复验。
 - 2026-09-02：初次索引。骨架状态，仅有 manifest 与 lib.rs 占位。
 - 2026-09-03：A4 落地设计系统（主题/状态/双语占位）与 gallery 实验台；新增 gpui/gpui-component 内联 git 依赖（与 runquiry-app 同源同 rev）。
 - 2026-09-03：Batch 2 B4——新增 session/shell/debounce 模块；手写 Dict 字典迁移到 rust-i18n（locales/app.yml，新增 rust-i18n 4.2.1 依赖，lock 内既有版本零新增包）；gallery 与产品壳层共用本 crate 文案 API。

@@ -3,7 +3,7 @@
 //! 状态只表达「数据为什么不可用」，不表达操作系统判断；平台能力结论由 core
 //! 的 `CapabilityStatus` 传入，UI 只按本模块的语义呈现。
 
-use gpui_component::IconName;
+use gpui_kit::component::IconName;
 
 /// 数据区域可能处于的状态。
 ///
@@ -107,7 +107,7 @@ mod tests {
     /// `IconName` 没有实现 `PartialEq`/`Debug`，这里比较图标的资源路径。
     #[test]
     fn state_views_have_distinct_icons() {
-        let icon_path = |state: DataState| state.icon().map(gpui_component::IconNamed::path);
+        let icon_path = |state: DataState| state.icon().map(gpui_kit::component::IconNamed::path);
 
         let icons: Vec<_> = DataState::ALL
             .iter()

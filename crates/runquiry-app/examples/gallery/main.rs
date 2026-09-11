@@ -14,13 +14,8 @@ mod data;
 mod overlays;
 mod table;
 
-use gpui::AnyElement;
-use gpui::{
-    App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable as _,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, Styled as _,
-    Window, WindowBounds, WindowKind, WindowOptions, div, px, size,
-};
-use gpui_component::{
+use gpui_kit::AnyElement;
+use gpui_kit::component::{
     ActiveTheme as _, Icon, IconName, Root, Selectable as _, Sizable as _, ThemeMode,
     button::{Button, ButtonVariants as _},
     h_flex,
@@ -30,8 +25,13 @@ use gpui_component::{
     tree::{TreeEntry, TreeState, tree},
     v_flex,
 };
+use gpui_kit::{
+    App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable as _,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, Styled as _,
+    Window, WindowBounds, WindowKind, WindowOptions, div, px, size,
+};
 
-use gpui_component_assets::Assets;
+use gpui_kit::assets::Assets;
 use runquiry_ui::{DataState, Lang, StateView, state_copy, state_name, tr};
 
 use crate::cli::{Args, MIN_SIZE, parse_args, print_cli_error};
@@ -59,7 +59,7 @@ const TREE_INDENT: f32 = 16.;
 /// 语义存在时再绑定。
 #[allow(missing_docs, clippy::derive_partial_eq_without_eq)]
 mod nav_actions {
-    gpui::actions!(gallery, [NavNext, NavPrev]);
+    gpui_kit::actions!(gallery, [NavNext, NavPrev]);
 }
 use nav_actions::{NavNext, NavPrev};
 
@@ -606,7 +606,7 @@ fn section_title(label: String, cx: &App) -> impl IntoElement {
 /// 与相邻内容的间距语义无关。元素 ID 用树节点的稳定领域 ID
 /// （`entry.item().id`），与表格行的领域 ID 做法一致：展开/收起或增删节点时
 /// 身份不随下标漂移。
-fn list_item(entry: &TreeEntry, cx: &App) -> gpui_component::list::ListItem {
+fn list_item(entry: &TreeEntry, cx: &App) -> gpui_kit::component::list::ListItem {
     let icon = if !entry.is_folder() {
         IconName::File
     } else if entry.is_expanded() {
@@ -618,7 +618,7 @@ fn list_item(entry: &TreeEntry, cx: &App) -> gpui_component::list::ListItem {
     #[allow(clippy::cast_precision_loss)]
     let indent = px(TREE_INDENT * entry.depth() as f32);
 
-    gpui_component::list::ListItem::new(entry.item().id.clone())
+    gpui_kit::component::list::ListItem::new(entry.item().id.clone())
         .w_full()
         .rounded(cx.theme().radius)
         .pl(indent)
@@ -640,9 +640,9 @@ fn main() {
         }
     };
 
-    let app = gpui_platform::application().with_assets(Assets);
+    let app = gpui_kit::application().with_assets(Assets);
     app.run(move |cx| {
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         runquiry_ui::theme::install(cx);
         runquiry_ui::theme::apply(args.mode, None, cx);
         // 文案翻译按 --lang 初始化全局 locale（gallery 的语言按钮也走这条路径）。

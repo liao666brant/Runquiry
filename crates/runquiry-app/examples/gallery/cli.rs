@@ -7,7 +7,7 @@
 
 #![allow(clippy::redundant_pub_crate)]
 
-use gpui_component::ThemeMode;
+use gpui_kit::component::ThemeMode;
 
 use crate::overlays::Overlay;
 use runquiry_ui::{DataState, Lang};

@@ -1,6 +1,6 @@
 //! 窄窗详情 Sheet：观察壳层实体，异步详情或快照变化后自动重绘。
 
-use gpui::{Context, Entity, Render, Subscription};
+use gpui_kit::{Context, Entity, Render, Subscription};
 
 use super::AppShell;
 
@@ -22,9 +22,9 @@ impl CompactDetail {
 impl Render for CompactDetail {
     fn render(
         &mut self,
-        _: &mut gpui::Window,
+        _: &mut gpui_kit::Window,
         cx: &mut Context<'_, Self>,
-    ) -> impl gpui::IntoElement {
+    ) -> impl gpui_kit::IntoElement {
         self.shell.read(cx).detail_content(&self.shell, cx)
     }
 }

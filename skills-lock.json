@@ -1,17 +1,17 @@
 {
   "version": 1,
   "skills": {
-    "gpui": {
-      "source": "longbridge/gpui-component",
+    "gpui-kit": {
+      "source": "longbridge/gpui-kit",
       "sourceType": "github",
-      "skillPath": "skills/gpui/SKILL.md",
-      "computedHash": "9cd5f4cfa1eb49f5b17e7b209010420f2caf97c4ca93f79910bb449a5a988a1b"
+      "skillPath": "skills/gpui-kit/SKILL.md",
+      "computedHash": "017206ed25c2a23fda2d0abc50c2af417e31c47231e08bbdb5891304282fe6c1"
     },
-    "gpui-component": {
-      "source": "longbridge/gpui-component",
+    "gpui-kit-design-guides": {
+      "source": "longbridge/gpui-kit",
       "sourceType": "github",
-      "skillPath": "skills/gpui-component/SKILL.md",
-      "computedHash": "8a8152f1af9ff5b9c652fb75582ac36831baf3f1a55bd92a4529ef449ad5567b"
+      "skillPath": "skills/gpui-kit-design-guides/SKILL.md",
+      "computedHash": "1c8cd7b6fb0dc3448d00748dfccd2c2719ce7efbb97632ac13d015ed2bd74dc6"
     },
     "index-project": {
       "source": "liao666brant/skills",

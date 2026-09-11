@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::{AppContext as _, Context, Task};
+use gpui_kit::{AppContext as _, Context, Task};
 use runquiry_core::CapabilityStatus;
 
 use super::AppShell;

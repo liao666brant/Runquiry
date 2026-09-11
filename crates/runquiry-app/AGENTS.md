@@ -9,8 +9,8 @@
 ## 入口与启动
 
 - 入口：`src/main.rs` 的 `main()`。
-- 流程：`gpui_platform::application().with_assets(Assets)` → `runquiry_ui::locale::extend_component_translations()`（须在 gpui_component::init 之前，进程内一次）→ `gpui_component::init(cx)` → 从可用的绝对配置路径加载设置 → 构造 `PlatformBackend`（不可用时明确注入 `UnavailableBackend`）→ `cx.open_window` 创建窗口，第一级视图必须是 `gpui_component::Root`，内容视图为 `AppShell::new(ShellStartup, backend, …)` → 订阅 ShellEvent 与 `observe_window_bounds` 落盘 → 打开失败走 `eprintln!` + `cx.quit()`（无 unwrap/expect）。
-- 已知限制（随当前锁定 gpui rev f66ed399 成立）：X11 下 `xdotool windowclose` 后 `on_window_should_close`/`on_window_closed` 均不触发，进程残留需 QA 主动停止；窗口尺寸在 bounds 变化时已经独立落盘，不受该限制影响。升级 gpui 后必须复验关闭退出。
+- 流程：`gpui_kit::application().with_assets(gpui_kit::assets::Assets)` → `runquiry_ui::locale::extend_component_translations()`（须在 `gpui_kit::init` 之前，进程内一次）→ `gpui_kit::init(cx)` → 从可用的绝对配置路径加载设置 → 构造 `PlatformBackend`（不可用时明确注入 `UnavailableBackend`）→ `cx.open_window` 创建窗口，第一级视图必须是 `gpui_kit::component::Root`，内容视图为 `AppShell::new(ShellStartup, backend, …)` → 订阅 ShellEvent 与 `observe_window_bounds` 落盘 → 打开失败走 `eprintln!` + `cx.quit()`（无 unwrap/expect）。
+- X11 关闭限制：`xdotool windowclose` / `windowquit` 后进程仍存活，需 QA 按 PID 主动停止；GPUI Kit 升级后已复现，旧 GPUI rev f66ed399 也有该记录。窗口尺寸仍由 bounds 变化独立落盘。
 - 运行：`cargo run -p runquiry-app --locked`（Linux 需 A1 安装的系统依赖：pkg-config、fontconfig、xkbcommon、wayland 等）。
 
 ## 对外接口
@@ -24,10 +24,8 @@
 - 应用图标：`assets/branding/runquiry-icon-concept-v1.png` 保留原图，`assets/icons/` 保存 PNG/ICO 与 Linux desktop entry。`build.rs` 将资源 ID 1 嵌入 Windows `runquiry` 二进制；Linux X11 在 `WindowOptions.icon` 使用嵌入 PNG，Wayland 依赖安装 `runquiry.desktop` 与 hicolor 图标。macOS 支持已移出 v1 范围，无 macOS 图标产物。
 - 图标依赖 `image = 0.25.10`（仅 Linux，PNG 解码）与构建依赖 `embed-resource = 3.0.11` 均复用锁内版本；图标接入尚未做目标平台构建/GUI 验收。
 - runquiry-core / runquiry-platform / runquiry-ui（workspace 继承）。
-- **git 依赖内联声明**（不经 workspace 继承——cargo-deny 0.20 的 bans 无法解析 git 源的 workspace 继承依赖）：
-  - `gpui`、`gpui_platform`（zed 仓库，rev 经 Cargo.lock 锁定 f66ed399）
-  - `gpui-component`、`gpui-component-assets`（rev 91217366）
-- 内联版本必须与根 `Cargo.toml` 注释保持一致；禁止无差别 `cargo update`（会使 GPUI 漂移到 zed main 新提交），所有验证使用 `--locked`。
+- `gpui-kit.workspace = true`，精确版本由根 `Cargo.toml` 统一定义，底层 GPUI 与平台后端经 GPUI Kit 重导出；资源使用 `gpui_kit::assets::Assets`。
+- 传递依赖由 `Cargo.lock` 锁定；禁止无差别 `cargo update`，所有验证使用 `--locked`。
 
 ## 测试与质量
 
@@ -43,17 +41,18 @@
 
 - `crates/runquiry-app/build.rs` / `resources/runquiry.rc` — Windows EXE 图标嵌入
 - `assets/icons/` — 系统图标资源与 Linux 桌面入口
-- `crates/runquiry-app/Cargo.toml` — manifest（含 git 依赖内联声明的原因注释）
+- `crates/runquiry-app/Cargo.toml` — manifest（继承 workspace GPUI Kit 依赖）
 - `crates/runquiry-app/src/main.rs` — 应用入口与最小窗口
 - `crates/runquiry-app/src/backend.rs` / `src/backend/` — 目标平台后端装配、fresh platform、共享分析门控、容器 fallback 与真实平台回归
 - `crates/runquiry-app/src/settings.rs` — allowlist 设置 schema、安全路径与原子写入
 - `crates/runquiry-app/examples/gallery/` — A4 组件实验台（独立入口）
-- `Cargo.toml` — 根 workspace 配置与 git 依赖锁定机制说明
-- `Cargo.lock` — GPUI/gpui-component 提交锁定（勿手工编辑）
-- `deny.toml` — cargo-deny 配置（许可证例外与允许的 git 来源）
+- `Cargo.toml` — 根 workspace 配置与 GPUI Kit 精确版本
+- `Cargo.lock` — crates.io 依赖版本锁定（勿手工编辑）
+- `deny.toml` — cargo-deny 许可证与依赖来源配置
 
 ## 变更记录
 
+- 2026-09-11：迁移 GPUI Kit workspace 依赖；产品与 gallery 使用统一 application/init、组件与资源入口。Linux app 24/24、scale_qa 3/3，check/build、clippy 零 error、deny 四项通过；产品四工作区与 gallery 状态/覆盖层启动截图见 `.omo/evidence/gpui-kit-upgrade/README.md`。X11 工具关闭后的进程残留限制仍在；Windows、Wayland 及完整交互矩阵未复验。
 - 2026-09-02：初次索引。A1 最小窗口状态（gpui-component 初始化 + Root 第一级视图已验证）。
 - 2026-09-03：新增 A4 gallery 示例（examples/gallery，独立入口不参与打包）。
 - 2026-09-03：Batch 2 B4——重写 src/main.rs 为产品壳层装配；新增 src/settings.rs（设置持久化 allowlist，serde/serde_json 依赖经守门人批准，lock 内既有版本零新增包）。

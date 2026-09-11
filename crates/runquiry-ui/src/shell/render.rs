@@ -5,18 +5,18 @@
 
 use rust_i18n::t;
 
-use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    Context, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
-    Render, SharedString, Styled as _, Window, div, px,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Root, Selectable as _, Sizable as _, TitleBar,
     button::{Button, ButtonVariants as _},
     h_flex, h_resizable, resizable_panel,
     sidebar::{Sidebar, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem},
     status_bar::StatusBar,
     v_flex,
+};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{
+    Context, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
+    Render, SharedString, Styled as _, Window, div, px,
 };
 
 use super::actions::{
@@ -43,12 +43,12 @@ const MAIN_PANEL_SHARE: f32 = 0.65;
 const SIDEBAR_WIDTH: f32 = 120.;
 
 /// 宽窗口内联显示详情；窄窗口为后续按选择打开 Sheet 保留主区宽度。
-fn shows_inline_detail(width: gpui::Pixels) -> bool {
+fn shows_inline_detail(width: gpui_kit::Pixels) -> bool {
     width >= px(1_100.)
 }
 
 /// 宽窗口的初始列表宽度。分隔条实际拖拽后的值由 `ResizableState` 保留。
-fn initial_main_panel_width(window_width: gpui::Pixels) -> gpui::Pixels {
+fn initial_main_panel_width(window_width: gpui_kit::Pixels) -> gpui_kit::Pixels {
     let sidebar_width = px(SIDEBAR_WIDTH);
     let main_minimum = px(360.);
     let detail_minimum = px(280.);
@@ -128,12 +128,12 @@ impl Render for AppShell {
                                                 .size(initial_main_panel_width(
                                                     window.bounds().size.width,
                                                 ))
-                                                .size_range(px(360.)..gpui::Pixels::MAX)
+                                                .size_range(px(360.)..gpui_kit::Pixels::MAX)
                                                 .child(self.render_main_area(true, cx)),
                                         )
                                         .child(
                                             resizable_panel()
-                                                .size_range(px(280.)..gpui::Pixels::MAX)
+                                                .size_range(px(280.)..gpui_kit::Pixels::MAX)
                                                 .child(self.render_detail_area(cx)),
                                         ),
                                 ),
@@ -197,18 +197,18 @@ impl AppShell {
             .ghost()
             .label(t!("toolbar.theme.light").to_string())
             .tab_index(TAB_THEME_LIGHT)
-            .selected(self.theme == gpui_component::ThemeMode::Light)
+            .selected(self.theme == gpui_kit::component::ThemeMode::Light)
             .on_click(cx.listener(|this, _, window, cx| {
-                this.set_theme(gpui_component::ThemeMode::Light, window, cx);
+                this.set_theme(gpui_kit::component::ThemeMode::Light, window, cx);
             }));
         let dark = Button::new("theme-dark")
             .small()
             .ghost()
             .label(t!("toolbar.theme.dark").to_string())
             .tab_index(TAB_THEME_DARK)
-            .selected(self.theme == gpui_component::ThemeMode::Dark)
+            .selected(self.theme == gpui_kit::component::ThemeMode::Dark)
             .on_click(cx.listener(|this, _, window, cx| {
-                this.set_theme(gpui_component::ThemeMode::Dark, window, cx);
+                this.set_theme(gpui_kit::component::ThemeMode::Dark, window, cx);
             }));
 
         h_flex().items_center().gap_1().child(light).child(dark)
@@ -297,7 +297,7 @@ fn workspace_title(workspace: WorkspaceId) -> SharedString {
 #[cfg(test)]
 mod tests {
     use super::{MAIN_PANEL_SHARE, SIDEBAR_WIDTH, initial_main_panel_width, shows_inline_detail};
-    use gpui::px;
+    use gpui_kit::px;
 
     #[test]
     fn hides_inline_detail_when_window_is_1099_pixels_wide() {

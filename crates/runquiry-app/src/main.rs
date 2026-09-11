@@ -11,12 +11,12 @@ mod settings;
 
 use std::sync::Arc;
 
-use gpui::{
+use gpui_kit::assets::Assets;
+use gpui_kit::component::{Root, ThemeMode, TitleBar};
+use gpui_kit::{
     App, AppContext as _, Bounds, Entity, Focusable as _, Global, KeyBinding, Window, WindowBounds,
     WindowKind, WindowOptions, px, size,
 };
-use gpui_component::{Root, ThemeMode, TitleBar};
-use gpui_component_assets::Assets;
 
 use backend::{PlatformBackend, UnavailableBackend};
 use runquiry_ui::backend::WorkspaceBackend;
@@ -50,13 +50,13 @@ fn main() {
     let settings_path = default_settings_path();
     let settings = load_settings(settings_path.as_deref());
 
-    let app = gpui_platform::application().with_assets(Assets);
+    let app = gpui_kit::application().with_assets(Assets);
     app.run(move |cx| {
         cx.set_app_identity("io.github.runquiry", WINDOW_TITLE);
         // rust-i18n：先并入 gpui-component 的内置文案，再初始化组件
         // （进程内只允许调用一次，见 runquiry-ui::locale）。
         runquiry_ui::locale::extend_component_translations();
-        gpui_component::init(cx);
+        gpui_kit::init(cx);
         runquiry_ui::theme::install(cx);
         cx.bind_keys(
             ProcessCommand::bindings().map(|(key, command)| match command {
@@ -255,7 +255,7 @@ const fn remember_window_size(settings: &mut Settings, width: u32, height: u32) 
 
 /// u32 尺寸 → 逻辑像素：窗口尺寸远小于 f32 尾数精度边界，cast 无实际损失。
 #[allow(clippy::cast_precision_loss)]
-const fn px_dim(value: u32) -> gpui::Pixels {
+const fn px_dim(value: u32) -> gpui_kit::Pixels {
     px(value as f32)
 }
 

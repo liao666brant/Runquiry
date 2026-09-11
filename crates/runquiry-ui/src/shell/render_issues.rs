@@ -1,8 +1,8 @@
 //! 工作区部分成功与采集诊断的呈现。
 
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, Context, IntoElement as _, ParentElement as _, Styled as _, div};
-use gpui_component::{ActiveTheme as _, v_flex};
+use gpui_kit::component::{ActiveTheme as _, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{AnyElement, Context, IntoElement as _, ParentElement as _, Styled as _, div};
 use runquiry_core::{CapabilityStatus, DiagnosticIssue};
 use rust_i18n::t;
 

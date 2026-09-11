@@ -1,11 +1,11 @@
 //! 进程动作区的能力态、控件与错误呈现。
 
-use gpui::prelude::FluentBuilder as _;
-use gpui::{AnyElement, App, Entity, IntoElement, ParentElement as _, Styled as _, div};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Sizable as _, StyledExt as _, button::Button, h_flex,
     input::Input, v_flex,
 };
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{AnyElement, App, Entity, IntoElement, ParentElement as _, Styled as _, div};
 use runquiry_core::{CapabilityStatus, InspectError, ProcessAction};
 use rust_i18n::t;
 

@@ -7,8 +7,8 @@
 
 use std::rc::Rc;
 
-use gpui::{App, Window};
-use gpui_component::{Theme, ThemeConfig, ThemeConfigColors, ThemeMode};
+use gpui_kit::component::{Theme, ThemeConfig, ThemeConfigColors, ThemeMode};
+use gpui_kit::{App, Window};
 
 /// 浅色主题在主题注册表中的名称。
 pub const LIGHT_THEME_NAME: &str = "Runquiry Light";
@@ -156,7 +156,7 @@ fn build_config(mode: ThemeMode) -> (ThemeConfig, Vec<&'static str>) {
     (config, applied)
 }
 
-/// 安装 Runquiry 浅/深主题（幂等，必须在 `gpui_component::init` 之后调用）。
+/// 安装 Runquiry 浅/深主题（幂等，必须在 `gpui_kit::component::init` 之后调用）。
 ///
 /// 只替换主题配置来源，不改变当前激活模式；激活模式由 [`apply`] 控制。
 pub fn install(cx: &mut App) {
@@ -180,7 +180,7 @@ pub fn apply(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::Rgba;
+    use gpui_kit::Rgba;
 
     /// 每个原始色值都必须能被 gpui 解析为有效颜色。
     #[test]

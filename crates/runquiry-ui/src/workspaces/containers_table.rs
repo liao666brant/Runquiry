@@ -1,12 +1,12 @@
 //! Containers 的 gpui-component `DataTable` 虚拟化适配器。
 
-use gpui::{
-    App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Stateful, Styled as _, Window, div,
-};
-use gpui_component::{
+use gpui_kit::component::{
     ActiveTheme as _, Sizable as _, Size,
     table::{Column, ColumnSort, DataTable, TableDelegate, TableState},
+};
+use gpui_kit::{
+    App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Stateful, Styled as _, Window, div,
 };
 
 use super::{ContainerSort, ContainersState};
@@ -120,7 +120,7 @@ impl TableDelegate for ContainersTableDelegate {
         row_ix: usize,
         _: &mut Window,
         _: &mut Context<'_, TableState<Self>>,
-    ) -> Stateful<gpui::Div> {
+    ) -> Stateful<gpui_kit::Div> {
         let id = self.state.row(row_ix).map_or_else(
             || format!("container-missing-{row_ix}"),
             |row| format!("container-{}", row.key().dedup_key()),
@@ -177,7 +177,7 @@ impl TableDelegate for ContainersTableDelegate {
         };
         self.state
             .set_sort(field, !matches!(sort, ColumnSort::Descending));
-        cx.emit(gpui_component::table::TableEvent::SelectColumn(col_ix));
+        cx.emit(gpui_kit::component::table::TableEvent::SelectColumn(col_ix));
         cx.notify();
     }
 }
