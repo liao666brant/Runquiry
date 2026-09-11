@@ -48,7 +48,9 @@ impl TempDir {
         std::fs::write(&file, body)?;
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755))?;
         // WSL2 内核在「写入后立即被子进程 execve」时会瞬态 ETXTBSY（实测
-        // 并发下 ~5%）；写入后短暂等待即可消除，保持测试确定性。
+        // 并发下 plain ~6%，fsync 无效，空载愈合 ≤ ~0.9ms、8 线程高负载
+        // ≤ ~5.7ms）；此处 2ms 等待吸收瞬时态，更长的残留由生产 spawn 的
+        // ETXTBSY 有界重试（~75ms 窗口）兜底，两层合计覆盖实测分布。
         std::thread::sleep(std::time::Duration::from_millis(2));
         Ok(file)
     }

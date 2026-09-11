@@ -65,3 +65,5 @@ Windows 专用依赖和 feature 由 A1 负责人集中维护。
 - Windows 能力矩阵与 Unsupported 项。
 - 实机版本、架构和权限级别。
 - 自动测试、真实 QA、FFI 审核和已知限制。
+
+  - 实机走查（2026-09-11，Windows 侧，部分完成后自动化中止）：Processes/Ports 真实快照与详情面板渲染留档（详见 05 模块 C3 记录）；Containers 工作区实机呈现「全部容器 CLI 未安装」→ `Unavailable` 边界态（对应「未启动」场景证据；「已启动」场景该环境无 Docker，维持不适用记录）；SCM QA 采样窄度维持既有记录（本次覆盖 1 PID）。剩余：GUI 四工作区完整交互矩阵（名称/PID/端口/File 调查流与键位）待人工走查。证据：`.omo/evidence/c3-windows-gui-partial/`。**C2 保持未勾选。**
