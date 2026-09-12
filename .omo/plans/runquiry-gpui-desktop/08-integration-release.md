@@ -53,6 +53,14 @@
 
 - [ ] **D2 跨平台打包流水线**
   - 依赖：C4。
+  - 进度（2026-09-11，Windows 侧；**用户决策提前于 C4 契约冻结启动，本轮只做 Windows**）：
+    - 新增根目录 `Packager.toml`（cargo-packager 0.11.8，`cargo install --locked`）：product Runquiry / identifier io.github.runquiry / version 0.1.0 / icons（assets/icons）/ resources（third-party-licenses + NOTICE）/ formats `wix`+`deb`+`appimage`；吸收并删除了 app crate 旧 `[package.metadata.bundle]`（单一事实源）。无签名：无任何私钥配置。
+    - 上游缺陷绕开：0.11.8 文件模式在配置缺省 `name` 时对配置文件路径本身 `set_current_dir`（cli/config.rs:56）必报 os error 267——已显式 `name = "runquiry"` 并注释；正确 MSI 格式名为 `wix` 而非 `msi`；workspace 根自动探测不可靠，脚本显式 `-c Packager.toml`。
+    - `about.hbs` 模板落地，`about.toml` accepted 与 deny.toml 对齐（补 MPL-2.0/CC0-1.0/0BSD/bzip2-1.0.6），生成 `docs/third-party-licenses.md`（820 依赖 + 许可证正文，HTML 转义已用三花括号消除）。
+    - 二进制构建元数据：`runquiry --version/--help`（main.rs 标准库实现，零新增依赖；未知参数 exit=2）。
+    - `scripts/package-windows.sh` 干净 runner：cargo about 重生成许可证 → `cargo build --release -p runquiry-app --locked` → `cargo packager --formats wix` → 便携版 zip 组装（exe+许可证+NOTICE+LICENSE+README）→ `dist/SHA256SUMS` → **断言 Cargo.lock 未漂移**。
+    - 实机验证全通过：MSI 安装（perMachine，UAC 提权）→ 安装目录/许可证组件/桌面快捷方式/卸载注册表项齐全 → 安装版 `--version` 与 GUI 启动退出 → 卸载全净 → 重装再验证 → 再卸载还原；便携版解压干净目录运行同验。证据：`.omo/evidence/d2-windows-packaging/`（README + 三份 msiexec /l*v 日志）。fmt/clippy 干净，app 19/19（Windows 侧）。
+    - **未闭合**：离线重启后启动（需真实重启，留用户实机）；Linux AppImage/DEB 生成与安装验证（配置已就绪，按「Linux 验证另环境」决策延后）；第三方许可证清单公开发布前人工复核。
   - 使用单一 cargo-packager 配置。
   - Linux x86_64 生成 AppImage 和 DEB。
   - Windows x86_64 生成 MSI。

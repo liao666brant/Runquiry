@@ -1,4 +1,6 @@
 /target
+# D2 打包产物（scripts/package-windows.sh / cargo packager）
+/dist
 # A1 工具链阶梯验证使用的独立构建目录（CARGO_TARGET_DIR=target-verify）
 /target-verify
 /docs/target-verify

@@ -11,6 +11,12 @@ accepted = [
     "Unicode-3.0",
     "Zlib",
     "CDLA-Permissive-2.0",
+    # 以下四项与 deny.toml [licenses] allow 对齐（MPL-2.0：dwrote/cbindgen/
+    # option-ext 等；CC0-1.0：notify/tiny-keccak 等；0BSD；bzip2-1.0.6）。
+    "MPL-2.0",
+    "CC0-1.0",
+    "0BSD",
+    "bzip2-1.0.6",
     # GPUI 依赖链中固定 Git 来源的 zlog / ztracing / ztracing_macro 为
     # GPL-3.0-or-later，Runquiry 因此整体采用 GPL-3.0-or-later 分发。
     # deny.toml 中的例外仅针对这三个包，此处不做全局放开。

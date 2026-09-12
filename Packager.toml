@@ -1,0 +1,57 @@
+# Runquiry 单一打包配置（cargo-packager，见 modules/08 D2）。
+#
+# 约束：
+# - 全部产物无签名：不配置任何私钥/签名项，CLI 也不得传 --private-key。
+# - 构建必须 --locked：由 scripts/package-windows.sh 显式执行
+#   `cargo build --release -p runquiry-app --locked`（本配置不设
+#   before_packaging_command：CLI 0.11.8 对字符串钩子在 Windows 上报 os error 267）。
+#   产物版本随 workspace 0.1.0 变更时须同步本文件 version（打包配置无法读取 workspace 继承）。
+# - 本轮（D2 提前启动，用户决策 2026-09-11）只在 Windows 实际生成 MSI 与便携版；
+#   deb/appimage 为配置先行，待 Linux 环境生成并验证。
+# - 便携版 zip 由 scripts/package-windows.sh 在 MSI 之外组装（cargo-packager 无 zip 格式）。
+
+product_name = "Runquiry"
+# name 必填：cargo-packager 0.11.8 文件模式下若 name 缺省，会对配置文件路径
+# 本身 set_current_dir（上游 cli/config.rs:56），Windows 上必然报 os error 267。
+name = "runquiry"
+identifier = "io.github.runquiry"
+version = "0.1.0"
+description = "Local process investigation"
+category = "DeveloperTool"
+license_file = "LICENSE"
+formats = ["wix", "deb", "appimage"]
+out_dir = "dist"
+binaries_dir = "target/release"
+icons = ["assets/icons/runquiry.ico", "assets/icons/runquiry-512.png"]
+# 许可证与归属随所有格式分发（MSI 落安装目录，deb/AppImage 见各 files 段）。
+resources = ["docs/third-party-licenses.md", "NOTICE"]
+
+[[binaries]]
+path = "runquiry.exe"
+main = true
+
+[deb]
+section = "utils"
+desktop_template = "packaging/runquiry.desktop.hbs"
+# GPUI 运行时系统依赖为静态声明：本环境不生成 deb，Linux 侧首次打包须实测校验
+# 包名与版本（apt 装包后启动为验收标准，见模块 08 D2 验证要求）。
+depends = [
+    "libc6",
+    "libfontconfig1",
+    "libfreetype6",
+    "libgcc-s1",
+    "libwayland-client0",
+    "libx11-6",
+    "libxcb1",
+    "libxkbcommon0",
+    "libxkbcommon-x11-0",
+]
+
+[deb.files]
+"docs/third-party-licenses.md" = "/usr/share/doc/runquiry/third-party-licenses.md"
+"NOTICE" = "/usr/share/doc/runquiry/NOTICE"
+"LICENSE" = "/usr/share/doc/runquiry/copyright"
+
+[appimage.files]
+"docs/third-party-licenses.md" = "/usr/share/doc/runquiry/third-party-licenses.md"
+"NOTICE" = "/usr/share/doc/runquiry/NOTICE"

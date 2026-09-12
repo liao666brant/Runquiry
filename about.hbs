@@ -1,0 +1,32 @@
+{{! cargo-about 模板：生成 docs/third-party-licenses.md，随安装包分发。 }}
+# 第三方许可证清单
+
+Runquiry 本体以 GPL-3.0-or-later 分发；下表列出二进制中包含的第三方依赖
+及其许可证正文（由 `cargo about generate` 从 `Cargo.lock` 生成），
+供随安装包分发与人工复核。
+
+## 依赖概览
+
+| 包 | 版本 | 许可证 | 来源 |
+|---|---|---|---|
+{{#each licenses}}
+{{#each used_by}}
+| {{crate.name}} | {{crate.version}} | [{{{../name}}}](https://spdx.org/licenses/{{../id}}.html) | {{#if crate.repository}}{{{crate.repository}}}{{else}}{{#if crate.homepage}}{{{crate.homepage}}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}}{{/if}} |
+{{/each}}
+{{/each}}
+
+## 许可证正文
+
+{{#each licenses}}
+### {{{name}}}
+
+```text
+{{{text}}}
+```
+
+{{/each}}
+
+---
+GPL-3.0-or-later 依赖（zlog / ztracing / ztracing_macro，GPUI 依赖链中固定
+Git 来源的包）的存在使 Runquiry 整体按 GPL-3.0-or-later 分发，完整说明见
+仓库根目录 `NOTICE` 与 `LICENSE`。

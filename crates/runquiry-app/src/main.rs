@@ -37,6 +37,25 @@ const KEY_CONTEXT: &str = "RunquiryShell";
 /// 窗口标题。
 const WINDOW_TITLE: &str = "Runquiry";
 
+/// --help 文案：说明 CLI 面边界，不引入交互式用法。
+const HELP_TEXT: &str = "Runquiry — 本地进程/端口/容器/文件锁调查桌面应用\n\n用法：runquiry [--version | --help]\n不带参数时启动图形界面；命令行不提供调查子命令。";
+
+/// 构建元数据行：版本、平台与构建 profile，供打包产物清单与用户核对。
+fn version_line() -> String {
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    format!(
+        "runquiry {} ({} {}, {})",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        profile
+    )
+}
+
 /// 进程内全局设置状态：装配层持有的当前设置与文件路径。
 #[derive(Debug)]
 struct SettingsStore {
@@ -47,6 +66,23 @@ struct SettingsStore {
 impl Global for SettingsStore {}
 
 fn main() {
+    // CLI 面仅 --version/--help：GUI 应用不带子命令，构建元数据由这里输出。
+    match std::env::args().nth(1).as_deref() {
+        None => {}
+        Some("--version" | "-V") => {
+            println!("{}", version_line());
+            return;
+        }
+        Some("--help" | "-h") => {
+            println!("{HELP_TEXT}");
+            return;
+        }
+        Some(other) => {
+            eprintln!("未知参数 {other}；Runquiry 是桌面应用，命令行仅支持 --version 与 --help。");
+            std::process::exit(2);
+        }
+    }
+
     let settings_path = default_settings_path();
     let settings = load_settings(settings_path.as_deref());
 
@@ -269,7 +305,7 @@ const fn theme_key(mode: ThemeMode) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{Settings, WindowSize, remember_window_size};
+    use super::{HELP_TEXT, Settings, WindowSize, remember_window_size, version_line};
 
     #[test]
     fn window_bounds_event_updates_the_persisted_size() {
@@ -284,5 +320,23 @@ mod tests {
                 height: 700,
             })
         );
+    }
+
+    #[test]
+    fn version_line_reports_package_version_and_profile() {
+        let line = version_line();
+
+        assert!(line.starts_with(concat!("runquiry ", env!("CARGO_PKG_VERSION"), " (")));
+        assert!(line.ends_with(if cfg!(debug_assertions) {
+            "debug)"
+        } else {
+            "release)"
+        }));
+    }
+
+    #[test]
+    fn help_text_only_offers_version_and_help_flags() {
+        assert!(HELP_TEXT.contains("--version"));
+        assert!(HELP_TEXT.contains("--help"));
     }
 }

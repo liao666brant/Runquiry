@@ -26,13 +26,5 @@ image = { version = "=0.25.10", default-features = false, features = ["png"] }
 [build-dependencies]
 embed-resource = "=3.0.11"
 
-[package.metadata.bundle]
-name = "Runquiry"
-identifier = "io.github.runquiry"
-icon = ["../../assets/icons/runquiry-512.png"]
-category = "Developer Tool"
-linux_startup_wm_class = "runquiry"
-short_description = "Local process investigation"
-
 [lints]
 workspace = true
