@@ -14,6 +14,24 @@ pub fn format_optional(value: Option<&str>) -> String {
     value.unwrap_or(UNAVAILABLE).to_owned()
 }
 
+/// 把字节数格式化为 witr 风格的人类可读文本（1024 基数，B/KB/MB/GB/TB/PB/EB，
+/// 非零值一位小数；与任务管理器/witr 的量级直观可比）。
+#[allow(clippy::cast_precision_loss)]
+pub fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 7] = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
 /// 把系统时间格式化为 UTC 的 `YYYY-MM-DD HH:MM:SS UTC`。
 ///
 /// `None`（平台未取得）或早于 Unix 纪元的值返回 [`UNAVAILABLE`]。使用 UTC
@@ -63,8 +81,31 @@ fn civil_from_days(days: u64) -> (u64, u64, u64) {
 
 #[cfg(test)]
 mod tests {
-    use super::{UNAVAILABLE, format_optional, format_timestamp};
+    use super::{UNAVAILABLE, format_bytes, format_optional, format_timestamp};
     use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn bytes_stay_in_plain_units_below_1024() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(512), "512 B");
+    }
+
+    #[test]
+    fn larger_bytes_render_one_decimal_per_unit() {
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        // 442 MiB 恰为整数值。
+        assert_eq!(format_bytes(442 * 1024 * 1024), "442.0 MB");
+        assert_eq!(format_bytes(442 * 1024 * 1024 + 104_858), "442.1 MB");
+        assert_eq!(
+            format_bytes(5 * 1024 * 1024 * 1024 + 100 * 1024 * 1024),
+            "5.1 GB"
+        );
+    }
+
+    #[test]
+    fn extreme_values_clamp_to_the_largest_unit() {
+        assert_eq!(format_bytes(u64::MAX), "16.0 EB");
+    }
 
     #[test]
     fn present_text_passes_through_unchanged() {

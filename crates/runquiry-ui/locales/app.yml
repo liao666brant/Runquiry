@@ -138,15 +138,15 @@ query.kind.file:
 query.kind.container:
   en: Container
   zh-CN: 容器
-filter.placeholder:
-  en: Filter current table
-  zh-CN: 筛选当前表格
 detail.overview:
   en: Overview
   zh-CN: 概览
 detail.ancestry:
-  en: Ancestry and children
-  zh-CN: 祖先与子进程
+  en: Ancestry tree
+  zh-CN: 祖先树
+detail.ancestry.more:
+  en: "… %{count} more child processes"
+  zh-CN: "… 剩余 %{count} 个子进程"
 detail.source:
   en: Source
   zh-CN: 启动来源
@@ -179,7 +179,10 @@ actions.terminate:
   zh-CN: 终止
 actions.kill:
   en: Kill
-  zh-CN: 强制终止
+  zh-CN: 关闭进程
+actions.kill_tree:
+  en: Kill process tree
+  zh-CN: 关闭进程树
 actions.pause:
   en: Pause
   zh-CN: 暂停
@@ -253,14 +256,32 @@ files.all_open:
   en: All open files
   zh-CN: 全部打开文件
 processes.sort_pid:
-  en: Sort by PID
-  zh-CN: 按 PID 排序
+  en: PID
+  zh-CN: PID
+processes.sort_cpu:
+  en: CPU%
+  zh-CN: CPU%
+processes.sort_memory:
+  en: Memory
+  zh-CN: 内存
+columns.settings:
+  en: Columns
+  zh-CN: 列设置
 column.command:
   en: Command
   zh-CN: 命令
 column.pid:
   en: PID
   zh-CN: PID
+column.cpu:
+  en: CPU%
+  zh-CN: CPU%
+column.memory:
+  en: Memory
+  zh-CN: 内存
+column.started:
+  en: Started
+  zh-CN: 启动时间
 column.user:
   en: User
   zh-CN: 用户

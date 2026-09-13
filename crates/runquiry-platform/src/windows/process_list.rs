@@ -104,6 +104,8 @@ impl ProcessInventory for WindowsPlatform {
         let system = sysinfo_snapshot();
         let users = Users::new_with_refreshed_list();
         let parents = self.ppid_map();
+        // 系统内存总量整轮读一次（ffi 内 OnceLock 缓存），供逐进程 memory_percent。
+        let mem_total = ffi::total_physical_memory();
         let mut summaries = Vec::new();
         let mut issues = Vec::new();
         for (pid, process) in system.processes().iter() {
@@ -121,6 +123,16 @@ impl ProcessInventory for WindowsPlatform {
             let command_line = join_cmdline(process.cmd());
             let exe = process.exe().map(std::path::Path::to_path_buf);
             let rss = process.memory();
+            // parity line 36/67：列表级累计 CPU 秒与 RSS（GetProcessTimes 与
+            // 健康标签同源；打不开的进程 CPU 时间保持 None）。
+            let cpu_time = Self::cpu_time_of(pid_raw);
+            let cpu_time_seconds = cpu_time.map(|cpu| cpu.as_secs_f64());
+            #[allow(clippy::cast_precision_loss)]
+            let memory_percent = if mem_total > 0 {
+                Some(rss as f64 / mem_total as f64 * 100.0)
+            } else {
+                None
+            };
             let summary = ProcessSummary {
                 identity: ProcessIdentity::new(
                     Pid::new(pid_raw).unwrap_or(Pid::MIN),
@@ -131,10 +143,15 @@ impl ProcessInventory for WindowsPlatform {
                 command,
                 command_line,
                 user: user_of(process.user_id(), &users),
-                health: health_of(rss, Self::cpu_time_of(pid_raw)),
+                health: health_of(rss, cpu_time),
                 container: None,
                 exe_deleted: false,
                 capabilities: Vec::new(),
+                cpu_time_seconds,
+                // 差分 CPU% 由装配层（runquiry-app）跨刷新计算，采集器恒 None。
+                cpu_percent: None,
+                memory_rss_bytes: Some(rss),
+                memory_percent,
             };
             summaries.push(summary);
         }
@@ -160,6 +177,11 @@ impl ProcessInventory for WindowsPlatform {
                             container: None,
                             exe_deleted: false,
                             capabilities: Vec::new(),
+                            // 快照路径无进程句柄：资源字段诚实保持不可得。
+                            cpu_time_seconds: None,
+                            cpu_percent: None,
+                            memory_rss_bytes: None,
+                            memory_percent: None,
                         });
                     }
                     issues.push(DiagnosticIssue::new(

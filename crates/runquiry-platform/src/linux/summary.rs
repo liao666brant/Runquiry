@@ -15,18 +15,22 @@ pub(super) struct SummaryContext<'a> {
     platform: &'a LinuxPlatform,
     boot: Option<SystemTime>,
     users: &'a Users,
+    /// 系统物理内存总量（整轮 `list()` 读一次 `/proc/meminfo` 复用）。
+    mem_total_bytes: Option<u64>,
 }
 
 impl<'a> SummaryContext<'a> {
-    pub(super) const fn new(
+    pub(super) fn new(
         platform: &'a LinuxPlatform,
         boot: Option<SystemTime>,
         users: &'a Users,
+        mem_total_bytes: Option<u64>,
     ) -> Self {
         Self {
             platform,
             boot,
             users,
+            mem_total_bytes,
         }
     }
 
@@ -74,6 +78,15 @@ impl<'a> SummaryContext<'a> {
             .boot
             .and_then(|boot| start_time_from_ticks(boot, stat.start_ticks));
         let health = health_of(stat);
+        // parity line 36/67：列表级累计 CPU 秒与 RSS（详情同源字段见 details.rs）。
+        #[allow(clippy::cast_precision_loss)]
+        let cpu_time_seconds = Some((stat.utime + stat.stime) as f64 / CLK_TCK as f64);
+        let memory_rss_bytes = Some(stat.rss_pages.saturating_mul(PAGE_SIZE));
+        #[allow(clippy::cast_precision_loss)]
+        let memory_percent = match (memory_rss_bytes, self.mem_total_bytes) {
+            (Some(rss), Some(total)) if total > 0 => Some(rss as f64 / total as f64 * 100.0),
+            _ => None,
+        };
         let summary = ProcessSummary {
             identity: ProcessIdentity::new(Pid::new(pid).unwrap_or(Pid::MIN), start_time, exe),
             parent_pid: Pid::new(stat.ppid).ok(),
@@ -88,6 +101,11 @@ impl<'a> SummaryContext<'a> {
                 .as_deref()
                 .map(decode_capabilities)
                 .unwrap_or_default(),
+            cpu_time_seconds,
+            // 差分 CPU% 由装配层（runquiry-app）跨刷新计算，采集器恒 None。
+            cpu_percent: None,
+            memory_rss_bytes,
+            memory_percent,
         };
         (summary, issues)
     }

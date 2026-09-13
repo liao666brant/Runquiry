@@ -11,12 +11,14 @@ use gpui_kit::{
 
 use super::{ContainerSort, ContainersState};
 use crate::format::{UNAVAILABLE, format_optional, format_timestamp};
+use crate::workspaces::ColumnVisibility;
 use rust_i18n::t;
 
 /// Containers 虚拟表 delegate。
 pub struct ContainersTableDelegate {
     state: ContainersState,
     columns: [Column; 8],
+    visibility: ColumnVisibility,
 }
 
 impl std::fmt::Debug for ContainersTableDelegate {
@@ -29,23 +31,34 @@ impl std::fmt::Debug for ContainersTableDelegate {
 }
 
 impl ContainersTableDelegate {
+    /// 全量列定义（含被隐藏的列）；列设置弹层按此渲染选项。
+    pub fn column_defs() -> [Column; 8] {
+        [
+            Column::new("runtime", t!("column.runtime").to_string()).sortable(),
+            Column::new("name", t!("column.name").to_string()).sortable(),
+            Column::new("id", t!("column.id").to_string()).sortable(),
+            Column::new("status", t!("column.state").to_string()).sortable(),
+            Column::new("health", t!("column.health").to_string()).sortable(),
+            Column::new("image", t!("column.image").to_string()).sortable(),
+            Column::new("host-pid", t!("column.host_pid").to_string())
+                .sortable()
+                .text_right(),
+            Column::new("started-at", t!("column.started_at").to_string()).sortable(),
+        ]
+    }
+
     /// 创建 delegate。
     pub fn new(state: ContainersState) -> Self {
         Self {
             state,
-            columns: [
-                Column::new("runtime", t!("column.runtime").to_string()).sortable(),
-                Column::new("name", t!("column.name").to_string()).sortable(),
-                Column::new("id", t!("column.id").to_string()).sortable(),
-                Column::new("status", t!("column.state").to_string()).sortable(),
-                Column::new("health", t!("column.health").to_string()).sortable(),
-                Column::new("image", t!("column.image").to_string()).sortable(),
-                Column::new("host-pid", t!("column.host_pid").to_string())
-                    .sortable()
-                    .text_right(),
-                Column::new("started-at", t!("column.started_at").to_string()).sortable(),
-            ],
+            columns: Self::column_defs(),
+            visibility: ColumnVisibility::new(),
         }
+    }
+
+    /// 整体替换隐藏列集合（来自壳层的持久化状态）。
+    pub fn set_hidden(&mut self, hidden: std::collections::BTreeSet<String>) {
+        self.visibility.set_hidden(hidden);
     }
 
     /// 替换纯状态。
@@ -58,9 +71,15 @@ impl ContainersTableDelegate {
         &self.state
     }
 
-    /// 按当前 locale 重建列标题。
+    /// 按当前 locale 重建列标题，保留列显隐状态。
     pub fn relocalize(&mut self) {
+        let hidden = self.visibility.hidden().clone();
         *self = Self::new(self.state.clone());
+        self.visibility.set_hidden(hidden);
+    }
+
+    fn visible_columns(&self) -> Vec<Column> {
+        self.visibility.visible(&self.columns).cloned().collect()
     }
 }
 
@@ -104,7 +123,7 @@ pub fn update_containers_table(
 
 impl TableDelegate for ContainersTableDelegate {
     fn columns_count(&self, _: &App) -> usize {
-        self.columns.len()
+        self.visibility.visible_count(&self.columns)
     }
 
     fn rows_count(&self, _: &App) -> usize {
@@ -112,7 +131,10 @@ impl TableDelegate for ContainersTableDelegate {
     }
 
     fn column(&self, col_ix: usize, _: &App) -> Column {
-        self.columns[col_ix].clone()
+        self.visible_columns()
+            .into_iter()
+            .nth(col_ix)
+            .unwrap_or_else(|| Column::new("unknown", "—"))
     }
 
     fn render_tr(
@@ -138,17 +160,25 @@ impl TableDelegate for ContainersTableDelegate {
         let Some(row) = self.state.row(row_ix) else {
             return div().into_any_element();
         };
-        let text = match col_ix {
-            0 => row.summary.key.runtime.clone(),
-            1 => format_optional(row.summary.name.as_deref()),
-            2 => row.summary.key.id.clone(),
-            3 => format_optional(row.summary.status.as_deref()),
-            4 => format_optional(row.summary.health.as_deref()),
-            5 => format_optional(row.summary.image.as_deref()),
-            6 => row
+        // 可见索引 → 列 key：隐藏列不影响后续列的语义分派。
+        let Some(key) = self
+            .visible_columns()
+            .get(col_ix)
+            .map(|column| column.key.clone())
+        else {
+            return div().into_any_element();
+        };
+        let text = match key.as_ref() {
+            "runtime" => row.summary.key.runtime.clone(),
+            "name" => format_optional(row.summary.name.as_deref()),
+            "id" => row.summary.key.id.clone(),
+            "status" => format_optional(row.summary.status.as_deref()),
+            "health" => format_optional(row.summary.health.as_deref()),
+            "image" => format_optional(row.summary.image.as_deref()),
+            "host-pid" => row
                 .verified_host_pid
                 .map_or_else(|| UNAVAILABLE.to_owned(), |pid| pid.to_string()),
-            7 => format_timestamp(row.summary.started_at),
+            "started-at" => format_timestamp(row.summary.started_at),
             _ => String::new(),
         };
         div()
@@ -166,13 +196,20 @@ impl TableDelegate for ContainersTableDelegate {
         _: &mut Window,
         cx: &mut Context<'_, TableState<Self>>,
     ) {
-        let field = match col_ix {
-            1 => ContainerSort::Name,
-            3 => ContainerSort::Status,
-            4 => ContainerSort::Health,
-            5 => ContainerSort::Image,
-            6 => ContainerSort::HostPid,
-            7 => ContainerSort::StartedAt,
+        let Some(key) = self
+            .visible_columns()
+            .get(col_ix)
+            .map(|column| column.key.to_string())
+        else {
+            return;
+        };
+        let field = match key.as_str() {
+            "name" => ContainerSort::Name,
+            "status" => ContainerSort::Status,
+            "health" => ContainerSort::Health,
+            "image" => ContainerSort::Image,
+            "host-pid" => ContainerSort::HostPid,
+            "started-at" => ContainerSort::StartedAt,
             _ => ContainerSort::Key,
         };
         self.state

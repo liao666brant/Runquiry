@@ -6,6 +6,10 @@
 //! （见 [`settings`]）。平台端口由 [`backend`] 在应用边界装配，UI 不直接
 //! 访问操作系统或容器 CLI。
 
+// release 构建标记为 Windows GUI 子系统：启动不再附带控制台窗口。
+// debug 构建保留控制台以便查看 eprintln! 诊断输出。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 pub mod backend;
 mod settings;
 
@@ -174,6 +178,7 @@ fn main() {
             theme,
             language: settings.language(),
             workspace: settings.last_workspace(),
+            hidden_columns: settings.hidden_columns.clone(),
         };
         let backend: Arc<dyn WorkspaceBackend> = match PlatformBackend::new() {
             Ok(backend) => Arc::new(backend),
@@ -214,9 +219,10 @@ fn wire_settings(shell: Option<Entity<AppShell>>, window: &mut Window, cx: &mut 
     // 设置变化事件：主题/语言/工作区立即落盘。窗口尺寸由平台 bounds 事件
     // 单独维护，因此这里保存的一定是最近一次真实窗口尺寸。
     cx.subscribe(&shell, |_shell, event: &ShellEvent, cx| {
-        match *event {
+        match event {
             ShellEvent::ThemeChanged(mode) => {
-                cx.global_mut::<SettingsStore>().settings.theme = Some(theme_key(mode).to_string());
+                cx.global_mut::<SettingsStore>().settings.theme =
+                    Some(theme_key(*mode).to_string());
             }
             ShellEvent::LanguageChanged(lang) => {
                 cx.global_mut::<SettingsStore>().settings.language =
@@ -225,6 +231,12 @@ fn wire_settings(shell: Option<Entity<AppShell>>, window: &mut Window, cx: &mut 
             ShellEvent::WorkspaceChanged(workspace) => {
                 cx.global_mut::<SettingsStore>().settings.last_workspace =
                     Some(String::from(workspace.key()));
+            }
+            ShellEvent::HiddenColumnsChanged(workspace, hidden) => {
+                cx.global_mut::<SettingsStore>()
+                    .settings
+                    .hidden_columns
+                    .insert(String::from(workspace.key()), hidden.clone());
             }
         }
         persist_settings(cx);

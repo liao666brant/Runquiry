@@ -17,7 +17,8 @@ use runquiry_core::{
 use sysinfo::{ProcessesToUpdate, System, Users};
 
 use super::procfs::{
-    ProcFs, StatInfo, parse_boot_time, parse_environ, parse_stat, start_time_from_ticks,
+    ProcFs, StatInfo, parse_boot_time, parse_environ, parse_meminfo_total, parse_stat,
+    start_time_from_ticks,
 };
 use super::summary::SummaryContext;
 
@@ -250,7 +251,13 @@ impl ProcessInventory for LinuxPlatform {
         let boot = self.boot_time();
         let users = Users::new_with_refreshed_list();
         let baseline_ppids = self.ppid_map();
-        let summary_context = SummaryContext::new(self, boot, &users);
+        // 内存总量整轮读一次，供逐进程 memory_percent（与详情路径同源）。
+        let mem_total_bytes = self
+            .procfs
+            .read_string("meminfo")
+            .ok()
+            .and_then(|raw| parse_meminfo_total(&raw));
+        let summary_context = SummaryContext::new(self, boot, &users, mem_total_bytes);
         let mut summaries = Vec::new();
         let mut issues = Vec::new();
         for pid in pids {

@@ -55,7 +55,8 @@ const PROCESS_BASIC_INFORMATION_CLASS: PROCESSINFOCLASS = 0;
 /// `FILETIME`（100 纳秒刻度，1601-01-01 起）→ `SystemTime`。
 #[must_use]
 pub(crate) fn filetime_to_system_time(low: u32, high: u32) -> Option<SystemTime> {
-    const UNIX_EPOCH_FILETIME: u64 = 11_644_473_600_000_000_000; // 1601→1970 的 100ns 刻度
+    // 1601→1970 = 11,644,473,600 秒 × 10^7 ticks/秒。
+    const UNIX_EPOCH_FILETIME: u64 = 116_444_736_000_000_000;
     let ticks = (u64::from(high) << 32) | u64::from(low);
     let since_epoch = ticks.checked_sub(UNIX_EPOCH_FILETIME)?;
     Some(
@@ -237,4 +238,37 @@ pub(crate) fn total_physical_memory() -> u64 {
         let ok = unsafe { GlobalMemoryStatusEx(core::ptr::addr_of_mut!(status)) };
         if ok == 0 { 0 } else { status.ullTotalPhys }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filetime_to_system_time;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn filetime_conversion_round_trips_a_known_instant() {
+        // 2025-05-08T00:00:00Z ≈ 133,911,360,000,000,000 ticks（1601 起）。
+        // 回归：纪元常量曾写大 100 倍，任何真实创建时间都减成负数返回 None。
+        let ticks_since_epoch: u64 = 133_911_360_000_000_000;
+        let Some(time) = filetime_to_system_time(
+            (ticks_since_epoch & 0xFFFF_FFFF) as u32,
+            (ticks_since_epoch >> 32) as u32,
+        ) else {
+            eprintln!("2026 年的 FILETIME 必须可转换");
+            return;
+        };
+
+        assert!(
+            time.duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::MAX)
+                .as_secs()
+                > 1_700_000_000,
+            "转换结果应落在现代时间（2023 之后），实际 {time:?}"
+        );
+    }
+
+    #[test]
+    fn filetime_before_the_epoch_returns_none() {
+        assert_eq!(filetime_to_system_time(0, 0), None);
+    }
 }

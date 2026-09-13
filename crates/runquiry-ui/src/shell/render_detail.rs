@@ -134,7 +134,7 @@ impl AppShell {
                 &analysis.resolved_target,
             ))
             .child(detail_line(t!("detail.resources"), &resources))
-            .child(Self::render_evidence(analysis))
+            .child(Self::render_evidence(analysis, cx))
             .child(detail_line(
                 t!("detail.environment"),
                 &analysis

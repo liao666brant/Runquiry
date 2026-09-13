@@ -41,6 +41,7 @@ fn main() {
             theme: ThemeMode::Dark,
             language: Lang::En,
             workspace: WorkspaceId::Processes,
+            hidden_columns: Default::default(),
         };
         let mut shell_entity: Option<Entity<AppShell>> = None;
         let opened = cx.open_window(options, |window, cx| {

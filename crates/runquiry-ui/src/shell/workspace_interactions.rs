@@ -3,6 +3,7 @@
 use gpui_kit::{Context, Window};
 
 use super::AppShell;
+use crate::processes::ProcessSort;
 use crate::session::{SortOrder, WorkspaceId};
 use crate::workspaces::{
     FileKey, FileLockMode, PortKey, PortMode, update_containers_table, update_file_locks_table,
@@ -36,10 +37,14 @@ impl AppShell {
         cx.notify();
     }
 
-    pub(crate) fn toggle_process_pid_sort(&mut self, cx: &mut Context<'_, Self>) {
+    pub(crate) fn apply_process_header_sort(
+        &mut self,
+        sort: ProcessSort,
+        cx: &mut Context<'_, Self>,
+    ) {
         self.invalidate_active_refresh();
-        self.record_sort(String::from("pid"));
-        self.data.toggle_process_pid_sort(cx);
+        self.record_sort(String::from(sort.key.column_key()));
+        self.data.apply_process_sort(sort, cx);
         cx.notify();
     }
 

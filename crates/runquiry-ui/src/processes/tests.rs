@@ -27,6 +27,10 @@ fn summary(pid: u32, age: u64) -> ProcessSummary {
         container: None,
         exe_deleted: false,
         capabilities: Vec::new(),
+        cpu_time_seconds: None,
+        cpu_percent: None,
+        memory_rss_bytes: None,
+        memory_percent: None,
     }
 }
 
@@ -355,8 +359,9 @@ fn analysis_detail_model_exposes_all_sections_and_partial_issue_count() {
 fn large_process_model_shares_storage_and_keeps_domain_row_id_stable() {
     let rows: Arc<[ProcessSummary]> = (1..=100_000).map(|pid| summary(pid, 10)).collect();
     let model = ProcessRows::new(Arc::clone(&rows));
-    let table = ProcessTableDelegate::new(Arc::clone(&rows));
-    let reordered = ProcessTableDelegate::new(vec![summary(100_000, 10)].into());
+    let table = ProcessTableDelegate::new(Arc::clone(&rows), ProcessSort::default());
+    let reordered =
+        ProcessTableDelegate::new(vec![summary(100_000, 10)].into(), ProcessSort::default());
 
     assert!(Arc::ptr_eq(&rows, model.rows()));
     assert_eq!(model.len(), 100_000);

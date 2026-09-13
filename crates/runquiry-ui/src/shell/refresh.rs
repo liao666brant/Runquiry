@@ -4,17 +4,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::{AppContext as _, Context, Task};
-use runquiry_core::CapabilityStatus;
 
 use super::AppShell;
-use crate::backend::{WorkspaceResultGate, WorkspaceSnapshot};
+use crate::backend::{ProcessActionCapabilities, WorkspaceResultGate, WorkspaceSnapshot};
 use crate::session::WorkspaceId;
 
-/// 一次刷新的后台产物；Processes 工作区随快照附带进程控制能力，
+/// 一次刷新的后台产物；Processes 工作区随快照附带进程控制逐动作能力，
 /// 使能力矩阵在窗口生命周期内保持动态。
 struct RefreshOutput {
     snapshot: WorkspaceSnapshot,
-    control_capability: Option<CapabilityStatus>,
+    action_capabilities: Option<ProcessActionCapabilities>,
 }
 
 impl AppShell {
@@ -29,11 +28,11 @@ impl AppShell {
         let backend = Arc::clone(&self.backend);
         let work = cx.background_spawn(async move {
             let snapshot = backend.load(workspace);
-            let control_capability =
-                (workspace == WorkspaceId::Processes).then(|| backend.process_control_capability());
+            let action_capabilities = (workspace == WorkspaceId::Processes)
+                .then(|| backend.process_action_capabilities());
             RefreshOutput {
                 snapshot,
-                control_capability,
+                action_capabilities,
             }
         });
         self.refresh_task = Some(cx.spawn(async move |shell, cx| {
@@ -69,8 +68,13 @@ impl AppShell {
         if active_gate != gate {
             return;
         }
-        if let Some(capability) = output.control_capability {
-            self.process_action_capability = capability;
+        if let Some(capabilities) = output.action_capabilities {
+            self.process_action_capability = capabilities.class.clone();
+            let kill_available = capabilities.kill.is_usable();
+            let kill_tree_available = capabilities.kill_tree.is_usable();
+            self.process_action_capabilities = capabilities;
+            self.data
+                .set_kill_actions_available(kill_available, kill_tree_available, cx);
             if self
                 .process_action_flow
                 .revoke_confirmation_if_unusable(&self.process_action_capability)

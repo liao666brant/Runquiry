@@ -103,6 +103,10 @@ fn pipeline_additive_summary_fields_round_trip() -> TestResult {
         )),
         exe_deleted: true,
         capabilities: vec![String::from("CAP_SYS_ADMIN")],
+        cpu_time_seconds: None,
+        cpu_percent: None,
+        memory_rss_bytes: None,
+        memory_percent: None,
     };
     let text = serde_json::to_string(&summary)?;
     assert!(

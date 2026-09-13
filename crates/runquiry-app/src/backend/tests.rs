@@ -87,17 +87,15 @@ fn forwards_a_process_action_failure_without_reclassification()
 
     let result = backend.execute_process_action(&identity, ProcessAction::Terminate);
 
-    // 平台语义差异：Linux 对不存在 PID 返回 NotFound；Windows 进程控制整体
-    // Unsupported。测试目标是「平台错误原样上抛、不二次改写」，故按平台断言。
-    #[cfg(target_os = "linux")]
-    assert!(matches!(
-        result,
-        Err(InspectError::NotFound { subject }) if subject == "进程 999999999"
-    ));
-    #[cfg(not(target_os = "linux"))]
+    // 两平台对不存在的 PID 一致返回 NotFound（Windows 关闭类已实现，
+    // OpenProcess 打不开即 NotFound）；测试目标是「平台错误原样上抛、
+    // 不二次改写」。
+    let Err(error) = result else {
+        return Err("不存在的 PID 必须返回错误".into());
+    };
     assert!(
-        matches!(result, Err(InspectError::Unsupported { .. })),
-        "进程控制不可用平台的边界错误应原样上抛，实际 {result:?}"
+        matches!(error, InspectError::NotFound { ref subject } if subject == "进程 999999999"),
+        "边界错误应原样上抛，实际 {error:?}"
     );
     Ok(())
 }

@@ -1,15 +1,19 @@
 //! 调查栏与四工作区主数据区。
 
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _,
+    ActiveTheme as _, Disableable as _, IconName, Selectable as _, Sizable as _,
     button::{Button, ButtonVariants as _},
+    checkbox::Checkbox,
     h_flex,
     input::Input,
+    popover::Popover,
+    table::Column,
     v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, div,
+    AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    Styled as _, div,
 };
 use rust_i18n::t;
 
@@ -41,13 +45,9 @@ impl AppShell {
             .p_3()
             .gap_3()
             .child(self.render_investigation(cx))
-            .child(self.render_workspace_controls(cx))
-            .child(
-                Input::new(&self.filter_input)
-                    .small()
-                    .cleanable(true)
-                    .disabled(!self.data.interactions_enabled(self.active_workspace())),
-            )
+            .when_some(self.render_workspace_controls(cx), |panel, controls| {
+                panel.child(controls)
+            })
             .child(self.partial_banner(cx))
             .child(div().flex_1().min_h_0().child(self.active_table()))
     }
@@ -62,16 +62,22 @@ impl AppShell {
         ];
         v_flex()
             .gap_2()
-            .child(h_flex().gap_1().children(kinds.map(|kind| {
-                Button::new(format!("target-{}", target_key(kind)))
-                    .xsmall()
-                    .ghost()
-                    .selected(self.target_kind == kind)
-                    .label(t!(target_label(kind)).to_string())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.set_target_kind(kind, cx);
+            .child(
+                h_flex()
+                    .gap_1()
+                    .children(kinds.map(|kind| {
+                        Button::new(format!("target-{}", target_key(kind)))
+                            .xsmall()
+                            .ghost()
+                            .selected(self.target_kind == kind)
+                            .label(t!(target_label(kind)).to_string())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_target_kind(kind, cx);
+                            }))
                     }))
-            })))
+                    // 列设置跟随顶部导航行，紧随「容器」之后。
+                    .child(self.render_column_settings(cx)),
+            )
             .child(
                 h_flex()
                     .min_w_0()
@@ -117,69 +123,108 @@ impl AppShell {
         }
     }
 
-    fn render_workspace_controls(&self, cx: &Context<'_, Self>) -> AnyElement {
+    fn render_workspace_controls(&self, cx: &Context<'_, Self>) -> Option<AnyElement> {
         let workspace = self.active_workspace();
         let interactive = self.data.interactions_enabled(workspace);
         match workspace {
-            WorkspaceId::Ports => h_flex()
-                .gap_1()
-                .child(
-                    Button::new("ports-listening")
-                        .xsmall()
-                        .ghost()
-                        .disabled(!interactive)
-                        .selected(self.data.ports.mode == PortMode::Listening)
-                        .label(t!("ports.listening").to_string())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.set_port_mode(PortMode::Listening, cx);
-                        })),
-                )
-                .child(
-                    Button::new("ports-all")
-                        .xsmall()
-                        .ghost()
-                        .disabled(!interactive)
-                        .selected(self.data.ports.mode == PortMode::All)
-                        .label(t!("ports.all").to_string())
-                        .on_click(
-                            cx.listener(|this, _, _, cx| this.set_port_mode(PortMode::All, cx)),
-                        ),
-                )
-                .into_any_element(),
-            WorkspaceId::FileLocks => h_flex()
-                .gap_1()
-                .child(
-                    Button::new("files-locked")
-                        .xsmall()
-                        .ghost()
-                        .disabled(!interactive)
-                        .selected(self.data.files.mode == FileLockMode::Locked)
-                        .label(t!("files.locked").to_string())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.set_file_mode(FileLockMode::Locked, cx);
-                        })),
-                )
-                .child(
-                    Button::new("files-open")
-                        .xsmall()
-                        .ghost()
-                        .disabled(!interactive)
-                        .selected(self.data.files.mode == FileLockMode::AllOpen)
-                        .label(t!("files.all_open").to_string())
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.set_file_mode(FileLockMode::AllOpen, cx);
-                        })),
-                )
-                .into_any_element(),
-            WorkspaceId::Processes => Button::new("process-sort-pid")
-                .xsmall()
-                .outline()
-                .disabled(!interactive)
-                .label(t!("processes.sort_pid").to_string())
-                .on_click(cx.listener(|this, _, _, cx| this.toggle_process_pid_sort(cx)))
-                .into_any_element(),
-            WorkspaceId::Containers => div().into_any_element(),
+            WorkspaceId::Ports => Some(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        Button::new("ports-listening")
+                            .xsmall()
+                            .ghost()
+                            .disabled(!interactive)
+                            .selected(self.data.ports.mode == PortMode::Listening)
+                            .label(t!("ports.listening").to_string())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.set_port_mode(PortMode::Listening, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("ports-all")
+                            .xsmall()
+                            .ghost()
+                            .disabled(!interactive)
+                            .selected(self.data.ports.mode == PortMode::All)
+                            .label(t!("ports.all").to_string())
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.set_port_mode(PortMode::All, cx)),
+                            ),
+                    )
+                    .into_any_element(),
+            ),
+            WorkspaceId::FileLocks => Some(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        Button::new("files-locked")
+                            .xsmall()
+                            .ghost()
+                            .disabled(!interactive)
+                            .selected(self.data.files.mode == FileLockMode::Locked)
+                            .label(t!("files.locked").to_string())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.set_file_mode(FileLockMode::Locked, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("files-open")
+                            .xsmall()
+                            .ghost()
+                            .disabled(!interactive)
+                            .selected(self.data.files.mode == FileLockMode::AllOpen)
+                            .label(t!("files.all_open").to_string())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.set_file_mode(FileLockMode::AllOpen, cx);
+                            })),
+                    )
+                    .into_any_element(),
+            ),
+            // 进程/容器无模式切换：排序走表头，列设置在调查栏。
+            WorkspaceId::Processes | WorkspaceId::Containers => None,
         }
+    }
+
+    /// 列设置图标按钮：弹出当前工作区表格的列显隐勾选层。
+    ///
+    /// 勾选项在弹层每次渲染时按壳层最新状态构建（通过捕获的 shell 句柄
+    /// 读取与派发），保证连续勾选不会基于过期快照。
+    fn render_column_settings(&self, cx: &Context<'_, Self>) -> AnyElement {
+        let workspace = self.active_workspace();
+        let shell = cx.entity();
+        let trigger_id = SharedString::from(format!("column-settings-{}", workspace.key()));
+        Popover::new(trigger_id.clone())
+            .trigger(
+                Button::new(SharedString::from(format!("{trigger_id}-trigger")))
+                    .xsmall()
+                    .ghost()
+                    .icon(IconName::Settings2),
+            )
+            .content(move |_, _, cx| {
+                let hidden = shell.read(cx).hidden_columns(workspace);
+                let items = column_defs(workspace).into_iter().map(|column| {
+                    let key = column.key.to_string();
+                    let checked = !hidden.contains(&key);
+                    Checkbox::new(SharedString::from(format!(
+                        "column-toggle-{}-{key}",
+                        workspace.key()
+                    )))
+                    .label(column.name.to_string())
+                    .checked(checked)
+                    .on_click({
+                        let shell = shell.clone();
+                        let key = key.clone();
+                        move |checked: &bool, _, app| {
+                            shell.update(app, |this, cx| {
+                                this.set_column_visible(workspace, &key, *checked, cx);
+                            });
+                        }
+                    })
+                });
+                v_flex().gap_1().children(items).into_any_element()
+            })
+            .into_any_element()
     }
 }
 
@@ -190,6 +235,18 @@ const fn target_key(kind: TargetKind) -> &'static str {
         TargetKind::Port => "port",
         TargetKind::File => "file",
         TargetKind::Container => "container",
+    }
+}
+
+/// 工作区表格的全量列定义（含被隐藏的列）。
+fn column_defs(workspace: WorkspaceId) -> Vec<Column> {
+    match workspace {
+        WorkspaceId::Processes => crate::processes::ProcessTableDelegate::column_defs(),
+        WorkspaceId::Ports => crate::workspaces::PortsTableDelegate::column_defs().to_vec(),
+        WorkspaceId::Containers => {
+            crate::workspaces::ContainersTableDelegate::column_defs().to_vec()
+        }
+        WorkspaceId::FileLocks => crate::workspaces::FileLocksTableDelegate::column_defs().to_vec(),
     }
 }
 

@@ -99,6 +99,23 @@ impl AppShell {
         let Some(identity) = self.current_action_identity().cloned() else {
             return;
         };
+        self.request_process_action_for(&identity, action, window, cx);
+    }
+
+    /// 以显式身份发起动作确认（右键菜单使用右键所在行，避免依赖选中态的
+    /// 事件次序）。
+    pub(crate) fn request_process_action_for(
+        &mut self,
+        identity: &ProcessIdentity,
+        action: ProcessAction,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        // 逐动作门禁（防御）：平台不支持的动作入口已隐藏，被误触达时静默
+        // 拒绝，不进入确认流、不产生任何副作用。
+        if !self.action_capability(action).is_usable() {
+            return;
+        }
         if !self.process_action_flow.request(
             &self.process_action_capability,
             identity.clone(),
@@ -113,7 +130,7 @@ impl AppShell {
             pid = identity.pid()
         )
         .to_string();
-        let description = confirmation_description(self.current_action_target(), &identity);
+        let description = confirmation_description(self.current_action_target(), identity);
         let ok_text = action_label(action);
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, _| {
@@ -121,7 +138,9 @@ impl AppShell {
             let cancel_shell = shell.clone();
             let close_shell = shell.clone();
             let variant = match action {
-                ProcessAction::Terminate | ProcessAction::Kill => ButtonVariant::Danger,
+                ProcessAction::Terminate | ProcessAction::Kill | ProcessAction::KillTree => {
+                    ButtonVariant::Danger
+                }
                 ProcessAction::Pause | ProcessAction::Resume | ProcessAction::Renice(_) => {
                     ButtonVariant::Primary
                 }
@@ -311,6 +330,10 @@ mod tests {
             container: None,
             exe_deleted: false,
             capabilities: Vec::new(),
+            cpu_time_seconds: None,
+            cpu_percent: None,
+            memory_rss_bytes: None,
+            memory_percent: None,
         }
     }
 

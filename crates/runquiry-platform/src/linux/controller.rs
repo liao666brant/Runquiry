@@ -5,6 +5,7 @@ use std::os::fd::{FromRawFd, OwnedFd};
 
 use runquiry_core::{
     CapabilityStatus, InspectError, Pid, ProcessAction, ProcessController, ProcessIdentity,
+    ProcessInventory, collect_descendants,
 };
 
 use super::LinuxPlatform;
@@ -51,6 +52,11 @@ impl ProcessController for LinuxPlatform {
         match action {
             ProcessAction::Terminate => send_pidfd_signal(&pidfd, libc::SIGTERM, expected.pid()),
             ProcessAction::Kill => send_pidfd_signal(&pidfd, libc::SIGKILL, expected.pid()),
+            // KillTree：目标已通过身份校验并先行强杀，后代随后尽力逐个清杀。
+            ProcessAction::KillTree => {
+                send_pidfd_signal(&pidfd, libc::SIGKILL, expected.pid())?;
+                self.kill_descendants(expected.pid())
+            }
             ProcessAction::Pause => send_pidfd_signal(&pidfd, libc::SIGSTOP, expected.pid()),
             ProcessAction::Resume => send_pidfd_signal(&pidfd, libc::SIGCONT, expected.pid()),
             ProcessAction::Renice(value) => {
@@ -71,6 +77,61 @@ impl LinuxPlatform {
             .and_then(|boot| start_time_from_ticks(boot, stat.start_ticks));
         let executable = self.procfs.read_link(&format!("{}/exe", pid.get())).ok();
         Ok(ProcessIdentity::new(pid, start_time, executable))
+    }
+
+    /// KillTree 的后代清杀：快照收集后代（广度优先），逐个 pidfd + start_time
+    /// 比对后 SIGKILL。后代已退出（ESRCH/清单缺失）视为成功；任一后代确认
+    /// 被 PID 复用则跳过该进程；权限拒绝与其余失败在全部尝试后返回首个错误。
+    /// 若后代中出现 Runquiry 自身则在任何后代被杀前整体拒绝（不做部分清杀；
+    /// 目标本身已先行强杀）。
+    fn kill_descendants(&self, target: Pid) -> Result<(), InspectError> {
+        let snapshot = ProcessInventory::list(self);
+        let summaries = snapshot.data.ok_or_else(|| InspectError::Unsupported {
+            reason: String::from("无法枚举后代进程：进程清单采集未返回数据"),
+        })?;
+        let descendants = collect_descendants(target, &summaries);
+        let self_pid = std::process::id();
+        if descendants
+            .iter()
+            .any(|descendant| descendant.identity.pid().get() == self_pid)
+        {
+            return Err(InspectError::InvalidTarget {
+                reason: String::from("目标进程的后代包含 Runquiry 自身，拒绝执行进程树清杀"),
+            });
+        }
+        let mut first_error: Option<InspectError> = None;
+        for descendant in descendants {
+            let pid = descendant.identity.pid();
+            let Ok(raw_pid) = libc::pid_t::try_from(pid.get()) else {
+                continue;
+            };
+            // pidfd 先固定进程对象，再以快照 start_time 比对当前身份；不可验证
+            // （start_time 缺失/不匹配，含 PID 复用）一律跳过，绝不误杀。
+            let pidfd = match open_pidfd(raw_pid, pid) {
+                Ok(pidfd) => pidfd,
+                // 已退出（ESRCH）：按已清杀处理。
+                Err(InspectError::NotFound { .. }) => continue,
+                // 权限拒绝（无权信号的后代）：聚合上抛，UI 不把存活后代报成已清杀。
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                    continue;
+                }
+            };
+            let Ok(current) = self.current_identity(pid) else {
+                continue;
+            };
+            if !descendant.identity.same_process(&current) {
+                continue;
+            }
+            if let Err(error) = send_pidfd_signal(&pidfd, libc::SIGKILL, pid) {
+                if !matches!(error, InspectError::NotFound { .. }) && first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+        first_error.map_or(Ok(()), Err)
     }
 }
 

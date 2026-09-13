@@ -11,3 +11,5 @@
 /.omo/evidence/
 /.omo/boulder.json
 /.omo/start-work/
+# ZCode 会话本地计划文件
+/.zcode/

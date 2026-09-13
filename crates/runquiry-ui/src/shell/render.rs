@@ -20,9 +20,9 @@ use gpui_kit::{
 };
 
 use super::actions::{
-    CloseProcessActions, FocusQuery, KillProcess, OpenProcessActions, PauseProcess,
-    RefreshWorkspace, ReniceProcess, ResumeProcess, TerminateProcess, Workspace1, Workspace2,
-    Workspace3, Workspace4,
+    CloseProcessActions, FocusQuery, KillProcess, KillTreeProcess, OpenProcessActions,
+    PauseProcess, RefreshWorkspace, ReniceProcess, ResumeProcess, TerminateProcess, Workspace1,
+    Workspace2, Workspace3, Workspace4,
 };
 use super::{AppShell, KEY_CONTEXT};
 use crate::locale::Lang;
@@ -89,6 +89,10 @@ impl Render for AppShell {
             }))
             .on_action(cx.listener(|this, _: &KillProcess, window, cx| {
                 this.select_process_action_shortcut(ProcessActionShortcut::Kill, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &KillTreeProcess, window, cx| {
+                // 右键菜单入口：与键盘动作同一确认流（菜单无快捷键，防误触）。
+                this.request_process_action(runquiry_core::ProcessAction::KillTree, window, cx);
             }))
             .on_action(cx.listener(|this, _: &TerminateProcess, window, cx| {
                 this.select_process_action_shortcut(ProcessActionShortcut::Terminate, window, cx);

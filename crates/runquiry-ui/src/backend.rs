@@ -10,6 +10,54 @@ use runquiry_core::{
 
 use crate::WorkspaceId;
 
+/// 逐动作能力快照：每轮 Processes 刷新取回一次，UI 据此隐藏本平台不支持
+/// 的单个动作入口（如 Windows 的暂停/恢复/renice）。
+#[derive(Clone, Debug)]
+pub struct ProcessActionCapabilities {
+    /// 动作类别整体可用性（确认流与撤销门禁使用）。
+    pub class: CapabilityStatus,
+    /// 温和终止。
+    pub terminate: CapabilityStatus,
+    /// 强制终止。
+    pub kill: CapabilityStatus,
+    /// 强制终止进程树。
+    pub kill_tree: CapabilityStatus,
+    /// 暂停。
+    pub pause: CapabilityStatus,
+    /// 恢复。
+    pub resume: CapabilityStatus,
+    /// 调整优先级。
+    pub renice: CapabilityStatus,
+}
+
+impl ProcessActionCapabilities {
+    /// 逐动作能力不可用时给出统一的安全默认（整类禁用）。
+    pub fn all_unavailable(reason: impl Into<String>) -> Self {
+        let unavailable = CapabilityStatus::Unavailable(reason.into());
+        Self {
+            class: unavailable.clone(),
+            terminate: unavailable.clone(),
+            kill: unavailable.clone(),
+            kill_tree: unavailable.clone(),
+            pause: unavailable.clone(),
+            resume: unavailable.clone(),
+            renice: unavailable,
+        }
+    }
+
+    /// 读取单个动作的能力状态。
+    pub fn action(&self, action: ProcessAction) -> &CapabilityStatus {
+        match action {
+            ProcessAction::Terminate => &self.terminate,
+            ProcessAction::Kill => &self.kill,
+            ProcessAction::KillTree => &self.kill_tree,
+            ProcessAction::Pause => &self.pause,
+            ProcessAction::Resume => &self.resume,
+            ProcessAction::Renice(_) => &self.renice,
+        }
+    }
+}
+
 /// 容器工作区的只读行；宿主 PID 只在平台归属验证成功后出现。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ContainerSnapshotRow {
@@ -162,6 +210,20 @@ pub trait WorkspaceBackend: Send + Sync {
     /// 当前平台的进程控制能力；默认后端必须明确保持安全禁用。
     fn process_control_capability(&self) -> CapabilityStatus {
         CapabilityStatus::Unsupported(String::from("process control is not configured"))
+    }
+
+    /// 逐动作能力快照；默认与整类能力一致（真实后端可按平台差异化）。
+    fn process_action_capabilities(&self) -> ProcessActionCapabilities {
+        let class = self.process_control_capability();
+        ProcessActionCapabilities {
+            class: class.clone(),
+            terminate: class.clone(),
+            kill: class.clone(),
+            kill_tree: class.clone(),
+            pause: class.clone(),
+            resume: class.clone(),
+            renice: class,
+        }
     }
 
     /// 执行已经过 UI 两步确认的进程动作。

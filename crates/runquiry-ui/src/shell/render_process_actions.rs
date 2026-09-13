@@ -6,7 +6,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{AnyElement, App, Entity, IntoElement, ParentElement as _, Styled as _, div};
-use runquiry_core::{CapabilityStatus, InspectError, ProcessAction};
+use runquiry_core::{CapabilityStatus, InspectError, ProcessAction, Renice};
 use rust_i18n::t;
 
 use super::AppShell;
@@ -69,6 +69,9 @@ impl AppShell {
 
     fn action_controls(&self, shell: &Entity<Self>) -> [AnyElement; 2] {
         let busy = self.process_action_flow.is_busy();
+        // 逐动作门禁：平台不支持的动作不渲染入口（如 Windows 的
+        // 暂停/恢复/renice），并以「关闭进程树」替换被隐藏的空位。
+        let supported = |action: ProcessAction| self.action_capability(action).is_usable();
         let action_button = |id: &'static str, label: String, action: ProcessAction| {
             let shell = shell.clone();
             Button::new(id)
@@ -82,44 +85,60 @@ impl AppShell {
                     });
                 })
         };
+        let buttons: Vec<_> = [
+            (
+                ProcessAction::Terminate,
+                "process-terminate",
+                t!("actions.terminate").to_string(),
+            ),
+            (
+                ProcessAction::Kill,
+                "process-kill",
+                t!("actions.kill").to_string(),
+            ),
+            (
+                ProcessAction::KillTree,
+                "process-kill-tree",
+                t!("actions.kill_tree").to_string(),
+            ),
+            (
+                ProcessAction::Pause,
+                "process-pause",
+                t!("actions.pause").to_string(),
+            ),
+            (
+                ProcessAction::Resume,
+                "process-resume",
+                t!("actions.resume").to_string(),
+            ),
+        ]
+        .into_iter()
+        .filter(|(action, _, _)| supported(*action))
+        .map(|(action, id, label)| action_button(id, label, action))
+        .collect();
         let signals = h_flex()
             .flex_wrap()
             .gap_2()
-            .child(action_button(
-                "process-terminate",
-                t!("actions.terminate").to_string(),
-                ProcessAction::Terminate,
-            ))
-            .child(action_button(
-                "process-kill",
-                t!("actions.kill").to_string(),
-                ProcessAction::Kill,
-            ))
-            .child(action_button(
-                "process-pause",
-                t!("actions.pause").to_string(),
-                ProcessAction::Pause,
-            ))
-            .child(action_button(
-                "process-resume",
-                t!("actions.resume").to_string(),
-                ProcessAction::Resume,
-            ))
+            .children(buttons)
             .into_any_element();
+        let renice_supported =
+            Renice::try_from(0).is_ok_and(|value| supported(ProcessAction::Renice(value)));
         let renice = h_flex()
             .gap_2()
-            .child(Input::new(&self.renice_input).small().w_20())
-            .child({
-                let shell = shell.clone();
-                Button::new("process-renice")
-                    .small()
-                    .outline()
-                    .disabled(busy)
-                    .label(t!("actions.renice_button").to_string())
-                    .on_click(move |_, window, cx| {
-                        shell.update(cx, |shell, cx| {
-                            shell.request_renice_action(window, cx);
-                        });
+            .when(renice_supported, |row| {
+                row.child(Input::new(&self.renice_input).small().w_20())
+                    .child({
+                        let shell = shell.clone();
+                        Button::new("process-renice")
+                            .small()
+                            .outline()
+                            .disabled(busy)
+                            .label(t!("actions.renice_button").to_string())
+                            .on_click(move |_, window, cx| {
+                                shell.update(cx, |shell, cx| {
+                                    shell.request_renice_action(window, cx);
+                                });
+                            })
                     })
             })
             .into_any_element();
@@ -131,6 +150,7 @@ pub(super) fn action_label(action: ProcessAction) -> String {
     match action {
         ProcessAction::Terminate => t!("actions.terminate").to_string(),
         ProcessAction::Kill => t!("actions.kill").to_string(),
+        ProcessAction::KillTree => t!("actions.kill_tree").to_string(),
         ProcessAction::Pause => t!("actions.pause").to_string(),
         ProcessAction::Resume => t!("actions.resume").to_string(),
         ProcessAction::Renice(value) => t!("actions.renice", value = value.get()).to_string(),

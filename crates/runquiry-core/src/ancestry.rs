@@ -76,3 +76,97 @@ pub fn resolve_ancestry(
     chain.reverse(); // root→target
     Ok(Inspection::with_captured_at(Some(chain), issues, now))
 }
+
+/// 收集目标进程的全部后代（KillTree 用；快照内的多级 PPID 闭包）。
+///
+/// 广度优先逐层展开：直接子进程先于孙进程（与 KillTree「目标先死、后代
+/// 随后按层杀」的顺序一致）；已访问集合做环防护（构造出的 PPID 环不致死
+/// 循环）；按发现顺序返回，不含目标自身。
+pub fn collect_descendants(target: Pid, snapshot: &[ProcessSummary]) -> Vec<ProcessSummary> {
+    use std::collections::VecDeque;
+
+    let mut descendants: Vec<ProcessSummary> = Vec::new();
+    let mut seen = vec![target];
+    let mut frontier: VecDeque<Pid> = VecDeque::from([target]);
+    while let Some(pid) = frontier.pop_front() {
+        for candidate in snapshot {
+            let Some(parent) = candidate.parent_pid else {
+                continue;
+            };
+            if parent != pid || seen.contains(&candidate.identity.pid()) {
+                continue;
+            }
+            seen.push(candidate.identity.pid());
+            descendants.push(candidate.clone());
+            frontier.push_back(candidate.identity.pid());
+        }
+    }
+    descendants
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_descendants;
+    use crate::model::health::HealthStatus;
+    use crate::model::ids::Pid;
+    use crate::model::process::ProcessSummary;
+
+    fn summary(pid: u32, parent: Option<u32>) -> ProcessSummary {
+        ProcessSummary {
+            identity: crate::model::process::ProcessIdentity::new(
+                Pid::new(pid).unwrap_or(Pid::MIN),
+                None,
+                None,
+            ),
+            parent_pid: parent.map(|raw| Pid::new(raw).unwrap_or(Pid::MIN)),
+            command: format!("proc-{pid}"),
+            command_line: None,
+            user: None,
+            health: HealthStatus::Unknown,
+            container: None,
+            exe_deleted: false,
+            capabilities: Vec::new(),
+            cpu_time_seconds: None,
+            cpu_percent: None,
+            memory_rss_bytes: None,
+            memory_percent: None,
+        }
+    }
+
+    #[test]
+    fn descendants_are_collected_breadth_first_without_self() {
+        // 树：1 → {2, 3}；2 → {4}；4 → {5}。期望 2, 3, 4, 5（同层相邻）。
+        let snapshot = vec![
+            summary(1, None),
+            summary(2, Some(1)),
+            summary(3, Some(1)),
+            summary(4, Some(2)),
+            summary(5, Some(4)),
+        ];
+
+        let collected = collect_descendants(Pid::new(1).unwrap_or(Pid::MIN), &snapshot);
+
+        let pids: Vec<_> = collected.iter().map(|p| p.identity.pid().get()).collect();
+        assert_eq!(pids, vec![2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn parent_pointing_back_at_descendant_does_not_loop() {
+        // 构造 PPID 环：6 → 7 → 6。
+        let snapshot = vec![summary(6, Some(7)), summary(7, Some(6))];
+
+        let collected = collect_descendants(Pid::new(6).unwrap_or(Pid::MIN), &snapshot);
+
+        let pids: Vec<_> = collected.iter().map(|p| p.identity.pid().get()).collect();
+        assert_eq!(pids, vec![7]);
+    }
+
+    #[test]
+    fn processes_without_parent_field_are_ignored() {
+        let snapshot = vec![summary(8, None), summary(9, Some(8))];
+
+        let collected = collect_descendants(Pid::new(42).unwrap_or(Pid::MIN), &snapshot);
+
+        assert!(collected.is_empty());
+    }
+}

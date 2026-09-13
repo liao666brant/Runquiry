@@ -22,7 +22,7 @@ pub mod source_shell;
 pub mod warnings;
 
 pub use analyze::{Analysis, AnalysisPorts, analyze};
-pub use ancestry::resolve_ancestry;
+pub use ancestry::{collect_descendants, resolve_ancestry};
 pub use model::capability::CapabilityStatus;
 pub use model::container_context::{
     ContainerContext, HealthcheckStatus, detect_container_from_cgroup, detect_lxc_runtime,

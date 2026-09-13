@@ -26,7 +26,9 @@ use gpui_kit::{
 use runquiry_core::{Analysis, CapabilityStatus, Generation, InspectError, Inspection};
 use rust_i18n::t;
 
-use crate::backend::{InvestigationTarget, WorkspaceBackend, WorkspaceResultGate};
+use crate::backend::{
+    InvestigationTarget, ProcessActionCapabilities, WorkspaceBackend, WorkspaceResultGate,
+};
 use crate::locale::{Lang, set_language};
 use crate::processes::{DetailRequest, ProcessActionFlow, QueryOutcome, TargetKind};
 use crate::session::{AppSession, WorkspaceId};
@@ -40,7 +42,7 @@ pub const KEY_CONTEXT: &str = "RunquiryShell";
 pub(crate) const MAIN_RATIO: f32 = 65.;
 pub(crate) const DETAIL_RATIO: f32 = 35.;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// 需要由应用装配层持久化的设置变化。
 pub enum ShellEvent {
     /// 主题变化。
@@ -49,6 +51,8 @@ pub enum ShellEvent {
     LanguageChanged(Lang),
     /// 当前工作区变化。
     WorkspaceChanged(WorkspaceId),
+    /// 工作区表格列显隐变化：工作区与其全量隐藏列 key 集合。
+    HiddenColumnsChanged(WorkspaceId, std::collections::BTreeSet<String>),
 }
 
 #[allow(missing_docs, clippy::derive_partial_eq_without_eq)]
@@ -64,6 +68,7 @@ pub mod actions {
             Workspace4,
             OpenProcessActions,
             KillProcess,
+            KillTreeProcess,
             TerminateProcess,
             PauseProcess,
             ResumeProcess,
@@ -73,7 +78,7 @@ pub mod actions {
     );
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// 首帧应用的持久化启动设置。
 pub struct ShellStartup {
     /// 初始主题。
@@ -82,6 +87,8 @@ pub struct ShellStartup {
     pub language: Lang,
     /// 初始工作区。
     pub workspace: WorkspaceId,
+    /// 各工作区隐藏的表格列（工作区键 → 列 key 集合）。
+    pub hidden_columns: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 }
 
 /// Runquiry 产品窗口的根内容视图。
@@ -94,7 +101,6 @@ pub struct AppShell {
     pub(crate) main_focus: FocusHandle,
     pub(crate) detail_focus: FocusHandle,
     pub(crate) query_input: Entity<InputState>,
-    pub(crate) filter_input: Entity<InputState>,
     pub(crate) renice_input: Entity<InputState>,
     pub(crate) target_kind: TargetKind,
     pub(crate) query_outcome: Option<QueryOutcome<InvestigationTarget>>,
@@ -103,6 +109,7 @@ pub struct AppShell {
     data: ShellData,
     backend: Arc<dyn WorkspaceBackend>,
     process_action_capability: CapabilityStatus,
+    process_action_capabilities: ProcessActionCapabilities,
     process_action_flow: ProcessActionFlow,
     process_action_menu_open: bool,
     query_generation: Generation,
@@ -145,19 +152,18 @@ impl AppShell {
     ) -> Self {
         let mut session = AppSession::new();
         session.switch_workspace(startup.workspace);
-        let data = ShellData::new(window, cx);
+        let shell_handle = cx.entity().downgrade();
+        let data = ShellData::new(window, cx, startup.hidden_columns.clone(), shell_handle);
         let query_input = cx
             .new(|cx| InputState::new(window, cx).placeholder(t!("query.placeholder").to_string()));
-        let filter_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(t!("filter.placeholder").to_string())
-        });
         let renice_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value("0")
                 .placeholder(t!("actions.renice.placeholder").to_string())
         });
-        let subscriptions = table_subscriptions(&data, &query_input, &filter_input, window, cx);
+        let subscriptions = table_subscriptions(&data, &query_input, window, cx);
         let process_action_capability = backend.process_control_capability();
+        let process_action_capabilities = backend.process_action_capabilities();
         Self {
             session,
             theme: startup.theme,
@@ -167,7 +173,6 @@ impl AppShell {
             main_focus: cx.focus_handle().tab_index(16),
             detail_focus: cx.focus_handle().tab_index(17),
             query_input,
-            filter_input,
             renice_input,
             target_kind: TargetKind::Name,
             query_outcome: None,
@@ -176,6 +181,7 @@ impl AppShell {
             data,
             backend,
             process_action_capability,
+            process_action_capabilities,
             process_action_flow: ProcessActionFlow::new(),
             process_action_menu_open: false,
             query_generation: Generation::first(),
@@ -193,6 +199,14 @@ impl AppShell {
     /// 当前工作区。
     pub const fn active_workspace(&self) -> WorkspaceId {
         self.session.active()
+    }
+
+    /// 单个动作的能力状态（逐动作门禁；随 Processes 刷新动态更新）。
+    pub(crate) fn action_capability(
+        &self,
+        action: runquiry_core::ProcessAction,
+    ) -> CapabilityStatus {
+        self.process_action_capabilities.action(action).clone()
     }
     /// 当前主题。
     pub const fn theme(&self) -> ThemeMode {
@@ -214,6 +228,27 @@ impl AppShell {
         cx.notify();
     }
 
+    /// 切换工作区表格的单列显隐，并通知装配层持久化。
+    pub fn set_column_visible(
+        &mut self,
+        workspace: WorkspaceId,
+        key: &str,
+        visible: bool,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.data.set_column_hidden(workspace, key, visible, cx);
+        cx.emit(ShellEvent::HiddenColumnsChanged(
+            workspace,
+            self.data.hidden_columns(workspace),
+        ));
+        cx.notify();
+    }
+
+    /// 当前工作区隐藏的列 key 集合。
+    pub fn hidden_columns(&self, workspace: WorkspaceId) -> std::collections::BTreeSet<String> {
+        self.data.hidden_columns(workspace)
+    }
+
     /// 切换语言且保留所有工作区状态。
     pub fn set_language(&mut self, lang: Lang, window: &mut Window, cx: &mut Context<'_, Self>) {
         if self.lang == lang {
@@ -223,9 +258,6 @@ impl AppShell {
         self.lang = lang;
         self.query_input.update(cx, |input, cx| {
             input.set_placeholder(t!("query.placeholder").to_string(), window, cx);
-        });
-        self.filter_input.update(cx, |input, cx| {
-            input.set_placeholder(t!("filter.placeholder").to_string(), window, cx);
         });
         self.renice_input.update(cx, |input, cx| {
             input.set_placeholder(t!("actions.renice.placeholder").to_string(), window, cx);

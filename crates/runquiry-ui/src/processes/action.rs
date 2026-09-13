@@ -199,7 +199,7 @@ impl ProcessActionFlow {
             Ok(()) => {
                 self.last_error = None;
                 Some(ActionCompletion::Succeeded(match request.action {
-                    ProcessAction::Terminate | ProcessAction::Kill => {
+                    ProcessAction::Terminate | ProcessAction::Kill | ProcessAction::KillTree => {
                         SuccessDisposition::ReturnToList
                     }
                     ProcessAction::Pause | ProcessAction::Resume | ProcessAction::Renice(_) => {

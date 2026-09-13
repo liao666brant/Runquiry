@@ -10,12 +10,14 @@ use gpui_kit::{
 };
 
 use super::{PortSort, PortsState, ports::protocol_name};
+use crate::workspaces::ColumnVisibility;
 use rust_i18n::t;
 
 /// Ports 的虚拟表 delegate；领域 ID 与 `DataTable` 行索引解耦。
 pub struct PortsTableDelegate {
     state: PortsState,
     columns: [Column; 7],
+    visibility: ColumnVisibility,
 }
 
 impl std::fmt::Debug for PortsTableDelegate {
@@ -28,27 +30,38 @@ impl std::fmt::Debug for PortsTableDelegate {
 }
 
 impl PortsTableDelegate {
+    /// 全量列定义（含被隐藏的列）；列设置弹层按此渲染选项。
+    pub fn column_defs() -> [Column; 7] {
+        [
+            Column::new("protocol", t!("column.protocol").to_string()).sortable(),
+            Column::new("address", t!("column.address").to_string()).sortable(),
+            Column::new("port", t!("column.port").to_string())
+                .sortable()
+                .text_right(),
+            Column::new("state", t!("column.state").to_string()).sortable(),
+            Column::new("pid", t!("column.pid").to_string())
+                .sortable()
+                .text_right(),
+            Column::new("process", t!("column.process").to_string()).sortable(),
+            Column::new("public-bind", t!("column.public").to_string()).sortable(),
+        ]
+    }
+
     /// 创建 delegate。
     pub fn new(state: PortsState) -> Self {
         Self {
             state,
-            columns: [
-                Column::new("protocol", t!("column.protocol").to_string()).sortable(),
-                Column::new("address", t!("column.address").to_string()).sortable(),
-                Column::new("port", t!("column.port").to_string())
-                    .sortable()
-                    .text_right(),
-                Column::new("state", t!("column.state").to_string()).sortable(),
-                Column::new("pid", t!("column.pid").to_string())
-                    .sortable()
-                    .text_right(),
-                Column::new("process", t!("column.process").to_string()).sortable(),
-                Column::new("public-bind", t!("column.public").to_string()).sortable(),
-            ],
+            columns: Self::column_defs(),
+            visibility: ColumnVisibility::new(),
         }
     }
 
-    /// 用新快照替换 delegate，并由 `TableState` 刷新列/行布局。
+    /// 整体替换隐藏列集合（来自壳层的持久化状态）。
+    pub fn set_hidden(&mut self, hidden: std::collections::BTreeSet<String>) {
+        self.visibility.set_hidden(hidden);
+    }
+
+    /// 替换纯状态。
     pub fn replace(&mut self, state: PortsState) {
         self.state = state;
     }
@@ -58,9 +71,15 @@ impl PortsTableDelegate {
         &self.state
     }
 
-    /// 按当前 locale 重建列标题。
+    /// 按当前 locale 重建列标题，保留列显隐状态。
     pub fn relocalize(&mut self) {
+        let hidden = self.visibility.hidden().clone();
         *self = Self::new(self.state.clone());
+        self.visibility.set_hidden(hidden);
+    }
+
+    fn visible_columns(&self) -> Vec<Column> {
+        self.visibility.visible(&self.columns).cloned().collect()
     }
 }
 
@@ -104,7 +123,7 @@ pub fn update_ports_table(
 
 impl TableDelegate for PortsTableDelegate {
     fn columns_count(&self, _: &App) -> usize {
-        self.columns.len()
+        self.visibility.visible_count(&self.columns)
     }
 
     fn rows_count(&self, _: &App) -> usize {
@@ -112,7 +131,10 @@ impl TableDelegate for PortsTableDelegate {
     }
 
     fn column(&self, col_ix: usize, _: &App) -> Column {
-        self.columns[col_ix].clone()
+        self.visible_columns()
+            .into_iter()
+            .nth(col_ix)
+            .unwrap_or_else(|| Column::new("unknown", "—"))
     }
 
     fn render_tr(
@@ -149,20 +171,28 @@ impl TableDelegate for PortsTableDelegate {
         let Some(row) = self.state.row(row_ix) else {
             return div().into_any_element();
         };
-        let text = match col_ix {
-            0 => protocol_name(row.entry.protocol).to_owned(),
-            1 => row.entry.address.clone(),
-            2 => row.entry.port.to_string(),
-            3 => row.entry.state.clone(),
-            4 => row
+        // 可见索引 → 列 key：隐藏列不影响后续列的语义分派。
+        let Some(key) = self
+            .visible_columns()
+            .get(col_ix)
+            .map(|column| column.key.clone())
+        else {
+            return div().into_any_element();
+        };
+        let text = match key.as_ref() {
+            "protocol" => protocol_name(row.entry.protocol).to_owned(),
+            "address" => row.entry.address.clone(),
+            "port" => row.entry.port.to_string(),
+            "state" => row.entry.state.clone(),
+            "pid" => row
                 .entry
                 .pid
                 .map_or_else(|| "—".into(), |pid| pid.to_string()),
-            5 => row
+            "process" => row
                 .process
                 .clone()
                 .unwrap_or_else(|| t!("value.unknown_owner").to_string()),
-            6 => if row.public_bind {
+            "public-bind" => if row.public_bind {
                 t!("value.yes")
             } else {
                 t!("value.no")
@@ -185,18 +215,23 @@ impl TableDelegate for PortsTableDelegate {
         _: &mut Window,
         cx: &mut Context<'_, TableState<Self>>,
     ) {
-        let field = [
-            PortSort::Protocol,
-            PortSort::Address,
-            PortSort::Port,
-            PortSort::State,
-            PortSort::Pid,
-            PortSort::Process,
-            PortSort::PublicBind,
-        ]
-        .get(col_ix)
-        .copied()
-        .unwrap_or_default();
+        let Some(key) = self
+            .visible_columns()
+            .get(col_ix)
+            .map(|column| column.key.to_string())
+        else {
+            return;
+        };
+        let field = match key.as_str() {
+            "protocol" => PortSort::Protocol,
+            "address" => PortSort::Address,
+            "port" => PortSort::Port,
+            "state" => PortSort::State,
+            "pid" => PortSort::Pid,
+            "process" => PortSort::Process,
+            "public-bind" => PortSort::PublicBind,
+            _ => PortSort::default(),
+        };
         self.state
             .set_sort(field, !matches!(sort, ColumnSort::Descending));
         cx.emit(gpui_kit::component::table::TableEvent::SelectColumn(col_ix));

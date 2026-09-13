@@ -18,7 +18,7 @@
 // 两个 lint 互相冲突的场景（与 gallery example 的做法一致，模块级豁免）。
 #![allow(clippy::redundant_pub_crate)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write as _};
@@ -42,6 +42,9 @@ const TEMP_CREATE_ATTEMPTS: usize = 128;
 /// 产品表格在 B5/B6 接入后由 UI 回填；本阶段 schema 先行，保证设置文件
 /// 版本稳定。
 pub(crate) type ColumnLayouts = BTreeMap<String, BTreeMap<String, u32>>;
+
+/// 各工作区隐藏的表格列：工作区键 → 列 ID 集合（列显隐设置按钮写入）。
+pub(crate) type HiddenColumns = BTreeMap<String, BTreeSet<String>>;
 
 /// 窗口尺寸（逻辑像素）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -93,6 +96,10 @@ pub(crate) struct Settings {
     /// 各工作区的列布局。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) column_layouts: ColumnLayouts,
+    /// 各工作区隐藏的表格列（列显隐设置按钮持久化；列 ID 为表格列 key，
+    /// 非调查输入）。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) hidden_columns: HiddenColumns,
 }
 
 impl Settings {
@@ -308,6 +315,10 @@ mod tests {
             }),
             last_workspace: Some(String::from("ports")),
             column_layouts: BTreeMap::new(),
+            hidden_columns: BTreeMap::from([(
+                String::from("processes"),
+                BTreeSet::from([String::from("health")]),
+            )]),
         };
         save_settings(Some(&path), &settings)?;
         assert_eq!(load_settings(Some(&path)), settings, "恢复必须逐字段一致");
@@ -366,6 +377,7 @@ mod tests {
             }),
             last_workspace: Some(String::from("file-locks")),
             column_layouts: BTreeMap::new(),
+            hidden_columns: BTreeMap::new(),
         })
         .map_err(|error| error.to_string())?;
         for banned in ["pid", "target", "filter", "selection", "query", "path"] {

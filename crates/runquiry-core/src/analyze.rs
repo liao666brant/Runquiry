@@ -65,8 +65,9 @@ pub struct Analysis {
     pub source: crate::model::source::Source,
     /// 服务重启计数（仅 systemd 来源从 `Source.details` 的 `NRestarts` 解析）。
     pub restart_count: u64,
-    /// 子进程 PID（按 PID 升序；快照失败静默为空）。
-    pub children: Vec<Pid>,
+    /// 子进程快照条目（按 PID 升序；快照失败静默为空）。保留命令名供
+    /// 祖先树渲染（parity line 152：同一份结果填充 Children）。
+    pub children: Vec<ProcessSummary>,
     /// 目标进程 Socket。
     pub sockets: Vec<SocketEntry>,
     /// 目标进程文件锁（`ProcessFileLocks` 未提供时为空）。
@@ -261,15 +262,15 @@ fn collect_file_locks(
 }
 
 /// 子进程收集：从第 0 步快照筛 PPID == 目标，按 PID 升序去重（parity：快照
-/// 失败静默降级为空，不影响其余分析）。
-fn children_of(target: &ProcessSummary, snapshot: &[ProcessSummary]) -> Vec<Pid> {
-    let mut children: Vec<Pid> = snapshot
+/// 失败静默降级为空，不影响其余分析）。条目保留命令名，祖先树直接渲染。
+fn children_of(target: &ProcessSummary, snapshot: &[ProcessSummary]) -> Vec<ProcessSummary> {
+    let mut children: Vec<ProcessSummary> = snapshot
         .iter()
         .filter(|p| p.parent_pid == Some(target.identity.pid()))
-        .map(|p| p.identity.pid())
+        .cloned()
         .collect();
-    children.sort_unstable();
-    children.dedup();
+    children.sort_by_key(|p| p.identity.pid());
+    children.dedup_by(|a, b| a.identity.pid() == b.identity.pid());
     children
 }
 

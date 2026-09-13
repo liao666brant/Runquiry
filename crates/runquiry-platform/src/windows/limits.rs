@@ -1,25 +1,20 @@
 //! Windows 缺失端口的 Unsupported 建模（纯委托 [`super::unsupported`]）。
 //!
 //! parity §10：Windows 使用文件共享模式而非 POSIX 式锁，无全系统锁枚举
-//! API；进程操作（terminate / kill / pause / resume / renice）整类不可安全
-//! 提供。两者均表达为 [`CapabilityStatus::Unsupported`] 并返回固定失败
-//! 结果——不返回伪数据、不经命令行模拟；UI 依据能力态先行禁用，`execute`
-//! 的错误返回仅为误用防御。容器归属验证恒 `false`（trait 契约：证据缺失
-//! 不得用于归属判定）。
+//! API；文件锁整类表达为 [`CapabilityStatus::Unsupported`] 并返回固定失败
+//! 结果——不返回伪数据、不经命令行模拟；UI 依据能力态先行禁用。容器归属
+//! 验证恒 `false`（trait 契约：证据缺失不得用于归属判定）。
+//! 进程控制已由 [`super::controller`] 实现关闭类（terminate/kill/kill-tree）。
 
 use std::path::Path;
 
 use runquiry_core::{
     CapabilityStatus, ContainerKey, ContainerProcessVerifier, DiagnosticCode, DiagnosticIssue,
-    FileInventory, InspectError, Inspection, Pid, ProcessAction, ProcessController,
-    ProcessFileLocks, ProcessIdentity,
+    FileInventory, Inspection, Pid, ProcessFileLocks,
 };
 
 use super::WindowsPlatform;
-use super::unsupported::{
-    FILE_LOCKS_REASON, PROCESS_CONTROL_REASON, control_error, file_locks_failed_holders,
-    file_locks_failed_list,
-};
+use super::unsupported::{FILE_LOCKS_REASON, file_locks_failed_holders, file_locks_failed_list};
 
 impl FileInventory for WindowsPlatform {
     fn capability(&self) -> CapabilityStatus {
@@ -41,22 +36,6 @@ impl ProcessFileLocks for WindowsPlatform {
             DiagnosticCode::Unsupported,
             String::from(FILE_LOCKS_REASON),
         )])
-    }
-}
-
-impl ProcessController for WindowsPlatform {
-    fn capability(&self) -> CapabilityStatus {
-        CapabilityStatus::Unsupported(String::from(PROCESS_CONTROL_REASON))
-    }
-
-    fn execute(
-        &self,
-        _identity: &ProcessIdentity,
-        _action: ProcessAction,
-    ) -> Result<(), InspectError> {
-        // 正常流程不可达：UI 依据能力态先行禁用；防御性返回保证误用不产生
-        // 任何副作用。
-        Err(control_error())
     }
 }
 

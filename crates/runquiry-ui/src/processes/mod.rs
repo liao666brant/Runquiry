@@ -15,7 +15,7 @@ pub use model::{DetailRequest, ProcessRows, ProcessesState, SelectionChange};
 pub use query::{QueryOutcome, TargetKind};
 pub use redaction::{DetailPrivacySession, RedactedArgument, RedactedEnvironment};
 pub use surface::{SurfaceSnapshot, SurfaceState};
-pub use table::{ProcessTable, ProcessTableDelegate};
+pub use table::{ProcessSort, ProcessSortKey, ProcessTable, ProcessTableDelegate};
 
 #[cfg(test)]
 mod action_tests;

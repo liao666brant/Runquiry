@@ -29,6 +29,7 @@
 //!
 //! 手写 extern：无——ntdll 函数经 `Wdk_System_Threading` feature 导出。
 
+mod controller;
 mod details;
 mod ffi;
 mod ffi_scm;

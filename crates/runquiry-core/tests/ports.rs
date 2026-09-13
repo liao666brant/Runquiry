@@ -227,6 +227,10 @@ fn all_seven_ports_are_implementable_and_callable() -> TestResult {
             container: None,
             exe_deleted: false,
             capabilities: Vec::new(),
+            cpu_time_seconds: None,
+            cpu_percent: None,
+            memory_rss_bytes: None,
+            memory_percent: None,
         }],
     };
     assert_eq!(processes.list().data.as_ref().map(Vec::len), Some(1));

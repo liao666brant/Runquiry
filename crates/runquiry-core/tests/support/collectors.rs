@@ -43,6 +43,10 @@ pub fn summary(
         container: None,
         exe_deleted: false,
         capabilities: Vec::new(),
+        cpu_time_seconds: None,
+        cpu_percent: None,
+        memory_rss_bytes: None,
+        memory_percent: None,
     }
 }
 

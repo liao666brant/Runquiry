@@ -73,6 +73,9 @@ pub enum ProcessAction {
     Terminate,
     /// 强制终止（SIGKILL）。
     Kill,
+    /// 强制终止目标及其全部后代（Runquiry 扩展：SIGKILL /
+    /// TerminateProcess，目标先死、后代随后；无 witr 参照）。
+    KillTree,
     /// 暂停（SIGSTOP）。
     Pause,
     /// 恢复（SIGCONT）。
@@ -187,6 +190,30 @@ pub struct ProcessSummary {
     /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按空列表读取。
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// 进程生命周期累计 CPU 时间（秒，平台归一化；parity line 36 资源基线，
+    /// parity line 67 两样本差分的原料）；未取得为 `None`。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub cpu_time_seconds: Option<f64>,
+    /// 最近刷新间隔内的 CPU 使用率百分比（parity line 67 两样本差分；
+    /// 首样本或平台不可得时为 `None`，UI 显示「—」）。由装配层在两次
+    /// 快照间差分填充，平台采集器不填该字段。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub cpu_percent: Option<f64>,
+    /// 常驻内存字节数（parity：`MemoryRSS`，单位字节）；未取得为 `None`。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub memory_rss_bytes: Option<u64>,
+    /// 内存占系统物理内存总量百分比（parity：`MemoryPercent`）；总量不可得
+    /// 时为 `None`。
+    ///
+    /// 带 `#[serde(default)]`：缺少该字段的旧序列化条目按 `None` 读取。
+    #[serde(default)]
+    pub memory_percent: Option<f64>,
 }
 
 /// 进程详情快照：资源、工作目录、环境变量与子进程。

@@ -48,11 +48,29 @@ pub trait ProcessDetailsProvider {
 ///   `ProcessChanged` 携带重读得到的 current 身份供 UI 呈现。
 ///
 /// 后置条件：权限不足返回 [`InspectError::PermissionDenied`]，应用不自动提权；
-/// Windows 平台通过 [`CapabilityStatus::Unsupported`](crate::model::capability::CapabilityStatus::Unsupported)
-/// 表达整类动作不可用，而不是在执行时返回伪结果。
+/// 平台可实现单个动作类别的子集：不可用的动作经 [`ProcessController::
+/// action_capability`] 表达 `Unsupported`，UI 不得为其渲染入口。
+///
+/// `KillTree` 语义（Runquiry 扩展，无 witr 参照）：目标进程按上述身份校验
+/// 执行强杀；后代自确认后的快照收集，逐个以快照 `start_time` 做 PID 复用
+/// 防护后强杀（SIGKILL / TerminateProcess）。目标先于后代；目标强杀失败
+/// 立即返回该错误。后代已退出（pidfd `ESRCH` / 打开报「消失或参数非法」）
+/// 视为成功；身份不可验证（`start_time` 缺失或不匹配，含 PID 复用）跳过；
+/// 其余失败——含**打开/信号阶段的权限拒绝**（受保护后代）——在全部尝试后
+/// 聚合返回首个非「已退出」错误，使「部分后代存活」不至于被静默报成成功。
+/// 后代集合中含 Runquiry 自身时在**任何后代被杀之前**整体返回
+/// [`InspectError::InvalidTarget`]（不做部分清杀；目标本身已先行强杀）。
 pub trait ProcessController {
-    /// 该能力的平台可用状态。
+    /// 该能力的平台可用状态（动作类别的整体可用性）。
     fn capability(&self) -> CapabilityStatus;
+
+    /// 单个动作的可用状态；默认与整体能力一致。实现只对实际支持的动作
+    /// 返回 `Supported`，UI 据此隐藏不支持的入口（如 Windows 的
+    /// 暂停/恢复/renice）。
+    fn action_capability(&self, action: &ProcessAction) -> CapabilityStatus {
+        let _ = action;
+        self.capability()
+    }
 
     /// 以确认流程持有的 expected 身份执行动作（实现内部重读比对，见 trait 文档）。
     fn execute(

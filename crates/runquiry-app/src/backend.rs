@@ -2,6 +2,7 @@
 
 mod analysis_gate;
 mod container;
+mod cpu_sample;
 mod unavailable;
 
 #[cfg(test)]
@@ -13,12 +14,13 @@ use std::time::SystemTime;
 use runquiry_core::{
     Analysis, AnalysisPorts, CapabilityStatus, ContainerInventory, DiagnosticCode, FileInventory,
     InspectError, Inspection, NetworkInventory, Pid, ProcessAction, ProcessController,
-    ProcessIdentity, ProcessInventory, ProcessSummary, QueryTarget, Resolution, analyze,
+    ProcessIdentity, ProcessInventory, ProcessSummary, QueryTarget, Renice, Resolution, analyze,
     resolve_file_holders, resolve_name, resolve_port_owner,
 };
 use runquiry_ui::WorkspaceId;
 use runquiry_ui::backend::{
-    ContainerSnapshotRow, InvestigationTarget, PortSnapshotRow, WorkspaceBackend, WorkspaceSnapshot,
+    ContainerSnapshotRow, InvestigationTarget, PortSnapshotRow, ProcessActionCapabilities,
+    WorkspaceBackend, WorkspaceSnapshot,
 };
 
 // 目标平台选择（Batch 6 最小装配）：app 边界按 target_os 绑定单一平台结构体，
@@ -37,6 +39,8 @@ pub use self::unavailable::UnavailableBackend;
 pub struct PlatformBackend {
     analysis_gate: analysis_gate::AnalysisGate,
     containers: Arc<ContainerRuntimes>,
+    /// 进程 CPU% 两样本差分状态（跨刷新保留，见 [`cpu_sample`]）。
+    cpu_samples: std::sync::Mutex<cpu_sample::CpuSampleStore>,
 }
 
 impl PlatformBackend {
@@ -47,6 +51,7 @@ impl PlatformBackend {
         Ok(Self {
             analysis_gate: analysis_gate::AnalysisGate::new(),
             containers,
+            cpu_samples: std::sync::Mutex::new(cpu_sample::CpuSampleStore::default()),
         })
     }
 
@@ -129,10 +134,21 @@ impl WorkspaceBackend for PlatformBackend {
             Err(error) => return UnavailableBackend::new(error.to_string()).load(workspace),
         };
         match workspace {
-            WorkspaceId::Processes => WorkspaceSnapshot::Processes {
-                capability: ProcessInventory::capability(&platform),
-                inspection: ProcessInventory::list(&platform).map(Arc::from),
-            },
+            WorkspaceId::Processes => {
+                let mut inspection = ProcessInventory::list(&platform);
+                // 两样本差分：写回本轮 cpu_percent（锁中毒按数据原样恢复，
+                // 采样状态丢失只影响一次差分）。
+                if let Some(summaries) = inspection.data.as_mut() {
+                    self.cpu_samples
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .apply(summaries);
+                }
+                WorkspaceSnapshot::Processes {
+                    capability: ProcessInventory::capability(&platform),
+                    inspection: inspection.map(Arc::from),
+                }
+            }
             WorkspaceId::Ports => {
                 let inventory = ProcessInventory::list(&platform);
                 WorkspaceSnapshot::Ports {
@@ -277,6 +293,32 @@ impl WorkspaceBackend for PlatformBackend {
             // 平台结构构造失败是环境不可用而非平台不支持：保留能力四态区分。
             Err(InspectError::Unsupported { reason }) => CapabilityStatus::Unavailable(reason),
             Err(error) => CapabilityStatus::Unavailable(error.to_string()),
+        }
+    }
+
+    fn process_action_capabilities(&self) -> ProcessActionCapabilities {
+        match Self::fresh_platform() {
+            Ok(platform) => {
+                let action = |action: ProcessAction| {
+                    ProcessController::action_capability(&platform, &action)
+                };
+                // Renice 载荷不影响能力结论（平台对整个 Renice 类别给出结
+                // 论）；0 恒在合法区间，unwrap_or 分支不可达。
+                let renice = Renice::try_from(0)
+                    .map(ProcessAction::Renice)
+                    .unwrap_or(ProcessAction::Terminate);
+                ProcessActionCapabilities {
+                    class: ProcessController::capability(&platform),
+                    terminate: action(ProcessAction::Terminate),
+                    kill: action(ProcessAction::Kill),
+                    kill_tree: action(ProcessAction::KillTree),
+                    pause: action(ProcessAction::Pause),
+                    resume: action(ProcessAction::Resume),
+                    renice: action(renice),
+                }
+            }
+            // 平台结构构造失败是环境不可用而非平台不支持：保留能力四态区分。
+            Err(error) => ProcessActionCapabilities::all_unavailable(error.to_string()),
         }
     }
 

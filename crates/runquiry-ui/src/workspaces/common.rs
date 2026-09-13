@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use gpui_kit::component::table::Column;
 use runquiry_core::{CapabilityStatus, DiagnosticCode, DiagnosticIssue, Generation, Inspection};
 
 use crate::DataState;
@@ -173,5 +174,112 @@ impl<K: Eq + Clone> StableSelection<K> {
     /// 目标是否已从最新快照消失。
     pub const fn is_stale(&self) -> bool {
         self.stale
+    }
+}
+
+/// 表格列显隐状态：全量列定义之外的隐藏列 ID 集合。
+///
+/// 由各表格 delegate 持有；`DataTable` 只看到可见列，因此行渲染与表头
+/// 排序都必须经由 [`ColumnVisibility::visible`] 的可见索引取列 ID。
+#[derive(Clone, Debug, Default)]
+pub struct ColumnVisibility {
+    hidden: std::collections::BTreeSet<String>,
+}
+
+impl ColumnVisibility {
+    /// 以全量可见为初始状态。
+    pub const fn new() -> Self {
+        Self {
+            hidden: std::collections::BTreeSet::new(),
+        }
+    }
+
+    /// 用外部（持久化）状态整体替换隐藏集合。
+    pub fn set_hidden(&mut self, hidden: std::collections::BTreeSet<String>) {
+        self.hidden = hidden;
+    }
+
+    /// 当前隐藏列 ID 集合的只读视图。
+    pub fn hidden(&self) -> &std::collections::BTreeSet<String> {
+        &self.hidden
+    }
+
+    /// 切换单列：`hidden = true` 隐藏，`false` 显示。
+    pub fn set_visible(&mut self, key: &str, visible: bool) {
+        if visible {
+            self.hidden.remove(key);
+        } else {
+            self.hidden.insert(String::from(key));
+        }
+    }
+
+    /// 全量列中剔除隐藏列后的可见序列（保持原相对顺序）。
+    pub fn visible<'a>(&self, columns: &'a [Column]) -> impl Iterator<Item = &'a Column> {
+        columns
+            .iter()
+            .filter(|column| !self.hidden.contains(column.key.as_ref()))
+    }
+
+    /// 可见列数量。
+    pub fn visible_count(&self, columns: &[Column]) -> usize {
+        columns.len()
+            - self
+                .hidden
+                .iter()
+                .filter(|key| columns.iter().any(|column| &column.key == *key))
+                .count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ColumnVisibility;
+    use gpui_kit::component::table::Column;
+    use std::collections::BTreeSet;
+
+    fn columns() -> Vec<Column> {
+        vec![
+            Column::new("a", "A"),
+            Column::new("b", "B"),
+            Column::new("c", "C"),
+        ]
+    }
+
+    #[test]
+    fn hidden_columns_are_excluded_from_visible_sequence() {
+        let mut visibility = ColumnVisibility::new();
+        visibility.set_visible("b", false);
+
+        let visible: Vec<_> = visibility
+            .visible(&columns())
+            .map(|column| column.key.to_string())
+            .collect();
+
+        assert_eq!(visible, vec!["a", "c"]);
+        assert_eq!(visibility.visible_count(&columns()), 2);
+    }
+
+    #[test]
+    fn unknown_hidden_keys_do_not_change_visible_count() {
+        let mut visibility = ColumnVisibility::new();
+        let mut hidden = BTreeSet::new();
+        hidden.insert(String::from("nonexistent"));
+        visibility.set_hidden(hidden);
+
+        assert_eq!(visibility.visible_count(&columns()), 3);
+    }
+
+    #[test]
+    fn re_showing_a_column_removes_it_from_hidden_set() {
+        let mut visibility = ColumnVisibility::new();
+        visibility.set_visible("a", false);
+        visibility.set_visible("a", true);
+
+        let visible: Vec<_> = visibility
+            .visible(&columns())
+            .map(|column| column.key.to_string())
+            .collect();
+
+        assert_eq!(visible, vec!["a", "b", "c"]);
     }
 }
