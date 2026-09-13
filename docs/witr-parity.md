@@ -252,6 +252,7 @@
 | 进程操作实现为信号（SIGKILL/SIGTERM/SIGSTOP/SIGCONT）与 setpriority(PRIO_PROCESS) | parity | [`killProcess/termProcess/pauseProcess/resumeProcess` 与 `sendSignal`](../witr/internal/tui/actions.go)、[`setNice 内的 syscall.Setpriority(PRIO_PROCESS, pid, value)`](../witr/internal/tui/actions.go) | platform ProcessController | Linux 同 witr；Windows 关闭类改用 TerminateProcess（intentional change，2026-09-12 用户裁决：仅关闭类；暂停/恢复/renice Unsupported，见 §10） |
 | Runquiry 扩展：关闭进程树（KillTree）——目标先死、后代按快照 PPID 树逐个强杀，后代以快照 start_time 做 PID 复用防护 | intentional change（无 witr 参照；Runquiry 2026-09-12 新增） | 无（witr 仅单进程 kill/term，见 [`actions.go`](../witr/internal/tui/actions.go)） | core ProcessAction::KillTree + platform ProcessController + ui 右键菜单/动作面板 | Linux pidfd 逐进程 SIGKILL；Windows TerminateProcess；后代已退出按成功，其余失败聚合首错 |
 | 进程操作入口增加行右键菜单（关闭进程/关闭进程树） | intentional change（无 witr 参照；witr 为键盘动作菜单） | witr 动作入口见 [`actionMenuSelect`](../witr/internal/tui/action_fsm.go) | ui Processes 表格行右键菜单 | 逐动作能力门禁：`ProcessController::action_capability`（Runquiry 扩展）不可用的动作不渲染入口 |
+| Runquiry 扩展：在系统文件管理器中定位进程可执行文件（「打开文件位置」） | intentional change（无 witr 参照；Runquiry 2026-09-13 新增，Windows 专属） | 无（witr 不提供文件管理器定位） | core `ProcessController::reveal_capability`/`reveal_executable` + platform `ShellExecuteW` + ui 右键菜单 | Windows 经 `explorer.exe /select` 委托系统文件管理器；非 Windows `Unsupported`（不渲染入口）。展示类非破坏性动作，不走两步确认流程且与破坏性动作流程解耦（动作流程忙时静默拒绝）；失败按路径不可得 / 拒绝访问 / 文件管理器调用失败分别映射 `NotFound` / `PermissionDenied` / `ExternalTool` |
 | Renice 仅允许 -20..=19，越界在调 syscall 前拒绝 | parity | [`setNice（value < -20 \|\| value > 19 先拒绝）`](../witr/internal/tui/actions.go)、[`validateNiceValue（输入解析期同样校验）`](../witr/internal/tui/action_fsm.go) | core ProcessAction（Rust 侧用 i8 承载该范围） | 仅非 Windows |
 | 动作菜单快捷键（a 打开菜单，k/t/p/r/n 选动作，esc/q 取消） | parity | [`"a", "A" 打开菜单`](../witr/internal/tui/update.go)、[`actionMenuSelect 的 "k"/"t"/"p"/"r"/"n"/"esc"/"q"` 分支](../witr/internal/tui/action_fsm.go) | ui | Windows 不可达（actionsSupported 门控） |
 | 确认文案展示动作名与 PID | parity | [`view.go 确认提示 "Kill PID %d? [y]es / [n]o" 等四种`](../witr/internal/tui/view.go) | ui 安全交互 | 无 |
@@ -296,7 +297,7 @@ Runquiry 的四个工作区一一对应 witr TUI 的四个标签页（[`tabProce
 
 ## 验收核对
 
-- 行为条目总数：202 条（§1 领域模型 35、§2 目标 40、§3 解析补充 20、§4 管线 27、§5 来源 21、§6 告警 12、§7 容器运行时 16、§8 刷新 6、§9 进程操作 9、§10 平台差异 5、§11 其他 7、§12 四工作区 4）。
+- 行为条目总数：205 条（§1 领域模型 35、§2 目标 40、§3 解析补充 20、§4 管线 27、§5 来源 21、§6 告警 12、§7 容器运行时 16、§8 刷新 6、§9 进程操作 12、§10 平台差异 5、§11 其他 7、§12 四工作区 4）。
 - 无来源条目数：0（每条的证据列均含指向 `../witr/` 下具体文件与符号的链接；仅 §8 generation 条与 §10 FreeBSD 行标注为「无 witr 对应行为 / witr 已实现但明确排除」，并各自给出佐证链接）。
 - 跨章节重复条目已标注「同 §X 对应条」，同章节内的逐字重复行已删除。
 - 覆盖主题：四个工作区（Processes/Ports/Containers/File Locks，见 §12）、五类调查目标（名称/PID/端口/文件/容器）、目标解析与多结果行为、来源识别及优先级、告警规则、容器运行时、刷新策略、进程操作、Linux/Windows 平台差异、领域模型、其他行为（CLI 入口与输出格式）。

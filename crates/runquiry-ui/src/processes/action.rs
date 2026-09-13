@@ -110,6 +110,18 @@ impl ProcessActionFlow {
         }
     }
 
+    /// 写入展示类操作（不修改进程状态，如定位可执行文件）的结果。
+    ///
+    /// 只更新错误槽，不触碰 `pending`/`in_flight`：展示类操作与破坏性动作流程
+    /// 无耦合，其结果不得作废用户正在确认或执行中的请求；动作执行期间到达的
+    /// 展示结果直接丢弃。
+    pub fn report_presentation_result(&mut self, result: Result<(), InspectError>) {
+        if self.in_flight.is_some() {
+            return;
+        }
+        self.last_error = result.err();
+    }
+
     /// 切换选择、查询或工作区时使旧完成结果失效。
     pub fn invalidate_context(&mut self) {
         let _ = self.generation.next();

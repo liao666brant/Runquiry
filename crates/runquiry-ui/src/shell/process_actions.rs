@@ -178,6 +178,34 @@ impl AppShell {
         cx.notify();
     }
 
+    /// 在系统文件管理器中定位进程的可执行文件（展示类扩展，非破坏性）。
+    ///
+    /// 与进程动作不同：不走两步确认流程，只做后台只读展示。与破坏性动作流程
+    /// 完全解耦——能力不可用或动作流程正忙（有确认中或执行中的请求）时静默
+    /// 拒绝，结果写入独立任务槽与展示结果槽，不覆盖 `process_action_task` 也
+    /// 不改动动作请求状态。
+    pub(crate) fn reveal_process_executable(
+        &mut self,
+        identity: &ProcessIdentity,
+        cx: &mut Context<'_, Self>,
+    ) {
+        if !self.process_action_capabilities.reveal().is_usable()
+            || self.process_action_flow.is_busy()
+        {
+            return;
+        }
+        let backend = std::sync::Arc::clone(&self.backend);
+        let identity = identity.clone();
+        let work = cx.background_spawn(async move { backend.reveal_process_executable(&identity) });
+        self.reveal_task = Some(cx.spawn(async move |shell, cx| {
+            let result = work.await;
+            let _ = shell.update(cx, |shell, cx| {
+                shell.process_action_flow.report_presentation_result(result);
+                cx.notify();
+            });
+        }));
+    }
+
     fn confirm_process_action(&mut self, window: &Window, cx: &mut Context<'_, Self>) {
         // 能力可能在确认期间退化（快照刷新取回新能力态）：过期确认不得绕过
         // 禁用状态，撤销请求并给出结构化原因。

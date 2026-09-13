@@ -11,12 +11,14 @@
 //! `ffi_scm`（SCM 枚举与配置查询）。
 
 mod process;
+mod shell;
 mod toolhelp;
 
 pub(super) use process::{
     get_process_times, handle_count, io_counters, is_wow64, memory_counters, nt_peb_address,
     nt_wow64_peb_address, query_full_image_name, total_physical_memory,
 };
+pub(super) use shell::reveal_in_file_manager;
 pub(super) use toolhelp::toolhelp_snapshot;
 
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};

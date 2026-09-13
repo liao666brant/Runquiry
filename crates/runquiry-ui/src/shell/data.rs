@@ -146,10 +146,19 @@ impl ShellData {
             .unwrap_or_default()
     }
 
-    /// 同步进程表右键菜单的动作可用快照（随 Processes 刷新的逐动作能力）。
-    pub(super) fn set_kill_actions_available(&mut self, kill: bool, kill_tree: bool, cx: &mut App) {
+    /// 同步进程表右键菜单的入口快照（随 Processes 刷新的逐动作能力与
+    /// Windows 平台的可执行文件定位能力）。
+    pub(super) fn set_process_action_menu_availability(
+        &mut self,
+        kill: bool,
+        kill_tree: bool,
+        reveal: bool,
+        cx: &mut App,
+    ) {
         self.process_table.update(cx, |table, _| {
-            table.delegate_mut().set_kill_actions(kill, kill_tree);
+            let delegate = table.delegate_mut();
+            delegate.set_kill_actions(kill, kill_tree);
+            delegate.set_reveal_available(reveal);
         });
     }
 

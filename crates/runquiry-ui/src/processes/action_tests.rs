@@ -200,3 +200,56 @@ fn confirm_gate_with_usable_capability_produces_the_request() {
     assert!(!flow.is_confirming());
     assert_eq!(request.action(), ProcessAction::Pause);
 }
+
+#[test]
+fn presentation_result_never_voids_a_pending_confirmation() {
+    let mut flow = ProcessActionFlow::new();
+    assert!(flow.request(
+        &CapabilityStatus::Supported,
+        identity(7, 10),
+        ProcessAction::Kill,
+    ));
+
+    // 展示类结果不得清空确认中的请求（否则点「确定」会静默失效）。
+    flow.report_presentation_result(Err(InspectError::NotFound {
+        subject: String::from("可执行文件路径"),
+    }));
+
+    assert!(flow.is_confirming());
+    assert!(flow.confirm().is_some());
+}
+
+#[test]
+fn presentation_result_is_dropped_while_an_action_executes() {
+    let mut flow = ProcessActionFlow::new();
+    assert!(flow.request(
+        &CapabilityStatus::Supported,
+        identity(7, 10),
+        ProcessAction::Kill,
+    ));
+    let request = flow.confirm();
+    assert!(request.is_some());
+
+    flow.report_presentation_result(Err(InspectError::PermissionDenied {
+        subject: String::from("可执行文件路径"),
+    }));
+    flow.report_presentation_result(Ok(()));
+
+    // 执行中的动作请求与错误槽都不受展示类结果影响。
+    assert!(flow.is_executing());
+    assert!(flow.last_error().is_none());
+}
+
+#[test]
+fn presentation_success_clears_a_previous_error() {
+    let mut flow = ProcessActionFlow::new();
+    flow.report_error(InspectError::InvalidTarget {
+        reason: String::from("PID 非法"),
+    });
+    assert!(flow.last_error().is_some());
+
+    flow.report_presentation_result(Ok(()));
+
+    assert!(flow.last_error().is_none());
+    assert!(!flow.is_busy());
+}

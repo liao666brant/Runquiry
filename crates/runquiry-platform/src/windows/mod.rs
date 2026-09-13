@@ -24,6 +24,8 @@
 //!   GetExtendedUdpTable、MIB_*_OWNER_PID 表、TCP/UDP_TABLE_CLASS
 //! - `Win32_Networking_WinSock`：AF_INET / AF_INET6
 //! - `Win32_System_Services`：SCM 枚举与配置查询（含 SERVICE_* 常量）
+//! - `Win32_UI_Shell`：`ShellExecuteW`（可执行文件定位，委托系统文件管理器）
+//! - `Win32_UI_WindowsAndMessaging`：`SW_SHOWNORMAL`（ShellExecuteW 的显示模式）
 //! - `Wdk_System_Threading`：NtQueryInformationProcess（ProcessBasicInformation
 //!   / ProcessWow64Information）
 //!
@@ -39,6 +41,7 @@ mod network;
 mod peb;
 mod peb_reader;
 mod process_list;
+mod reveal;
 mod scm_parse;
 mod source;
 mod unsupported;

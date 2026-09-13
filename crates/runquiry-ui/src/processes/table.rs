@@ -78,6 +78,8 @@ pub struct ProcessTableDelegate {
     /// 右键菜单可见的关闭类动作快照（随 Processes 刷新的逐动作能力）。
     kill_available: bool,
     kill_tree_available: bool,
+    /// 右键菜单可见的「打开文件位置」入口（Windows 平台能力；独立于关闭类）。
+    reveal_available: bool,
     visible: Range<usize>,
     surface: SurfaceState,
 }
@@ -125,6 +127,7 @@ impl ProcessTableDelegate {
             shell: None,
             kill_available: false,
             kill_tree_available: false,
+            reveal_available: false,
             visible: 0..0,
             surface,
         }
@@ -139,6 +142,11 @@ impl ProcessTableDelegate {
     pub fn set_kill_actions(&mut self, kill: bool, kill_tree: bool) {
         self.kill_available = kill;
         self.kill_tree_available = kill_tree;
+    }
+
+    /// 同步右键菜单可见的可执行文件定位入口（Windows 平台能力）。
+    pub fn set_reveal_available(&mut self, reveal: bool) {
+        self.reveal_available = reveal;
     }
 
     /// 当前排序状态。
@@ -190,12 +198,14 @@ impl ProcessTableDelegate {
         let sort = self.sort;
         let shell = self.shell.clone();
         let (kill_available, kill_tree_available) = (self.kill_available, self.kill_tree_available);
+        let reveal_available = self.reveal_available;
         *self = Self::new(rows, sort);
         self.surface = surface;
         self.visibility.set_hidden(hidden);
         self.shell = shell;
         self.kill_available = kill_available;
         self.kill_tree_available = kill_tree_available;
+        self.reveal_available = reveal_available;
     }
 
     /// 当前可见列（渲染与列设置弹层共用）。
@@ -296,7 +306,7 @@ impl TableDelegate for ProcessTableDelegate {
         let Some(shell) = self.shell.clone() else {
             return menu;
         };
-        let menu = if self.kill_available {
+        let mut menu = if self.kill_available {
             menu.item(
                 PopupMenuItem::new(t!("actions.kill").to_string()).on_click({
                     let shell = shell.clone();
@@ -317,8 +327,10 @@ impl TableDelegate for ProcessTableDelegate {
             menu
         };
         if self.kill_tree_available {
-            menu.item(
+            menu = menu.item(
                 PopupMenuItem::new(t!("actions.kill_tree").to_string()).on_click({
+                    let shell = shell.clone();
+                    let identity = identity.clone();
                     move |_, _window, app| {
                         let _ = shell.update_in(app, |shell, window, cx| {
                             shell.request_process_action_for(
@@ -330,10 +342,21 @@ impl TableDelegate for ProcessTableDelegate {
                         });
                     }
                 }),
-            )
-        } else {
-            menu
+            );
         }
+        if self.reveal_available {
+            // 展示类入口与关闭类之间加分隔，避免误触破坏性动作。
+            menu = menu.separator().item(
+                PopupMenuItem::new(t!("actions.reveal_executable").to_string()).on_click({
+                    move |_, _window, app| {
+                        let _ = shell.update_in(app, |shell, _window, cx| {
+                            shell.reveal_process_executable(&identity, cx);
+                        });
+                    }
+                }),
+            );
+        }
+        menu
     }
 
     fn loading(&self, _: &App) -> bool {

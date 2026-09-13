@@ -78,4 +78,32 @@ pub trait ProcessController {
         identity: &ProcessIdentity,
         action: ProcessAction,
     ) -> Result<(), InspectError>;
+
+    /// 可执行文件定位（展示类扩展，非破坏性动作）的平台可用状态。
+    ///
+    /// 与 [`Self::action_capability`] 平行但独立：定位不修改进程状态，不走
+    /// 两步确认流程。默认 `Unsupported`——只有提供系统文件管理器集成的平台
+    /// 才覆盖（当前为 Windows）。
+    fn reveal_capability(&self) -> CapabilityStatus {
+        CapabilityStatus::Unsupported(String::from("平台不提供可执行文件定位"))
+    }
+
+    /// 在系统文件管理器中定位该进程的可执行文件（展示类扩展，非破坏性）。
+    ///
+    /// 语义：解析该进程的可执行路径（优先实时查询，失败回退调用方持有的快照
+    /// 路径），交由平台文件管理器选中展示；两者皆不可得时返回
+    /// [`InspectError::NotFound`]。定位为只读展示，不做身份重读比对——进程已
+    /// 退出但快照路径可得时仍定位该路径。
+    ///
+    /// # Errors
+    /// 平台不支持返回 [`InspectError::Unsupported`]；路径不可得返回
+    /// [`InspectError::NotFound`]；路径存在但系统拒绝访问返回
+    /// [`InspectError::PermissionDenied`]；文件管理器调用本身失败返回
+    /// [`InspectError::ExternalTool`]（携带底层错误码）。
+    fn reveal_executable(&self, identity: &ProcessIdentity) -> Result<(), InspectError> {
+        let _ = identity;
+        Err(InspectError::Unsupported {
+            reason: String::from("平台不提供可执行文件定位"),
+        })
+    }
 }

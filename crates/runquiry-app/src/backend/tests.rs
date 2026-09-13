@@ -115,6 +115,48 @@ fn unavailable_backend_disables_process_actions_with_its_construction_reason() {
     ));
 }
 
+/// 可执行文件定位能力按目标平台接线：Windows 支持、Linux 不支持；执行路径
+/// 对不存在的 PID 返回 NotFound（不回退成功）。
+#[test]
+fn reveal_capability_is_platform_specific() -> Result<(), Box<dyn std::error::Error>> {
+    let backend = PlatformBackend::new()?;
+    let reveal = backend.process_action_capabilities().reveal().clone();
+
+    if cfg!(target_os = "windows") {
+        assert!(
+            reveal.is_usable(),
+            "Windows 应提供可执行文件定位，实际 {reveal:?}"
+        );
+        let impossible =
+            ProcessIdentity::new(Pid::new(999_999_999)?, Some(SystemTime::UNIX_EPOCH), None);
+        assert!(
+            matches!(
+                backend.reveal_process_executable(&impossible),
+                Err(InspectError::NotFound { .. })
+            ),
+            "不存在的 PID 定位必须返回 NotFound"
+        );
+    } else {
+        assert!(
+            matches!(reveal, CapabilityStatus::Unsupported(_)),
+            "非 Windows 平台定位应 Unsupported，实际 {reveal:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn unavailable_backend_rejects_reveal_with_its_construction_reason() {
+    let backend = UnavailableBackend::new("平台采集器不可用");
+    let identity = ProcessIdentity::new(Pid::MIN, Some(SystemTime::UNIX_EPOCH), None);
+
+    assert!(matches!(
+        backend.reveal_process_executable(&identity),
+        Err(InspectError::Unsupported { .. })
+    ));
+    assert!(!backend.process_action_capabilities().reveal().is_usable());
+}
+
 /// 采集完全失败时，app 边界必须保留平台给出的结构化结论，不折叠为单一文案。
 #[test]
 fn failed_collection_maps_platform_diagnostics_to_structured_errors() {

@@ -72,9 +72,14 @@ impl AppShell {
             self.process_action_capability = capabilities.class.clone();
             let kill_available = capabilities.kill.is_usable();
             let kill_tree_available = capabilities.kill_tree.is_usable();
+            let reveal_available = capabilities.reveal().is_usable();
             self.process_action_capabilities = capabilities;
-            self.data
-                .set_kill_actions_available(kill_available, kill_tree_available, cx);
+            self.data.set_process_action_menu_availability(
+                kill_available,
+                kill_tree_available,
+                reveal_available,
+                cx,
+            );
             if self
                 .process_action_flow
                 .revoke_confirmation_if_unusable(&self.process_action_capability)

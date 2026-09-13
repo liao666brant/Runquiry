@@ -183,6 +183,9 @@ actions.kill:
 actions.kill_tree:
   en: Kill process tree
   zh-CN: 关闭进程树
+actions.reveal_executable:
+  en: Open file location
+  zh-CN: 打开文件位置
 actions.pause:
   en: Pause
   zh-CN: 暂停

@@ -120,6 +120,9 @@ pub struct AppShell {
     refresh_task: Option<Task<()>>,
     detail_task: Option<Task<()>>,
     process_action_task: Option<Task<()>>,
+    /// 可执行文件定位（展示类操作）的任务槽；与 `process_action_task` 分开，
+    /// 定位结果不得取消破坏性动作的结果回写。
+    reveal_task: Option<Task<()>>,
     detail_loading: bool,
 }
 
@@ -192,6 +195,7 @@ impl AppShell {
             refresh_task: None,
             detail_task: None,
             process_action_task: None,
+            reveal_task: None,
             detail_loading: false,
         }
     }

@@ -315,11 +315,17 @@ impl WorkspaceBackend for PlatformBackend {
                     pause: action(ProcessAction::Pause),
                     resume: action(ProcessAction::Resume),
                     renice: action(renice),
+                    reveal: ProcessController::reveal_capability(&platform),
                 }
             }
             // 平台结构构造失败是环境不可用而非平台不支持：保留能力四态区分。
             Err(error) => ProcessActionCapabilities::all_unavailable(error.to_string()),
         }
+    }
+
+    fn reveal_process_executable(&self, identity: &ProcessIdentity) -> Result<(), InspectError> {
+        let platform = Self::fresh_platform()?;
+        ProcessController::reveal_executable(&platform, identity)
     }
 
     fn execute_process_action(

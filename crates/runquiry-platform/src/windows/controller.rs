@@ -23,6 +23,7 @@ use super::WindowsPlatform;
 use super::ffi;
 use super::ffi::HandleGuard;
 use super::process_list::{start_time_from_sysinfo, sysinfo_snapshot};
+use super::reveal::{RevealFailure, failure_kind};
 use super::unsupported::{KILL_ONLY_REASON, unsupported_action_error};
 
 impl ProcessController for WindowsPlatform {
@@ -39,6 +40,40 @@ impl ProcessController for WindowsPlatform {
                 CapabilityStatus::Unsupported(String::from(KILL_ONLY_REASON))
             }
         }
+    }
+
+    /// 可执行文件定位：Windows 经 `ShellExecuteW` 委托系统文件管理器
+    /// （`explorer.exe /select`）展示，属平台能力，恒可用。
+    fn reveal_capability(&self) -> CapabilityStatus {
+        CapabilityStatus::Supported
+    }
+
+    /// 在资源管理器中选中该进程的可执行文件。
+    ///
+    /// 只读展示，不做破坏性动作前的身份重读比对：优先以实时路径
+    /// （`QueryFullProcessImageNameW`，回退 sysinfo）定位，均不可得时回退
+    /// 确认流程持有的快照路径；两者皆无 → `NotFound`。文件管理器失败按
+    /// `ShellExecuteW` 错误码区分「路径不可得 / 拒绝访问 / 调用失败」，不把
+    /// 运行期失败说成平台能力缺失。
+    fn reveal_executable(&self, identity: &ProcessIdentity) -> Result<(), InspectError> {
+        let pid = identity.pid();
+        let path = live_executable(pid.get())
+            .or_else(|| identity.executable().cloned())
+            .ok_or_else(|| InspectError::NotFound {
+                subject: format!("进程 {pid} 的可执行文件路径"),
+            })?;
+        ffi::reveal_in_file_manager(&path).map_err(|code| match failure_kind(code) {
+            RevealFailure::Missing => InspectError::NotFound {
+                subject: format!("可执行文件 {}", path.display()),
+            },
+            RevealFailure::AccessDenied => InspectError::PermissionDenied {
+                subject: format!("进程 {pid} 的可执行文件 {}", path.display()),
+            },
+            RevealFailure::Other => InspectError::ExternalTool {
+                program: String::from("explorer.exe"),
+                detail: format!("ShellExecuteW 错误码 {code}"),
+            },
+        })
     }
 
     fn execute(
@@ -108,6 +143,20 @@ impl WindowsPlatform {
         }
         first_error.map_or(Ok(()), Err)
     }
+}
+
+/// 目标进程当前的可执行文件路径（实时）：`QueryFullProcessImageNameW` 优先，
+/// 回退 sysinfo。进程不可打开/已退出时为 `None`。
+fn live_executable(pid: u32) -> Option<std::path::PathBuf> {
+    if let Ok(handle) = HandleGuard::open_process(PROCESS_QUERY_LIMITED_INFORMATION, pid)
+        && let Some(path) = ffi::query_full_image_name(&handle)
+    {
+        return Some(std::path::PathBuf::from(path));
+    }
+    let system = sysinfo_snapshot();
+    system
+        .process(sysinfo::Pid::from_u32(pid))
+        .and_then(|process| process.exe().map(std::path::Path::to_path_buf))
 }
 
 /// KillTree 后代的实时轻量快照（仅 PID/PPID/start_time 参与树收集与防护）。
@@ -269,6 +318,22 @@ mod live {
             Some(creation),
             None,
         ))
+    }
+
+    #[test]
+    fn reveal_capability_is_supported_and_resolves_a_real_executable()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let platform = WindowsPlatform::new()?;
+        // 能力恒 Supported（Windows 委托系统文件管理器）。
+        assert!(ProcessController::reveal_capability(&platform).is_usable());
+
+        // 只验证路径解析（不触发 ShellExecuteW 以免弹出资源管理器窗口）：
+        // 以本测试进程自身 PID 解析出真实存在的 .exe 路径。
+        let own = std::process::id();
+        let resolved = super::live_executable(own);
+        let path = resolved.ok_or("应能解析当前进程的可执行路径")?;
+        assert!(path.exists(), "解析出的路径应真实存在：{}", path.display());
+        Ok(())
     }
 
     #[test]

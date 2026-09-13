@@ -28,6 +28,8 @@ pub struct ProcessActionCapabilities {
     pub resume: CapabilityStatus,
     /// 调整优先级。
     pub renice: CapabilityStatus,
+    /// 可执行文件定位（展示类扩展，非破坏性动作）。
+    pub reveal: CapabilityStatus,
 }
 
 impl ProcessActionCapabilities {
@@ -41,7 +43,8 @@ impl ProcessActionCapabilities {
             kill_tree: unavailable.clone(),
             pause: unavailable.clone(),
             resume: unavailable.clone(),
-            renice: unavailable,
+            renice: unavailable.clone(),
+            reveal: unavailable,
         }
     }
 
@@ -55,6 +58,11 @@ impl ProcessActionCapabilities {
             ProcessAction::Resume => &self.resume,
             ProcessAction::Renice(_) => &self.renice,
         }
+    }
+
+    /// 可执行文件定位能力（独立于 [`Self::action`]：定位不是 `ProcessAction`）。
+    pub const fn reveal(&self) -> &CapabilityStatus {
+        &self.reveal
     }
 }
 
@@ -222,7 +230,9 @@ pub trait WorkspaceBackend: Send + Sync {
             kill_tree: class.clone(),
             pause: class.clone(),
             resume: class.clone(),
-            renice: class,
+            renice: class.clone(),
+            // 定位独立于进程控制能力：默认后端不提供，显式 Unsupported。
+            reveal: CapabilityStatus::Unsupported(String::from("后端不提供可执行文件定位")),
         }
     }
 
@@ -237,6 +247,16 @@ pub trait WorkspaceBackend: Send + Sync {
     ) -> Result<(), InspectError> {
         Err(InspectError::Unsupported {
             reason: String::from("process control is not configured"),
+        })
+    }
+
+    /// 在系统文件管理器中定位进程的可执行文件（展示类扩展，无两步确认）。
+    ///
+    /// # Errors
+    /// 平台不支持、路径不可得或文件管理器调用失败时返回领域错误。
+    fn reveal_process_executable(&self, _: &ProcessIdentity) -> Result<(), InspectError> {
+        Err(InspectError::Unsupported {
+            reason: String::from("executable reveal is not configured"),
         })
     }
 }
@@ -369,5 +389,32 @@ mod tests {
             backend.execute_process_action(&identity, runquiry_core::ProcessAction::Terminate),
             Err(InspectError::Unsupported { .. })
         ));
+    }
+
+    #[test]
+    fn default_reveal_seam_is_explicitly_unsupported_and_not_tied_to_control() {
+        let backend = FakeBackend;
+        let identity = ProcessIdentity::new(
+            runquiry_core::Pid::MIN,
+            Some(std::time::SystemTime::UNIX_EPOCH),
+            None,
+        );
+
+        // 定位默认不可用，且执行路径返回 Unsupported（与进程控制能力解耦）。
+        assert!(matches!(
+            backend.process_action_capabilities().reveal(),
+            runquiry_core::CapabilityStatus::Unsupported(_)
+        ));
+        assert!(matches!(
+            backend.reveal_process_executable(&identity),
+            Err(InspectError::Unsupported { .. })
+        ));
+    }
+
+    #[test]
+    fn all_unavailable_disables_reveal_too() {
+        let capabilities = super::ProcessActionCapabilities::all_unavailable("platform missing");
+        assert!(!capabilities.reveal().is_usable());
+        assert!(!capabilities.kill.is_usable());
     }
 }
