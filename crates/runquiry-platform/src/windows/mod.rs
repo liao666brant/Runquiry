@@ -1,11 +1,13 @@
 //! Windows 平台采集适配器（Batch 6 C2，模块计划 07-windows-platform）。
 //!
 //! 仅在 `target_os = "windows"` 下参与编译（`lib.rs` 的 cfg 声明）；为 core
-//! 端口提供真实实现：进程基线与详情（sysinfo + PEB 安全包装）、网络与
-//! Socket（IP Helper）、来源证据（SCM）、容器归属验证、文件锁与进程操作
-//! 的 Unsupported 建模。FFI 只存在于 `ffi` / `ffi_scm` 安全包装，纯解析
-//! （utf16 / peb / ip_table / scm_parse / winerror / unsupported）无 OS 依赖，
-//! 可在 Linux 编译并由 `tests/windows_*.rs` 经 `#[path]` 直接执行。
+//! 端口提供真实实现：进程基线与详情（sysinfo 基线 + ToolHelp32 补名 + PEB
+//! 安全包装）、网络与 Socket（IP Helper）、来源证据（SCM）、进程控制（关闭类
+//! terminate/kill/kill-tree，见 `controller`）与可执行文件定位（经 `ffi` 包装
+//! `ShellExecuteW` 委托系统文件管理器）；容器归属验证与文件锁为 Unsupported
+//! 建模。FFI 只存在于 `ffi` / `ffi_scm` 安全包装，纯解析（utf16 / peb /
+//! ip_table / scm_parse / winerror / unsupported / reveal）无 OS 依赖，可在
+//! Linux 编译并由 `tests/windows_*.rs` 经 `#[path]` 直接执行。
 //!
 //! # windows-sys 0.61.2 feature 清单（manifest 由主代理维护，两处须同步）
 //!
@@ -53,7 +55,7 @@ use std::time::SystemTime;
 
 use runquiry_core::Pid;
 
-/// Windows 只读采集适配器：单一结构实现七个端口。
+/// Windows 平台适配器：单一结构实现八个端口。
 ///
 /// 自身排除策略与 [`LinuxPlatform`](crate::linux::LinuxPlatform) 对齐：
 /// 构造时以 sysinfo 采集一次 PID 基准快照；`list()` 排除自身 PID，以及

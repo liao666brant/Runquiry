@@ -5,25 +5,25 @@
       "source": "longbridge/gpui-kit",
       "sourceType": "github",
       "skillPath": "skills/gpui-kit/SKILL.md",
-      "computedHash": "017206ed25c2a23fda2d0abc50c2af417e31c47231e08bbdb5891304282fe6c1"
+      "computedHash": "7ffd8f99180c41928bd96894835d36c34e6e0e77d772337f011036a41f125f80"
     },
     "gpui-kit-design-guides": {
       "source": "longbridge/gpui-kit",
       "sourceType": "github",
       "skillPath": "skills/gpui-kit-design-guides/SKILL.md",
-      "computedHash": "1c8cd7b6fb0dc3448d00748dfccd2c2719ce7efbb97632ac13d015ed2bd74dc6"
+      "computedHash": "24289c455dfd0e89d0bc3f52c1df9118586b8b630b5ecf14b33f6d4fc01948d5"
     },
     "index-project": {
       "source": "liao666brant/skills",
       "sourceType": "github",
       "skillPath": "skills/index-project/SKILL.md",
-      "computedHash": "30078e5208f3e2b559717fc8ff0fbdf0dd09d5d92cf6fb390fcc392185d72a5c"
+      "computedHash": "3d77128053e580a5effec3b040264d35e2a249ea784487e62a8fa25946fce8a8"
     },
     "writing-for-agents": {
       "source": "liao666brant/skills",
       "sourceType": "github",
       "skillPath": "skills/writing-for-agents/SKILL.md",
-      "computedHash": "6d36eba84fc842cda883d7e3aae10889086c7b20ee7105f829c8cc18e121f1f2"
+      "computedHash": "4b2fed83d21cd54aea3384c2041ed670539cd8860df420d0ae2cb419991fc638"
     }
   }
 }

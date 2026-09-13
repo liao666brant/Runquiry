@@ -52,7 +52,7 @@ pub(super) fn diagnostic_for_field(pid: u32, field: &str, error: &io::Error) -> 
     DiagnosticIssue::new(code, format!("进程 {pid} 的 {field} 不可读：{error}"))
 }
 
-/// Linux 只读采集适配器：单一结构实现五个只读端口。
+/// Linux 平台适配器：单一结构实现八个端口。
 ///
 /// 自身排除策略（可测试，不靠进程名猜测）：构造时对 `/proc` 做一次 PID
 /// 快照作为基准；`list()` 排除 Runquiry 自身 PID，以及「不在基准快照中且

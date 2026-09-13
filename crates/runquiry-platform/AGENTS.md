@@ -4,64 +4,72 @@
 
 ## 模块职责
 
-平台采集与控制层：Linux/Windows 采集器、容器运行时集成、进程控制（terminate/kill/pause/resume/renice）与外部命令执行。B2 已落地 Linux 只读采集（`src/linux/`），B3 已落地受限命令执行器与七种容器运行时（`src/command/`、`src/container/`）；Batch 4A P1 以 `/proc/PID/fd` 与 `/proc/locks` 提供文件/锁清单和路径持有者查询；Batch 4B B7 已落地 Linux 生产 `ProcessController`，使用 pidfd 定向信号并对 renice 的残余 PID 复用窗口如实设界；Windows 采集属模块 07（C2）；macOS 支持已移出 v1 范围（2026-09-08）。
+平台采集与控制层：Linux/Windows 采集器、容器运行时集成、进程控制（关闭类与暂停/恢复/renice）与文件定位、外部命令执行。`src/command/` 是受限命令执行器，`src/container/` 集成七种容器运行时，`src/linux/` 与 `src/windows/` 分别提供两个平台的全部端口实现。
 
-约束：只依赖 runquiry-core，为其端口（trait）提供实现；UI 不得绕过本层直接读取 /proc、调用 Win32 API 或运行 lsof/容器 CLI。全部外部命令（容器 CLI、QA 假 CLI）只能经 `StdCommandRunner`，绝不经过 shell。
+约束：只依赖 runquiry-core，为其端口（trait）提供实现；UI 不得绕过本层直接读取 /proc、调用 Win32 API 或运行 lsof/容器 CLI。全部外部命令（容器 CLI、QA 假 CLI）只能经 `StdCommandRunner`，绝不经过 shell。macOS 与其它目标已移出 v1 范围。
 
 ## 入口与启动
 
-无独立入口。库 crate，`src/lib.rs` 导出 `command`、`container` 与 cfg 门控的 `linux`/`windows` 模块；非 Linux/Windows 目标由 `compile_error!` 显式拒绝（macOS 已移出 v1 范围）。
+无独立入口。库 crate，`src/lib.rs` 声明跨平台的 `pub mod command`、`pub mod container` 与 cfg 门控的 `pub mod linux`（`target_os = "linux"`）/ `pub mod windows`（`target_os = "windows"`）；非这两个目标由 `compile_error!("Runquiry 仅支持 Linux 与 Windows 目标平台")` 显式拒绝。平台结构体对外的公开路径为 `runquiry_platform::linux::LinuxPlatform` 与 `runquiry_platform::windows::WindowsPlatform`。
 
 ## 对外接口
 
-- `command::StdCommandRunner`：`CommandRunner` 生产实现；`CommandFailure` 区分 Spawn/Timeout/OutputLimit/Cancelled。程序名 + 独立 argv；stdout/stderr 各限 8MiB，超限、取消与超时均终止进程组并 wait，读取错误不伪装成功。`CancellationToken` 支持运行中取消；sudo 下 Podman/nerdctl 经校验后恢复原用户 UID/GID 与 rootless 环境，Docker 保持当前身份。
-- `container::ContainerRuntimes`：实现 `ContainerInventory`、`resolve`、`published_on`、`verified_host_pid`、`enrich` 与 `ContainerHealthcheckProbe`。command/Compose 匹配键只存在于私有且不可序列化的 `ListedContainer`，公共列表不外泄；nerdctl 的稳定键/显示名为 containerd，crictl 为 k8s。Docker 发布端口回退使用固定 argv；运行时 PID 只是候选，Linux `ContainerProcessVerifier` 必须以 `/proc/PID/cgroup` 再验证。七运行时独立失败，按 runtime+id 去重。
-- `linux::LinuxPlatform`（仅 `target_os = "linux"`）：实现 ProcessInventory、ProcessDetailsProvider、NetworkInventory、FileInventory、ProcessFileLocks、SourceEvidenceProvider、ContainerProcessVerifier 七个只读边界，并实现 `ProcessController`。`FileInventory::list` 合并可见 `/proc/PID/fd` 与真实锁，`holders(path)` 以路径（含可解析时的 canonical 路径）筛选；权限/读取问题转为有界诊断。`new()` 以 sysinfo 枚举生产 PID、真实墙钟建立排除基线，`with_injected` 使用合成 ProcFs；注入平台始终禁用控制副作用。可选详情字段失败保留数据并逐项诊断；systemd D-Bus 有 2s 方法超时与 single-flight。健康标签按 parity 计算（Z/T/HighCpu >2h/HighMem >1GiB）。
-- `ProcessController`：production `LinuxPlatform` 先重读启动时间与 executable 身份，再以 `pidfd_open` + `pidfd_send_signal` 执行 TERM/KILL/STOP/CONT；renice 先 signal 0 再按 PID 调 `setpriority`，两次 syscall 间仍有已披露的极窄 PID 复用 TOCTOU。身份不一致、不可验证、自身 PID、注入平台与系统调用错误均返回结构化 `InspectError`，不降级到裸 `kill` 或提权。
-- `windows::WindowsPlatform`（仅 `target_os = "windows"`，C2）：sysinfo 基线（ToolHelp 快照补名）+ windows-sys 0.61.2 安全包装（ffi/{mod,process,toolhelp} + ffi_scm）+ IP Helper 端口表（IPv4/IPv6 TCP/UDP + PID）+ PEB/PEB32 有界远程读取（UTF-16 环境块解码）+ SCM 来源证据；FileInventory/ProcessFileLocks/ProcessController 为 Unsupported（原因键稳定，见 src/windows/unsupported.rs）；ContainerProcessVerifier 恒 false（Docker Desktop VM PID 不可映射）。
-- 未实现：Windows 完整实机验收（只读冒烟与 lib 套件已在 Windows 验证主机通过，GUI 交互矩阵与容器运行时场景待补）。
+- `command::StdCommandRunner`：`CommandRunner` 生产实现，`CommandFailure` 区分 Spawn/Timeout/OutputLimit/Cancelled 并统一映射为 `InspectError::ExternalTool`。程序名 + 独立 argv，不经 shell，stdin 为 null；stdout/stderr 各限 8 MiB（上限与超时来自 core `port/command.rs`），超限、取消与超时均终止进程组并 wait，读取错误不伪装成功；Unix 下以进程组启动（`process_group(0)`）并按 `-pgid` 回收；脚本启动对 ETXTBSY 有小次数有界重试；`CancellationToken` 支持运行中取消。sudo 下 Podman/nerdctl 经校验后恢复原用户 UID/GID 与 rootless 环境（`original_user`，`cfg(unix)`），Docker 保持当前身份。
+- `container::ContainerRuntimes`：实现 `ContainerInventory`、`resolve`、`published_on`、`verified_host_pid`、`enrich` 与 `ContainerHealthcheckProbe`。七种运行时（Docker、Podman、Nerdctl、Crictl、Incus、LXD、Lxc）各自独立探测与失败，按 runtime + id 去重；command/Compose 匹配键只存在于私有且不可序列化的 `ListedContainer`，公共列表不外泄；nerdctl 的稳定键/显示名为 containerd，crictl 为 k8s；容器 ID 交 CLI 前先校验格式；Docker 发布端口回退使用固定 argv。运行时报告的 PID 只是候选，须经 `ContainerProcessVerifier` 验证（Linux 以 `/proc/PID/cgroup` 二次确认；Windows 恒 false，Docker Desktop VM PID 不可映射）。
+- `linux::LinuxPlatform`（仅 `target_os = "linux"`）：实现 ProcessInventory、ProcessDetailsProvider、NetworkInventory、FileInventory、ProcessFileLocks、SourceEvidenceProvider、ContainerProcessVerifier 与 ProcessController 八个端口。生产 PID 枚举用 sysinfo、真实墙钟建立排除基线，可选详情字段失败保留数据并逐项诊断；`FileInventory::list` 合并可见 `/proc/PID/fd` 与真实锁，`holders(path)` 以路径（含可解析时的 canonical 路径）筛选，权限/读取问题转为有界诊断；systemd D-Bus 有方法超时与 single-flight；健康标签按 parity 计算（Z/T/HighCpu/HighMem 阈值）。所有 `/proc` 读取经可注入根目录的 `ProcFs`，注入平台始终禁用控制副作用。
+- `linux` 进程控制（`src/linux/controller.rs`）：先 `pidfd_open` 固定进程对象，再重读启动时间与 executable 身份并比对（不一致返回 `ProcessChanged`）；信号经 `pidfd_send_signal`——Terminate=SIGTERM、Kill 与 KillTree 目标=SIGKILL、Pause=SIGSTOP、Resume=SIGCONT；Renice 先 signal 0 再按 PID 调 `setpriority`，两次 syscall 之间仍有已披露的极窄 PID 复用 TOCTOU。`KillTree` 以当前快照经 core `collect_descendants` 求后代，含自身整体拒绝，逐个 `pidfd_open` + 身份比对后 SIGKILL（`NotFound` 视为已清杀），权限等错误聚合上抛。身份不可验证、自身 PID、注入平台与系统调用错误返回结构化 `InspectError`，不降级到裸 `kill` 或提权。
+- `windows::WindowsPlatform`（仅 `target_os = "windows"`）：实现 ProcessInventory、ProcessDetailsProvider、NetworkInventory、SourceEvidenceProvider、ProcessController、FileInventory、ProcessFileLocks、ContainerProcessVerifier 八个端口。采集侧为 sysinfo 基线 + ToolHelp32 快照补名、IP Helper 端口表（IPv4/IPv6 TCP/UDP + PID）、PEB/PEB32 有界远程读取（UTF-16 环境块解码）、SCM 来源证据与资源字段（memory、`GetProcessTimes`、`GlobalMemoryStatusEx`），全部经 `windows-sys` 安全包装（`ffi/`、`ffi_scm`）。
+- `windows` 进程控制与定位（`src/windows/controller.rs`）：`capability()` 恒 Supported；`action_capability` 逐动作——Terminate/Kill/KillTree 为 Supported，Pause/Resume/Renice 为 `Unsupported(KILL_ONLY_REASON)`。Terminate/Kill 走 `OpenProcess` → `GetProcessTimes` 创建时间比对 → `TerminateProcess`（整秒对齐比较，防 PID 复用；拒绝控制自身 PID；快照缺 start_time 返回 `ProcessChanged`）。KillTree 先杀目标再对 sysinfo 实时快照的 core 后代逐个执行同一套比对+终止，后代含自身则整体拒绝，`OpenProcess` 失败按 access denied → `PermissionDenied`、gone/invalid → 视为已退出、其余 → `Unsupported` 三分。`reveal_capability` 恒 Supported；`reveal_executable` 路径实时优先 `QueryFullProcessImageNameW`、回退 sysinfo、再回退 `identity.executable()` 快照路径，两者皆无返回 `NotFound`，随后经 `ShellExecuteW` 委托 `explorer.exe /select`（包装在 `ffi/shell.rs`，`/select` 参数双引号包裹），失败按 `ShellExecuteW` 返回码分流为 `NotFound` / `PermissionDenied` / `ExternalTool`（`reveal.rs` 纯分类，`<= 32` 判失败），不把运行期失败说成平台能力缺失。
+- Windows 不支持项（`src/windows/limits.rs` + `src/windows/unsupported.rs`）：FileInventory/ProcessFileLocks 返回带稳定原因键的 Unsupported 失败结果，ContainerProcessVerifier 恒 false；原因键本体在 `unsupported.rs`（`FILE_LOCKS_REASON`、`KILL_ONLY_REASON`）。
 
 ## 关键依赖与配置
 
-- 依赖：runquiry-core、sysinfo 0.31.4（进程基线）、serde 1.0.229 / serde_json 1.0.151（容器 JSON 解析）、zbus 5.19.0（systemd D-Bus，blocking，仅 Linux 语义）、libc 0.2.189（cfg(unix)，kill(2) 进程组终止）、windows-sys 0.61.2（仅 `cfg(target_os = "windows")`，C2，用户已授权：锁内既有版本，Cargo.lock 仅 +1 行依赖边）。GPUI source 未漂移；manifest 变更由主 Agent（依赖守门）执行。
-- Linux 构建系统依赖（pkg-config、fontconfig 等）见根 AGENTS.md。
+- `runquiry-core.workspace = true`；`sysinfo 0.31.4`（进程基线）、`serde 1.0.229` / `serde_json 1.0.151`（容器 JSON 与解析）、`zbus 5.19.0`（systemd D-Bus，blocking，仅 Linux 语义）；`cfg(unix)`：`libc 0.2.189`（进程组终止）；`cfg(target_os = "windows")`：`windows-sys 0.61.2`，启用 12 个 feature（Foundation、Threading、ProcessStatus、ToolHelp、Debug、Services、SystemInformation、IpHelper、WinSock、Wdk_System_Threading、UI_Shell、UI_WindowsAndMessaging）。
+- 无 dev-dependencies、无自定义 features；crate 级 `#![allow(clippy::multiple_crate_versions)]`（锁定树内 syn 2/3 双版本），另有若干文件级 `redundant_pub_crate` 豁免（容器解析模块）。
+- 依赖变更（含 windows-sys feature）由依赖守门人集中执行并确认锁文件零新增包；GPUI source 不参与本 crate。
 
 ## 测试与质量
 
-- `cargo test -p runquiry-platform --locked`：Batch 4A 基线 97 个测试；2026-09-08 实测 180 个（含 `windows_*` 77 个，`macos_*` 已随 macOS 移出删除）；B7 另以 `cargo test -p runquiry-platform --test process_controller --locked` 定向执行 6 个控制器测试，6/6 通过。不要将这两组数字相加推断为本轮全量测试。
-- B7 独立真实 QA：`cargo run -p runquiry-platform --example process_controller_qa --locked`，仅控制 QA 自建并清理的两个 `sleep` 子进程；暂停/恢复/renice/TERM、KILL 与身份拒绝均有真实 PID 回执（见本地 `.omo/evidence/batch4b-platform-real-qa.log`）。命令双流竞争回归另连续执行 10 次通过；既有 platform clippy 结果见本地 `.omo/evidence/batch4b-platform-clippy.log`。这些日志不纳入 Git。
-- linux 采集测试用合成 /proc tempdir 树（可注入根目录），不读真实 /proc、不依赖 root、不 sleep；容器测试用 tempdir 假 CLI 经生产 `StdCommandRunner` 驱动。
-- `tests/windows_*`（ip_table/peb/scm/unsupported/utf16/winerror）纯解析套件：`#[path]` 引入 src 无 OS 依赖模块，Linux 直接编译运行；Windows cfg 内联测试仅随目标平台编译运行。`tests/macos_*` 已随 macOS 移出 v1 范围删除。测试代码同样受 `unwrap_used/expect_used = deny`（无 clippy.toml 测试豁免）：新测试一律 `Result + ?` / `unwrap_or` / `assert!`，不使用 `.unwrap()`。
-- 真实 QA 示例：`cargo run -p runquiry-platform --example linux_qa --locked`（普通用户真实采集，环境变量只报计数）；`--example container_qa`（真实只读 list/verified_host_pid/enrich；daemon 不可用或 CLI 缺失时如实报告 Partial）。
+静态计数（`#[test]` 属性匹配，非运行结果；部分内联模块被多个测试目标经 `#[path]` 复用，会重复计入）：
+
+| 测试目标 | 数量 | 门控 |
+|---|---|---|
+| lib 内联（`src/`） | 62 | Windows 目标 57 / Linux 目标 11（含 `original_user` 等 `cfg(unix)` 与 Windows 真机活测试） |
+| `tests/command_runner.rs` | 10 | `cfg(unix)` |
+| `tests/container_crictl.rs` / `container_lxc.rs` / `container_lxd_like.rs` / `container_port_fallback.rs` | 6 / 3 / 4 / 3 | `cfg(unix)` |
+| `tests/container_docker_like.rs` / `container_inventory.rs` | 11 / 9 | 跨平台 |
+| `tests/fake_backends.rs` | 10 | 跨平台（`tests/support/` 提供假后端） |
+| `tests/linux_adapters.rs` | 30 | `target_os = "linux"` |
+| `tests/process_controller.rs` | 6 | `target_os = "linux"`（真实自建进程、身份拒绝、注入平台无副作用） |
+| `tests/windows_ip_table.rs` / `windows_peb.rs` / `windows_scm.rs` / `windows_utf16.rs` | 14 / 23 / 19 / 12 | 纯解析，经 `#[path]` 引入 src 模块，Linux 也可直接运行 |
+| `tests/windows_reveal.rs` / `windows_unsupported.rs` / `windows_winerror.rs` | 4 / 4 / 5 | 纯解析，同上 |
+
+- 命令：`cargo test -p runquiry-platform --locked`（全量）、`--test <目标名>` 定向，如 `--test process_controller`、`--test windows_reveal`。
+- Linux 采集测试用合成 /proc tempdir 树（可注入根目录），不读真实 /proc、不依赖 root、不 sleep；容器测试用 tempdir 假 CLI 经生产 `StdCommandRunner` 驱动。
+- Windows 真机活测试位于 `src/windows/controller.rs`（单杀、杀树）与 `src/windows/process_list.rs`（ToolHelp 快照），仅在 Windows 目标编译运行。
+- 测试代码同样受 `unwrap_used`/`expect_used = deny`（无 clippy.toml 豁免）：新测试一律 `Result + ?` / `unwrap_or` / `assert!`。
+- 真实 QA 示例（`cargo run -p runquiry-platform --example <名> --locked`）：`linux_qa`（普通用户真实采集，环境变量只报计数）、`container_qa`（真实只读 list/verified_host_pid/enrich，daemon 不可用或 CLI 缺失时如实报 Partial）、`process_controller_qa`（只控制自建并清理的 `sleep` 子进程）、`windows_qa`（Windows 只读采集与 Unsupported 边界，敏感值只报计数）。
 
 ## 常见问题
 
 - 新增依赖必须经依赖守门人集中修改 manifest 并确认 Cargo.lock 零新增包（见模块 01 计划的所有权边界）。
-- 单文件纯代码 ≤250 行红线：超限按职责拆分（procfs 与 dockerlike 均已拆为子模块）。
-- 平台 clippy 豁免 `multiple_crate_versions`（锁定树既有 syn 2/3 双版本，见 src/lib.rs 注释）。
+- 单文件纯代码 ≤250 行红线：超限按职责拆分（procfs、dockerlike 等均已拆为子模块）。
+- `windows/limits.rs` 文件名沿用早期「能力上限/stub」称呼，实际内容是 File Locks 与容器归属的 Unsupported 建模，原因键在 `unsupported.rs`。
 
 ## 相关文件清单
 
-- `crates/runquiry-platform/Cargo.toml` — crate manifest（守门人维护）
-- `crates/runquiry-platform/src/lib.rs` — 模块声明（linux cfg 隔离）
-- `crates/runquiry-platform/src/command/` — runner/process/output/original_user：执行、回收、采集、原用户恢复
-- `crates/runquiry-platform/src/container/` — 七运行时适配器与汇总（inventory/runtime/crictl/dockerlike{,/wire,/port}/lxdlike/lxc/parse）
-- `crates/runquiry-platform/src/linux/` — Linux 只读采集（procfs/process/summary/details/fdscan/network/locks/open_files/file_diagnostics/source/capabilities/container）
-- `crates/runquiry-platform/src/linux/controller.rs` — B7 身份复核、pidfd 信号与 renice 控制
-- `crates/runquiry-platform/tests/process_controller.rs` — B7 真实自建进程、身份拒绝与注入平台无副作用回归
-- `crates/runquiry-platform/src/windows/` — C2 Windows 采集（ffi 系列安全包装、ip_table/peb/scm_parse 纯解析、limits Unsupported 建模）
-- `crates/runquiry-platform/tests/` — command_runner、container_*、linux_adapters、fake_backends（超长套件按同名子目录拆分）；windows_* 纯解析套件经 `#[path]` 引入 src 模块在 Linux 直跑
-- `crates/runquiry-platform/examples/` — linux_qa、container_qa、process_controller_qa、windows_qa（真实 QA，双 main 平台门控）
-- `docs/witr-parity.md` — 采集与运行时行为契约
-- `.omo/plans/runquiry-gpui-desktop/03-container-runtime.md`、`04-linux-platform.md` — B3/B2 任务定义
-
-## 变更记录
-
-- 2026-09-02：初次索引。骨架状态，仅有 manifest 与 lib.rs 占位。
-- 2026-09-03：Batch 2 A5——新增 tests/support/（Scenario 失败注入、FakePlatform 假实现）与 tests/fake_backends.rs。
-- 2026-09-04：Batch 3——B2 Linux 只读适配器（`src/linux/`，20 测试 + linux_qa 示例）；B3 StdCommandRunner 与七容器运行时（`src/command/`、`src/container/`，41 测试 + container_qa 示例）；新增直接依赖 sysinfo/serde/serde_json/zbus/libc（全部锁内既有包，零新增）；lib.rs 声明 linux cfg 隔离与 crate 级 clippy 豁免；dockerlike/procfs 按 250 行红线拆分子模块；CommandRunner 进程组终止修复超时孙进程遗留。评审修复：LinuxPlatform 实现 `ProcessFileLocks`（/proc/locks 按 PID 过滤）、健康标签 HighCpu/HighMem（parity 阈值）、收养后代时间窗排除、用户表每轮 list() 复用；ContainerRuntimes 实现 `ContainerHealthcheckProbe`（docker/podman）。测试增至 75 个。
-- 2026-09-04：阻断项修复——CommandRunner 增加取消、超限硬失败、读取错误传播与稳定双流回归；rootless CLI 恢复 sudo 原用户。容器解析保留 command/Compose 私有临时键，补发布端口回退，nerdctl 键改为 containerd，host PID 通过 Linux cgroup 验证。Linux 生产 PID 枚举改回 sysinfo，构造墙钟生效，详情字段错误进入 Inspection，systemd 富化设方法超时和 single-flight。拆分超长测试与 runner 职责文件，测试增至 90 个。
-- 2026-09-04（未提交工作区）：Batch 4A P1——新增 `linux/open_files.rs` 与 `file_diagnostics.rs`，`LinuxPlatform` 为 File Locks 工作区提供真实打开文件/锁清单及路径持有者查询，合成 ProcFs 回归覆盖 PID 0、权限与锁/FD 合并。platform 测试增至 97 个。
-- 2026-09-07（未提交工作区）：Batch 4B B7——Linux `ProcessController` 以身份重读 + pidfd 实现 TERM/KILL/STOP/CONT，renice 明确保留 signal 0 与 `setpriority` 间窄 TOCTOU；新增 6 个定向测试与独立 QA 示例。真实 X11 QA 已覆盖五类动作、非法输入、权限边界、输入焦点及 Sheet/Dialog 分层与 Escape；B8 尚未开始，不宣称全平台验收。
-- 2026-09-07（未提交工作区）：Batch 6 C1/C2——新增 `src/macos/`（libproc 手写绑定、lsof -F、launchctl/plist、身份重读 + kill(2)/setpriority 控制）与 `src/windows/`（windows-sys 0.61.2 安全包装 ffi{,/process,/toolhelp}/ffi_scm、IP Helper 端口表、PEB/PEB32 有界读取、SCM 证据、File Locks 与进程控制 Unsupported）；core `SourceEvidence` 加性扩展 launchd/Windows service 证据字段并补齐 detect 链（core 110 测试全绿）；app backend 按 target_os 装配平台（Linux 24/24 回归通过）；macos_*/windows_* 纯解析套件经 `#[path]` 可在 Linux 直跑。**全部 macOS/Windows cfg 代码未编译、未测试**（本机 WSL 编译卡死，用户叫停）；独立 FFI 审查两处阻断项（ProcTaskInfo 字段宽度、rusage 偏移）与三项建议缺陷已修复；随后静态 code-review（双轴）修复 Windows IP Helper 重试丢尺寸、Windows start_time 0 → `None` 语义（与 macOS/core 对齐）与 25 处测试 unwrap 基线违规；实机验收未开始。
-- 2026-09-08（未提交工作区）：macOS 支持移出 v1 范围——删除 `src/macos/`（15 文件 2660 行：libproc/lsof/launchctl/plist/identity 与控制器）、`examples/macos_qa.rs`、`tests/macos_{identity,launchd,lsof}_parse.rs`；`src/lib.rs` 移除 `#[cfg(target_os = "macos")] pub mod macos;` 并增加非 Linux/Windows 目标的 `compile_error!` 门禁；libc 依赖说明去掉 macOS libproc 手写绑定表述。`cargo check -p runquiry-platform --locked --all-targets` 通过，`cargo test -p runquiry-platform --locked` 180 测试全绿（windows_* 77 个，已无 macos_*）。
+- `crates/runquiry-platform/Cargo.toml` — crate manifest（含 windows-sys feature 清单，守门人维护）
+- `crates/runquiry-platform/src/lib.rs` — 模块声明、cfg 门禁与 crate 级 clippy 豁免
+- `crates/runquiry-platform/src/command/` — `runner`/`process`/`output`/`original_user`：执行、进程组回收、有界采集、sudo 原用户恢复
+- `crates/runquiry-platform/src/container/` — 七运行时适配器与汇总（`mod`/`inventory`/`runtime`/`parse`/`dockerlike{,/wire,/port}`/`crictl`/`lxdlike`/`lxc`）
+- `crates/runquiry-platform/src/linux/` — Linux 端口实现（`process`/`details`/`summary`/`network`/`open_files`/`locks`/`fdscan`/`file_diagnostics`/`source{,/systemd}`/`capabilities`/`container`/`procfs/*`）
+- `crates/runquiry-platform/src/linux/controller.rs` — 身份复核、pidfd 信号、KillTree 与 renice 控制
+- `crates/runquiry-platform/src/windows/` — Windows 采集（`process_list`/`details`/`network`/`source` 与 `ip_table/*`、`peb/*`、`peb_reader`、`utf16`、`scm_parse`、`winerror` 纯解析层）
+- `crates/runquiry-platform/src/windows/controller.rs` — 关闭类进程控制 + `reveal_*`（含真机活测试）
+- `crates/runquiry-platform/src/windows/reveal.rs`、`src/windows/ffi/shell.rs` — `/select` 参数与 `ShellExecute` 返回码分类、`ShellExecuteW` 安全包装
+- `crates/runquiry-platform/src/windows/limits.rs`、`src/windows/unsupported.rs` — Unsupported 建模与稳定原因键
+- `crates/runquiry-platform/src/windows/ffi/`、`src/windows/ffi_scm.rs` — 全部 FFI 安全包装
+- `crates/runquiry-platform/tests/` — 命令执行、容器、Linux 采集与控制、Windows 纯解析套件与假后端（超长套件按同名子目录拆分）
+- `crates/runquiry-platform/examples/` — `linux_qa`、`container_qa`、`process_controller_qa`、`windows_qa`
+- `docs/witr-parity.md` — 采集、运行时与进程操作的行为契约
+- `.omo/plans/runquiry-gpui-desktop/03-container-runtime.md`、`04-linux-platform.md`、`07-windows-platform.md` — 任务定义
